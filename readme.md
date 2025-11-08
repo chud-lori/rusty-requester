@@ -1,6 +1,7 @@
 # 🦀 Rusty Requester
 
-A **native, lightweight API client** built with Rust - the ultimate alternative to resource-heavy Electron apps like Postman.
+I develop this (vibe-coded, hehe) because I use api client a lot while I used to using Postman, it's so takes a lot of resource especially the online sync I don't even need it and then I use a lot curl on my terminal, but it's hard to manage the requests, so I build this, a **native, lightweight API client** built with Rust - the ultimate alternative to resource-heavy Electron apps like Postman.
+
 
 ![Rust](https://img.shields.io/badge/rust-%23000000.svg?style=for-the-badge&logo=rust&logoColor=white)
 ![macOS](https://img.shields.io/badge/mac%20os-000000?style=for-the-badge&logo=macos&logoColor=F0F0F0)
