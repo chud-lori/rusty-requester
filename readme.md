@@ -37,7 +37,7 @@ I develop this (vibe-coded, hehe) because I use api client a lot while I used to
 ### Build from Source
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/rusty-requester
+git clone https://github.com/chud-lori/rusty-requester
 cd rusty-requester
 
 # Build for release (optimized)
