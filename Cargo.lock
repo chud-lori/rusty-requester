@@ -3030,6 +3030,7 @@ dependencies = [
  "dirs",
  "eframe",
  "egui",
+ "image",
  "poll-promise",
  "reqwest",
  "rfd",

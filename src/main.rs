@@ -152,6 +152,8 @@ struct ApiClient {
 
     toast: Option<(String, f32)>,
     focus_search_next_frame: bool,
+
+    app_icon: Option<egui::TextureHandle>,
 }
 
 impl Default for ApiClient {
@@ -205,8 +207,27 @@ impl Default for ApiClient {
             paste_error: String::new(),
             toast: None,
             focus_search_next_frame: false,
+            app_icon: None,
         }
     }
+}
+
+const APP_ICON_BYTES: &[u8] = include_bytes!("../assets/icon.png");
+
+fn load_icon_color_image() -> Option<egui::ColorImage> {
+    let img = image::load_from_memory(APP_ICON_BYTES).ok()?.into_rgba8();
+    let size = [img.width() as usize, img.height() as usize];
+    Some(egui::ColorImage::from_rgba_unmultiplied(size, img.as_raw()))
+}
+
+fn load_window_icon() -> Option<egui::IconData> {
+    let img = image::load_from_memory(APP_ICON_BYTES).ok()?.into_rgba8();
+    let (width, height) = img.dimensions();
+    Some(egui::IconData {
+        rgba: img.into_raw(),
+        width,
+        height,
+    })
 }
 
 impl ApiClient {
@@ -563,6 +584,16 @@ impl eframe::App for ApiClient {
             self.focus_search_next_frame = true;
         }
 
+        if self.app_icon.is_none() {
+            if let Some(ci) = load_icon_color_image() {
+                self.app_icon = Some(ctx.load_texture(
+                    "app_icon",
+                    ci,
+                    egui::TextureOptions::LINEAR,
+                ));
+            }
+        }
+
         if let Some(promise) = &self.request_promise {
             if let Some(r) = promise.ready() {
                 self.response_text = r.body.clone();
@@ -646,10 +677,13 @@ impl ApiClient {
             .show(ctx, |ui| {
                 ui.add_space(4.0);
                 ui.horizontal(|ui| {
-                    ui.label(
-                        egui::RichText::new("🦀")
-                            .size(20.0),
-                    );
+                    if let Some(tex) = &self.app_icon {
+                        ui.add(
+                            egui::Image::from_texture(tex)
+                                .fit_to_exact_size(egui::vec2(24.0, 24.0))
+                                .rounding(egui::Rounding::same(5.0)),
+                        );
+                    }
                     ui.label(
                         egui::RichText::new("Rusty Requester")
                             .size(15.0)
@@ -788,7 +822,7 @@ impl ApiClient {
                     .id_salt("sidebar_scroll")
                     .auto_shrink([false, false])
                     .scroll_bar_visibility(
-                        egui::scroll_area::ScrollBarVisibility::AlwaysVisible,
+                        egui::scroll_area::ScrollBarVisibility::VisibleWhenNeeded,
                     )
                     .show(ui, |ui| {
                         let folders = self.state.folders.clone();
@@ -814,9 +848,15 @@ impl ApiClient {
             if self.selected_request_id.is_none() {
                 ui.centered_and_justified(|ui| {
                     ui.vertical_centered(|ui| {
-                        ui.add_space(ui.available_height() * 0.35);
-                        ui.label(egui::RichText::new("🦀").size(48.0));
-                        ui.add_space(10.0);
+                        ui.add_space(ui.available_height() * 0.25);
+                        if let Some(tex) = &self.app_icon {
+                            ui.add(
+                                egui::Image::from_texture(tex)
+                                    .fit_to_exact_size(egui::vec2(96.0, 96.0))
+                                    .rounding(egui::Rounding::same(18.0)),
+                            );
+                        }
+                        ui.add_space(12.0);
                         ui.label(
                             egui::RichText::new("Rusty Requester")
                                 .size(22.0)
@@ -2155,10 +2195,16 @@ fn short_name_from_url(url: &str) -> String {
 }
 
 fn main() -> Result<(), eframe::Error> {
+    let mut viewport = egui::ViewportBuilder::default()
+        .with_inner_size([1280.0, 820.0])
+        .with_min_inner_size([900.0, 600.0])
+        .with_title("Rusty Requester");
+    if let Some(icon) = load_window_icon() {
+        viewport = viewport.with_icon(std::sync::Arc::new(icon));
+    }
+
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1280.0, 820.0])
-            .with_min_inner_size([900.0, 600.0]),
+        viewport,
         ..Default::default()
     };
 
