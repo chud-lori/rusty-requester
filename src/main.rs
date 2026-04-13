@@ -18,6 +18,8 @@ pub struct Request {
     #[serde(default)]
     pub query_params: Vec<(String, String)>,
     pub headers: Vec<(String, String)>,
+    #[serde(default)]
+    pub cookies: Vec<(String, String)>,
     pub body: String,
     #[serde(default)]
     pub auth: Auth,
@@ -88,6 +90,7 @@ struct AppState {
 enum RequestTab {
     Params,
     Headers,
+    Cookies,
     Body,
     Auth,
 }
@@ -114,6 +117,9 @@ struct ApiClient {
     new_header_value: String,
     new_param_key: String,
     new_param_value: String,
+    new_cookie_key: String,
+    new_cookie_value: String,
+    search_query: String,
 
     response_text: String,
     response_status: String,
@@ -127,6 +133,7 @@ struct ApiClient {
     editing_method: HttpMethod,
     editing_headers: Vec<(String, String)>,
     editing_params: Vec<(String, String)>,
+    editing_cookies: Vec<(String, String)>,
     editing_auth: Auth,
 
     storage_path: PathBuf,
@@ -170,6 +177,9 @@ impl Default for ApiClient {
             new_header_value: String::new(),
             new_param_key: String::new(),
             new_param_value: String::new(),
+            new_cookie_key: String::new(),
+            new_cookie_value: String::new(),
+            search_query: String::new(),
             response_text: String::new(),
             response_status: String::new(),
             response_time: String::new(),
@@ -181,6 +191,7 @@ impl Default for ApiClient {
             editing_method: HttpMethod::GET,
             editing_headers: vec![],
             editing_params: vec![],
+            editing_cookies: vec![],
             editing_auth: Auth::None,
             storage_path,
             request_promise: None,
@@ -260,6 +271,7 @@ impl ApiClient {
         let body = self.editing_body.clone();
         let headers = self.editing_headers.clone();
         let params = self.editing_params.clone();
+        let cookies = self.editing_cookies.clone();
         let auth = self.editing_auth.clone();
         self.update_current_request(|req| {
             req.name = name;
@@ -268,6 +280,7 @@ impl ApiClient {
             req.body = body;
             req.headers = headers;
             req.query_params = params;
+            req.cookies = cookies;
             req.auth = auth;
         });
     }
@@ -302,11 +315,24 @@ impl ApiClient {
                 HttpMethod::OPTIONS => client.request(reqwest::Method::OPTIONS, &final_url),
             };
 
+            let mut cookie_parts: Vec<String> = Vec::new();
             for (key, value) in &request.headers {
                 if key.trim().is_empty() {
                     continue;
                 }
+                if key.eq_ignore_ascii_case("cookie") {
+                    cookie_parts.push(value.clone());
+                    continue;
+                }
                 req_builder = req_builder.header(key, value);
+            }
+            for (k, v) in &request.cookies {
+                if !k.is_empty() {
+                    cookie_parts.push(format!("{}={}", k, v));
+                }
+            }
+            if !cookie_parts.is_empty() {
+                req_builder = req_builder.header("Cookie", cookie_parts.join("; "));
             }
 
             match &request.auth {
@@ -383,6 +409,7 @@ impl ApiClient {
             self.editing_method = r.method;
             self.editing_headers = r.headers;
             self.editing_params = r.query_params;
+            self.editing_cookies = r.cookies;
             self.editing_auth = r.auth;
         }
     }
@@ -574,7 +601,7 @@ impl ApiClient {
                 if ui
                     .add_sized(
                         [ui.available_width(), 30.0],
-                        egui::Button::new(egui::RichText::new("➕ New Folder").size(13.0))
+                        egui::Button::new(egui::RichText::new("➕ New Collection").size(13.0))
                             .fill(egui::Color32::from_rgb(56, 170, 100))
                             .stroke(egui::Stroke::NONE),
                     )
@@ -582,7 +609,7 @@ impl ApiClient {
                 {
                     self.state.folders.push(Folder {
                         id: Uuid::new_v4().to_string(),
-                        name: format!("Folder {}", self.state.folders.len() + 1),
+                        name: format!("Collection {}", self.state.folders.len() + 1),
                         requests: vec![],
                         subfolders: vec![],
                     });
@@ -656,10 +683,38 @@ impl ApiClient {
 
                 ui.add_space(10.0);
 
+                ui.horizontal(|ui| {
+                    let clear_w = if self.search_query.is_empty() { 0.0 } else { 26.0 };
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.search_query)
+                            .desired_width(ui.available_width() - clear_w)
+                            .hint_text("🔎 Search requests, URLs, folders"),
+                    );
+                    if !self.search_query.is_empty()
+                        && ui.small_button("✕").on_hover_text("Clear search").clicked()
+                    {
+                        self.search_query.clear();
+                    }
+                });
+                if !self.search_query.is_empty() {
+                    let total = count_matches(&self.state.folders, &self.search_query.to_lowercase());
+                    ui.label(
+                        egui::RichText::new(format!("{} match(es)", total))
+                            .size(11.0)
+                            .color(C_MUTED),
+                    );
+                }
+
+                ui.add_space(6.0);
+
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     let folders = self.state.folders.clone();
+                    let query = self.search_query.to_lowercase();
                     for folder in &folders {
-                        self.render_folder(ui, folder, vec![folder.id.clone()]);
+                        if !query.is_empty() && !folder_matches(folder, &query) {
+                            continue;
+                        }
+                        self.render_folder(ui, folder, vec![folder.id.clone()], 0);
                     }
                 });
             });
@@ -731,6 +786,7 @@ impl ApiClient {
                             self.editing_body.clear();
                             self.editing_headers.clear();
                             self.editing_params.clear();
+                            self.editing_cookies.clear();
                             self.editing_auth = Auth::None;
                             self.response_text.clear();
                             self.response_status.clear();
@@ -862,6 +918,11 @@ impl ApiClient {
         } else {
             format!("Headers ({})", self.editing_headers.len())
         };
+        let cookies_label = if self.editing_cookies.is_empty() {
+            "Cookies".to_string()
+        } else {
+            format!("Cookies ({})", self.editing_cookies.len())
+        };
         let body_label = if self.editing_body.is_empty() {
             "Body".to_string()
         } else {
@@ -876,6 +937,7 @@ impl ApiClient {
         ui.horizontal(|ui| {
             tab_button(ui, &mut self.request_tab, RequestTab::Params, &params_label);
             tab_button(ui, &mut self.request_tab, RequestTab::Headers, &headers_label);
+            tab_button(ui, &mut self.request_tab, RequestTab::Cookies, &cookies_label);
             tab_button(ui, &mut self.request_tab, RequestTab::Body, &body_label);
             tab_button(ui, &mut self.request_tab, RequestTab::Auth, &auth_label);
         });
@@ -895,6 +957,7 @@ impl ApiClient {
                     .show(ui, |ui| match self.request_tab {
                         RequestTab::Params => self.render_params_tab(ui),
                         RequestTab::Headers => self.render_headers_tab(ui),
+                        RequestTab::Cookies => self.render_cookies_tab(ui),
                         RequestTab::Body => self.render_body_tab(ui),
                         RequestTab::Auth => self.render_auth_tab(ui),
                     });
@@ -1031,6 +1094,65 @@ impl ApiClient {
     }
 
     fn render_body_tab(&mut self, ui: &mut egui::Ui) {
+        let mut prettify = false;
+        let mut minify = false;
+        ui.horizontal(|ui| {
+            if ui
+                .small_button(egui::RichText::new("✨ Prettify JSON").size(11.0))
+                .on_hover_text("Format body as pretty JSON")
+                .clicked()
+            {
+                prettify = true;
+            }
+            if ui
+                .small_button(egui::RichText::new("🗜 Minify").size(11.0))
+                .on_hover_text("Collapse JSON to one line")
+                .clicked()
+            {
+                minify = true;
+            }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let size_label = if self.editing_body.is_empty() {
+                    "empty".to_string()
+                } else {
+                    format!("{} bytes", self.editing_body.len())
+                };
+                ui.label(
+                    egui::RichText::new(size_label)
+                        .size(11.0)
+                        .color(C_MUTED),
+                );
+            });
+        });
+        if prettify {
+            match serde_json::from_str::<serde_json::Value>(&self.editing_body) {
+                Ok(v) => match serde_json::to_string_pretty(&v) {
+                    Ok(s) => {
+                        self.editing_body = s;
+                        let body = self.editing_body.clone();
+                        self.update_current_request(|r| r.body = body);
+                        self.show_toast("Body prettified");
+                    }
+                    Err(e) => self.show_toast(format!("Prettify failed: {}", e)),
+                },
+                Err(_) => self.show_toast("Body is not valid JSON"),
+            }
+        }
+        if minify {
+            match serde_json::from_str::<serde_json::Value>(&self.editing_body) {
+                Ok(v) => match serde_json::to_string(&v) {
+                    Ok(s) => {
+                        self.editing_body = s;
+                        let body = self.editing_body.clone();
+                        self.update_current_request(|r| r.body = body);
+                        self.show_toast("Body minified");
+                    }
+                    Err(e) => self.show_toast(format!("Minify failed: {}", e)),
+                },
+                Err(_) => self.show_toast("Body is not valid JSON"),
+            }
+        }
+        ui.add_space(4.0);
         if ui
             .add_sized(
                 [ui.available_width(), ui.available_height() - 4.0],
@@ -1043,6 +1165,72 @@ impl ApiClient {
         {
             let body = self.editing_body.clone();
             self.update_current_request(|r| r.body = body);
+        }
+    }
+
+    fn render_cookies_tab(&mut self, ui: &mut egui::Ui) {
+        ui.label(
+            egui::RichText::new("Cookies listed here are merged into a Cookie header on send.")
+                .size(11.0)
+                .color(C_MUTED),
+        );
+        ui.add_space(6.0);
+        let mut changed = false;
+        let mut to_remove = None;
+        for (i, (k, v)) in self.editing_cookies.iter_mut().enumerate() {
+            ui.horizontal(|ui| {
+                if ui
+                    .add(
+                        egui::TextEdit::singleline(k)
+                            .desired_width(160.0)
+                            .hint_text("Name"),
+                    )
+                    .changed()
+                {
+                    changed = true;
+                }
+                if ui
+                    .add(
+                        egui::TextEdit::singleline(v)
+                            .desired_width(ui.available_width() - 40.0)
+                            .hint_text("Value"),
+                    )
+                    .changed()
+                {
+                    changed = true;
+                }
+                if ui.small_button("🗑").clicked() {
+                    to_remove = Some(i);
+                }
+            });
+        }
+        if let Some(i) = to_remove {
+            self.editing_cookies.remove(i);
+            changed = true;
+        }
+        ui.add_space(6.0);
+        ui.horizontal(|ui| {
+            ui.add(
+                egui::TextEdit::singleline(&mut self.new_cookie_key)
+                    .desired_width(160.0)
+                    .hint_text("New name"),
+            );
+            ui.add(
+                egui::TextEdit::singleline(&mut self.new_cookie_value)
+                    .desired_width(ui.available_width() - 90.0)
+                    .hint_text("New value"),
+            );
+            if ui.button("➕ Add").clicked() && !self.new_cookie_key.is_empty() {
+                self.editing_cookies
+                    .push((self.new_cookie_key.clone(), self.new_cookie_value.clone()));
+                self.new_cookie_key.clear();
+                self.new_cookie_value.clear();
+                changed = true;
+            }
+        });
+        if changed {
+            let cookies = self.editing_cookies.clone();
+            self.update_current_request(|r| r.cookies = cookies);
         }
     }
 
@@ -1370,51 +1558,97 @@ impl ApiClient {
             });
     }
 
-    fn render_folder(&mut self, ui: &mut egui::Ui, folder: &Folder, path: Vec<String>) {
+    fn render_folder(
+        &mut self,
+        ui: &mut egui::Ui,
+        folder: &Folder,
+        path: Vec<String>,
+        depth: usize,
+    ) {
         let is_renaming = self.renaming_folder_id.as_ref() == Some(&folder.id);
+        let query = self.search_query.to_lowercase();
+        let searching = !query.is_empty();
 
-        let header_response = egui::CollapsingHeader::new(if is_renaming {
+        let icon = if depth == 0 { "📚" } else { "📁" };
+        let mut header = egui::CollapsingHeader::new(if is_renaming {
             egui::RichText::new("").size(13.0)
         } else {
-            egui::RichText::new(format!("📁 {}", folder.name)).size(13.0)
+            egui::RichText::new(format!("{} {}", icon, folder.name))
+                .size(13.0)
+                .color(if depth == 0 { C_ACCENT } else { C_TEXT })
+                .strong()
         })
         .id_salt(&folder.id)
-        .default_open(true)
-        .show(ui, |ui| {
+        .default_open(true);
+        if searching {
+            header = header.open(Some(true));
+        }
+        let header_response = header.show(ui, |ui| {
             ui.add_space(4.0);
 
-            if ui
-                .add_sized(
-                    [ui.available_width(), 26.0],
-                    egui::Button::new(egui::RichText::new("➕ New Request").size(12.0))
-                        .fill(C_BORDER)
-                        .stroke(egui::Stroke::NONE),
-                )
-                .clicked()
-            {
-                let new_req = Request {
-                    id: Uuid::new_v4().to_string(),
-                    name: format!("Request {}", folder.requests.len() + 1),
-                    method: HttpMethod::GET,
-                    url: "https://api.example.com".to_string(),
-                    query_params: vec![],
-                    headers: vec![],
-                    body: String::new(),
-                    auth: Auth::None,
-                };
+            ui.horizontal(|ui| {
+                let half = (ui.available_width() - 4.0) / 2.0;
+                if ui
+                    .add_sized(
+                        [half, 26.0],
+                        egui::Button::new(egui::RichText::new("➕ Request").size(12.0))
+                            .fill(C_BORDER)
+                            .stroke(egui::Stroke::NONE),
+                    )
+                    .clicked()
+                {
+                    let new_req = Request {
+                        id: Uuid::new_v4().to_string(),
+                        name: format!("Request {}", folder.requests.len() + 1),
+                        method: HttpMethod::GET,
+                        url: "https://api.example.com".to_string(),
+                        query_params: vec![],
+                        headers: vec![],
+                        cookies: vec![],
+                        body: String::new(),
+                        auth: Auth::None,
+                    };
 
-                self.selected_folder_path = path.clone();
+                    self.selected_folder_path = path.clone();
 
-                if let Some(f) = self.get_current_folder_mut() {
-                    f.requests.push(new_req);
+                    if let Some(f) = self.get_current_folder_mut() {
+                        f.requests.push(new_req);
+                    }
+                    self.save_state();
                 }
-                self.save_state();
-            }
+
+                if ui
+                    .add_sized(
+                        [half, 26.0],
+                        egui::Button::new(egui::RichText::new("➕ Folder").size(12.0))
+                            .fill(C_BORDER)
+                            .stroke(egui::Stroke::NONE),
+                    )
+                    .on_hover_text("Create subfolder")
+                    .clicked()
+                {
+                    let new_folder = Folder {
+                        id: Uuid::new_v4().to_string(),
+                        name: format!("Folder {}", folder.subfolders.len() + 1),
+                        requests: vec![],
+                        subfolders: vec![],
+                    };
+
+                    self.selected_folder_path = path.clone();
+                    if let Some(f) = self.get_current_folder_mut() {
+                        f.subfolders.push(new_folder);
+                    }
+                    self.save_state();
+                }
+            });
 
             ui.add_space(4.0);
 
             let mut to_delete: Option<String> = None;
             for req in &folder.requests {
+                if searching && !request_matches(req, &query) && !folder.name.to_lowercase().contains(&query) {
+                    continue;
+                }
                 let is_selected = self.selected_request_id.as_ref() == Some(&req.id);
                 let mc = method_color(&req.method);
 
@@ -1470,15 +1704,19 @@ impl ApiClient {
                     self.editing_body.clear();
                     self.editing_headers.clear();
                     self.editing_params.clear();
+                    self.editing_cookies.clear();
                     self.editing_auth = Auth::None;
                 }
                 self.save_state();
             }
 
             for subfolder in &folder.subfolders {
+                if searching && !folder_matches(subfolder, &query) {
+                    continue;
+                }
                 let mut subpath = path.clone();
                 subpath.push(subfolder.id.clone());
-                self.render_folder(ui, subfolder, subpath);
+                self.render_folder(ui, subfolder, subpath, depth + 1);
             }
         });
 
@@ -1508,13 +1746,19 @@ impl ApiClient {
         } else {
             let folder_id = folder.id.clone();
             let folder_name = folder.name.clone();
+            let noun = if depth == 0 { "collection" } else { "folder" };
             let mut start_rename = false;
             let mut delete_folder = false;
             let mut export_json = false;
             let mut export_yaml = false;
+            let mut add_subfolder = false;
             header_response.header_response.context_menu(|ui| {
                 if ui.button("✏ Rename").clicked() {
                     start_rename = true;
+                    ui.close_menu();
+                }
+                if ui.button("➕ Add subfolder").clicked() {
+                    add_subfolder = true;
                     ui.close_menu();
                 }
                 ui.separator();
@@ -1527,7 +1771,7 @@ impl ApiClient {
                     ui.close_menu();
                 }
                 ui.separator();
-                if ui.button("🗑 Delete folder").clicked() {
+                if ui.button(format!("🗑 Delete {}", noun)).clicked() {
                     delete_folder = true;
                     ui.close_menu();
                 }
@@ -1535,6 +1779,19 @@ impl ApiClient {
             if start_rename {
                 self.renaming_folder_id = Some(folder_id.clone());
                 self.rename_folder_text = folder_name;
+            }
+            if add_subfolder {
+                self.selected_folder_path = path.clone();
+                let subcount = folder.subfolders.len() + 1;
+                if let Some(f) = self.get_current_folder_mut() {
+                    f.subfolders.push(Folder {
+                        id: Uuid::new_v4().to_string(),
+                        name: format!("Folder {}", subcount),
+                        requests: vec![],
+                        subfolders: vec![],
+                    });
+                }
+                self.save_state();
             }
             if export_json {
                 self.do_export_folder(&folder_id, io::Format::Json);
@@ -1608,6 +1865,41 @@ fn tab_button<T: PartialEq + Copy>(
     if ui.add(btn).clicked() {
         *current = value;
     }
+}
+
+fn folder_matches(folder: &Folder, q: &str) -> bool {
+    if q.is_empty() {
+        return true;
+    }
+    if folder.name.to_lowercase().contains(q) {
+        return true;
+    }
+    if folder.requests.iter().any(|r| request_matches(r, q)) {
+        return true;
+    }
+    folder.subfolders.iter().any(|sub| folder_matches(sub, q))
+}
+
+fn request_matches(r: &Request, q: &str) -> bool {
+    if q.is_empty() {
+        return true;
+    }
+    r.name.to_lowercase().contains(q)
+        || r.url.to_lowercase().contains(q)
+        || format!("{}", r.method).to_lowercase().contains(q)
+}
+
+fn count_matches(folders: &[Folder], q: &str) -> usize {
+    let mut n = 0;
+    for f in folders {
+        for r in &f.requests {
+            if request_matches(r, q) {
+                n += 1;
+            }
+        }
+        n += count_matches(&f.subfolders, q);
+    }
+    n
 }
 
 fn short_name_from_url(url: &str) -> String {

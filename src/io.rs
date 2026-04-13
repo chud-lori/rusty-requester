@@ -288,6 +288,7 @@ fn postman_to_request(name: &str, r: &PostmanRequest) -> Request {
         url,
         query_params,
         headers: filtered_headers,
+        cookies: Vec::new(),
         body,
         auth: final_auth,
     }
@@ -406,6 +407,7 @@ mod tests {
                 url: "https://example.com".into(),
                 query_params: vec![("q".into(), "1".into())],
                 headers: vec![("X-Foo".into(), "bar".into())],
+                cookies: vec![],
                 body: String::new(),
                 auth: Auth::None,
             }],

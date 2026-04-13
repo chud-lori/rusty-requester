@@ -1,172 +1,245 @@
 # 🦀 Rusty Requester
 
-I develop this (vibe-coded, hehe) because I use api client a lot while I used to using Postman, it's so takes a lot of resource especially the online sync I don't even need it and then I use a lot curl on my terminal, but it's hard to manage the requests, so I build this, a **native, lightweight API client** built with Rust - the ultimate alternative to resource-heavy Electron apps like Postman.
+A **native, offline, lightweight** API client built with Rust and `egui` — a Postman alternative that doesn't chew through hundreds of MB of RAM just to make HTTP requests.
 
+Vibe-coded because I got tired of Postman's bloat and cloud sync I never wanted, and tired of managing a wall of raw `curl` commands in my terminal.
 
 ![Rust](https://img.shields.io/badge/rust-%23000000.svg?style=for-the-badge&logo=rust&logoColor=white)
 ![macOS](https://img.shields.io/badge/mac%20os-000000?style=for-the-badge&logo=macos&logoColor=F0F0F0)
 
+---
+
 ## ✨ Features
 
-- 🚀 **Truly Native** - Built with Rust and egui, not Electron wrapper
-- 💾 **Local Storage Only** - No cloud sync, no telemetry, complete privacy
-- 🎨 **Beautiful UI** - Dracula-inspired dark theme with color-coded HTTP methods
-- 📁 **Folder Organization** - Organize your API requests in folders
-- 🔧 **Full HTTP Support** - GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS
-- 📋 **JSON Formatting** - Automatically formats JSON responses
-- ⚡ **Lightning Fast** - Native performance, minimal resource usage
-- 🍎 **Apple Silicon Optimized** - Built specifically for M1/M2/M3 Macs
+### Core
+- 🚀 **Truly native** — Rust + `egui`, no Electron, no Chromium
+- 💾 **Fully offline** — all data lives in one local JSON file, no cloud sync, no telemetry
+- 🎨 **Dracula-inspired dark UI** with color-coded HTTP methods
+- 🍎 **Apple Silicon optimized** (but builds anywhere Rust runs)
+
+### Request building
+- 🔧 Full HTTP methods: `GET`, `POST`, `PUT`, `DELETE`, `PATCH`, `HEAD`, `OPTIONS`
+- 📝 Tabbed editor: **Params · Headers · Cookies · Body · Auth**
+- 🔗 Query-param builder with live "final URL" preview
+- 🍪 Cookies list (merged into a `Cookie` header on send)
+- 🔐 Auth presets: **No Auth · Bearer Token · Basic Auth**
+- ✨ **Prettify / Minify** JSON body (one-click)
+
+### Responses
+- 📊 Status code, response time, and **all response headers** displayed
+- 🎨 Auto-pretty-printed JSON responses
+- 📋 One-click copy of the full response
+- Body / Headers tabs
+
+### cURL interop
+- 📋 **Copy as cURL** — current request → clipboard as a `curl` command
+- 📥 **Paste from cURL** — paste any `curl` command and it becomes a request (method, URL, headers, body, auth, cookies, params — all parsed)
+
+### Collections
+- 📚 **Collections & subfolders** — organize requests in nested folders
+- 🔎 **Search** across request names, URLs, methods, and folder names
+- 📤 **Export** a single collection or all collections as **JSON** or **YAML**
+- 📥 **Import** JSON, YAML, or **Postman Collection v2.1** files
+- ✏️ Rename via right-click
+
+---
 
 ## 🎯 Why Rusty Requester?
 
-**Postman is resource-intensive**. It's essentially a Chromium wrapper that can eat up hundreds of MB of RAM and CPU just to make HTTP requests. Rusty Requester is different:
+Postman is a ~500 MB Electron app that phones home and wants you to log in. Rusty Requester:
 
-- **~10MB RAM** vs Postman's ~500MB+
-- **Native binary** vs Electron bundle
-- **Instant startup** vs slow Electron initialization
-- **No tracking** vs analytics and telemetry
-- **Local-first** vs cloud-dependent
+| | Postman | Rusty Requester |
+|---|---|---|
+| RAM | ~500 MB+ | ~10–30 MB |
+| Startup | seconds | instant |
+| Distribution | Electron bundle | single native binary |
+| Storage | cloud-dependent | one local JSON file |
+| Tracking | analytics + telemetry | none |
 
-## 🚀 Installation
+---
+
+## 📦 Installation
 
 ### Prerequisites
+- **Rust 1.70+** — install via [rustup.rs](https://rustup.rs)
+- macOS, Linux, or Windows
 
-- Rust 1.70+ (Install from [rustup.rs](https://rustup.rs))
-- macOS (Apple Silicon or Intel)
+### Build & run from source
 
-### Build from Source
 ```bash
-# Clone the repository
+# Clone
 git clone https://github.com/chud-lori/rusty-requester
 cd rusty-requester
 
-# Build for release (optimized)
-cargo build --release
+# Run in debug mode (fast to compile, great for iteration)
+cargo run
 
-# Run the application
-cargo run --release
+# Or build an optimized release binary
+cargo build --release
+./target/release/rusty-requester
 ```
 
 ### Build for Apple Silicon (M1/M2/M3)
+
 ```bash
 cargo build --release --target aarch64-apple-darwin
+# Binary at: target/aarch64-apple-darwin/release/rusty-requester
 ```
 
-The compiled binary will be in `target/release/rusty-requester` or `target/aarch64-apple-darwin/release/rusty-requester`
+### Build for Intel Mac
+
+```bash
+cargo build --release --target x86_64-apple-darwin
+```
+
+### Run the tests
+
+```bash
+cargo test
+```
+
+---
 
 ## 📖 Usage
 
-### Creating Your First Request
+### Your first request
 
-1. **Create a Folder**: Click the green "➕ New Folder" button in the sidebar
-2. **Add a Request**: Click "➕ New Request" inside your folder
-3. **Configure Request**:
-   - Set the HTTP method (GET, POST, etc.)
-   - Enter the URL
-   - Add headers if needed
-   - Add request body for POST/PUT requests
-4. **Send**: Click the purple "Send" button
-5. **View Response**: See formatted JSON responses in the response panel
+1. Click **➕ New Collection** in the sidebar
+2. Inside the collection, click **➕ Request** (or **➕ Folder** to nest further)
+3. Pick a method, enter a URL, add headers / params / cookies / body / auth as needed
+4. Click **Send** (or press **Enter** while in the URL field)
 
-### Keyboard Shortcuts
+All edits auto-save to local disk as you type.
 
-- **Enter** in URL field: Send request
-- **Right-click folder**: Rename folder
-- **Enter** while renaming: Save new name
+### Importing from cURL
 
-### Managing Requests
+Click **📥 Paste** next to Send (or **📥 Import → Paste cURL command…** in the sidebar), paste a `curl` command, and Import. Supports:
 
-- **Rename Folder**: Right-click on folder → "✏ Rename"
-- **Delete Request**: Click the red "🗑 Delete" button
-- **Edit Request**: All changes auto-save
+- `-X / --request` — method
+- `-H / --header` — headers
+- `-d / --data / --data-raw / --data-binary` — body (and implies `POST` if method not given)
+- `-u / --user` — Basic auth
+- `-b / --cookie` — cookies (split into the Cookies list)
+- `-A`, `-e`, `--url`, `-G`, `-I`, and line-continuations (`\`)
 
-## 🎨 Features in Detail
+### Exporting as cURL
 
-### HTTP Methods
+Click **📋 cURL** next to Send. The full request is copied to your clipboard, ready to paste into a terminal or a docs snippet.
 
-Color-coded for quick identification:
+### Importing / exporting collections
 
-- 🟢 **GET** - Green
-- 🟠 **POST** - Orange  
-- 🔵 **PUT** - Cyan
-- 🔴 **DELETE** - Pink
-- 🟣 **PATCH** - Purple
-- ⚪ **HEAD/OPTIONS** - Gray
+- **Sidebar → 📥 Import → Import collection file…** — pick a `.json`, `.yaml`, or `.yml` file. Postman Collection v2.1 files are auto-detected (schema sniffed) and land as one new collection. IDs are regenerated on import so nothing collides with your existing data.
+- **Sidebar → 📤 Export → Export all as JSON / YAML…** — dumps every collection into a single file (good for backups).
+- **Right-click any collection / folder → Export as JSON / YAML…** — exports just that subtree (this is the "collection-level" export for sharing).
 
-### Response Viewer
+### Searching
 
-- **Status Codes**: Color-coded (2xx green, 3xx yellow, 4xx/5xx red)
-- **Response Time**: Millisecond accuracy
-- **JSON Formatting**: Automatic pretty-printing
-- **Copy Button**: One-click copy entire response
-- **Large Display**: Response takes 60% of screen space
+Type in the **🔎 Search** box in the sidebar. It filters by request name, URL, HTTP method, and folder name in real time. Collections auto-expand while searching. Click **✕** to clear.
 
-### Data Storage
+### Keyboard shortcuts
 
-All data is stored locally at:
-- **macOS**: `~/Library/Application Support/rusty-requester/data.json`
+- **Enter** (in URL field) → Send request
+- **Right-click collection / folder** → Rename / Add subfolder / Export / Delete
+- **Right-click request** → Delete
 
-Your data never leaves your computer!
+### Where is my data stored?
+
+One JSON file on your machine — nothing leaves it:
+
+- **macOS:** `~/Library/Application Support/rusty-requester/data.json`
+- **Linux:** `~/.local/share/rusty-requester/data.json`
+- **Windows:** `%LOCALAPPDATA%\rusty-requester\data.json`
+
+Back it up, version-control it, or hand it to a teammate. It's just JSON.
+
+---
+
+## 🎨 UI conventions
+
+### HTTP method colors
+
+- 🟢 **GET** — green
+- 🟠 **POST** — orange
+- 🔵 **PUT** — cyan
+- 🔴 **DELETE** — pink
+- 🟣 **PATCH** — purple
+- ⚪ **HEAD / OPTIONS** — muted
+
+### Status code colors
+
+- 🟢 `2xx` — green
+- 🟠 `3xx` — orange
+- 🔴 `4xx` / `5xx` — red
+
+### Icons
+
+- 📚 Collection (top-level)
+- 📁 Folder (nested)
+
+---
 
 ## 🏗️ Architecture
 
-Built with modern Rust technologies:
+- **`eframe` / `egui`** — immediate-mode native GUI (the whole UI)
+- **`reqwest`** — HTTP client
+- **`tokio`** — async runtime (used for the single send; runs on a background thread via `poll-promise`)
+- **`serde` / `serde_json` / `serde_yaml`** — persistence + import / export
+- **`base64`** — Basic auth encoding
+- **`rfd`** — native open / save file dialogs
+- **`uuid`** — stable IDs for folders / requests
 
-- **egui**: Immediate mode GUI framework
-- **reqwest**: HTTP client library
-- **tokio**: Async runtime
-- **serde**: JSON serialization
-- **poll-promise**: Async task management
+Source layout:
 
-## 🔧 Configuration
+```
+src/
+  main.rs   # app state, UI, send pipeline
+  curl.rs   # cURL tokenizer, parser, builder  (unit-tested)
+  io.rs     # JSON/YAML export, JSON/YAML/Postman import  (unit-tested)
+```
 
-The app stores all collections and requests in a single JSON file. You can:
-
-- Back up your `data.json` file
-- Share collections with your team
-- Version control your API collections
-
-## 🤝 Contributing
-
-Contributions are welcome! Feel free to:
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## 📝 License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## 🙏 Acknowledgments
-
-- Built with [egui](https://github.com/emilk/egui) by Emil Ernerfeldt
-- Inspired by the need for a lightweight, native API client
-- Color scheme inspired by [Dracula Theme](https://draculatheme.com)
-
-## 🐛 Known Issues
-
-- Async response display could be improved with channels
-- No request history yet (coming soon!)
-- Environment variables not yet supported
+---
 
 ## 🗺️ Roadmap
 
+- [x] cURL import / export
+- [x] Postman Collection v2.1 import
+- [x] JSON / YAML export & import
+- [x] Query parameter builder
+- [x] Cookies tab
+- [x] Bearer / Basic auth presets
+- [x] Response headers viewer
+- [x] Search
+- [x] Subfolders
 - [ ] Request history
 - [ ] Environment variables
-- [ ] Import/Export collections (Postman format)
-- [ ] Query parameter builder
-- [ ] Authentication presets (Bearer, Basic, etc.)
-- [ ] Request chaining
+- [ ] Request chaining / pre-request scripts
 - [ ] GraphQL support
 - [ ] WebSocket testing
-- [ ] Windows and Linux support
+- [ ] Form-data / urlencoded body modes
+
+---
+
+## 🤝 Contributing
+
+1. Fork the repo
+2. `git checkout -b feature/my-thing`
+3. `cargo test` to make sure nothing broke
+4. Commit, push, open a PR
+
+---
+
+## 📝 License
+
+MIT — see `LICENSE`.
+
+## 🙏 Acknowledgments
+
+- [egui](https://github.com/emilk/egui) by Emil Ernerfeldt — the reason this is so fast
+- [Dracula Theme](https://draculatheme.com) — color palette inspiration
 
 ## 📬 Contact
 
-Created by [@chud-lori](https://github.com/chud-lori)
+Created by [@chud-lori](https://github.com/chud-lori).
 
 ---
 

@@ -26,6 +26,19 @@ pub fn to_curl(req: &Request) -> String {
         _ => {}
     }
 
+    if !req.cookies.is_empty() {
+        let cookie_str = req
+            .cookies
+            .iter()
+            .filter(|(k, _)| !k.is_empty())
+            .map(|(k, v)| format!("{}={}", k, v))
+            .collect::<Vec<_>>()
+            .join("; ");
+        if !cookie_str.is_empty() {
+            parts.push(format!("-b '{}'", esc(&cookie_str)));
+        }
+    }
+
     if !req.body.is_empty() {
         parts.push(format!("--data-raw '{}'", esc(&req.body)));
     }
@@ -73,6 +86,7 @@ pub fn parse_curl(input: &str) -> Result<Request, String> {
     let mut method: Option<HttpMethod> = None;
     let mut url: Option<String> = None;
     let mut headers: Vec<(String, String)> = Vec::new();
+    let mut cookies: Vec<(String, String)> = Vec::new();
     let mut body = String::new();
     let mut auth = Auth::None;
     let mut data_given = false;
@@ -141,7 +155,15 @@ pub fn parse_curl(input: &str) -> Result<Request, String> {
             "-b" | "--cookie" => {
                 i += 1;
                 if i < tokens.len() {
-                    headers.push(("Cookie".to_string(), tokens[i].clone()));
+                    for part in tokens[i].split(';') {
+                        let part = part.trim();
+                        if part.is_empty() {
+                            continue;
+                        }
+                        if let Some((k, v)) = part.split_once('=') {
+                            cookies.push((k.trim().to_string(), v.trim().to_string()));
+                        }
+                    }
                 }
             }
             "-e" | "--referer" => {
@@ -203,6 +225,7 @@ pub fn parse_curl(input: &str) -> Result<Request, String> {
         url: base_url,
         query_params,
         headers: filtered_headers,
+        cookies,
         body,
         auth,
     })
@@ -404,6 +427,7 @@ mod tests {
             url: "https://a.com".into(),
             query_params: vec![("q".into(), "1".into())],
             headers: vec![("X-Foo".into(), "bar".into())],
+            cookies: vec![],
             body: "{}".into(),
             auth: Auth::None,
         };
