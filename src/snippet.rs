@@ -1,4 +1,4 @@
-use crate::curl;
+use crate::io::curl;
 use crate::model::{Auth, Request};
 
 #[derive(Clone, Copy, PartialEq, Eq)]

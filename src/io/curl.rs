@@ -232,6 +232,7 @@ pub fn parse_curl(input: &str) -> Result<Request, String> {
         headers: filtered_headers,
         cookies,
         body,
+        body_ext: None,
         auth,
     })
 }
@@ -434,6 +435,7 @@ mod tests {
             headers: vec![KvRow::new("X-Foo", "bar")],
             cookies: vec![],
             body: "{}".into(),
+            body_ext: None,
             auth: Auth::None,
         };
         let s = to_curl(&r);

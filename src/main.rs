@@ -1,10 +1,11 @@
-mod curl;
 mod icon;
 mod io;
 mod model;
 mod snippet;
 mod theme;
 mod widgets;
+
+use io::curl;
 
 use base64::Engine;
 use eframe::egui;
@@ -39,7 +40,9 @@ struct ApiClient {
     editing_headers: Vec<KvRow>,
     editing_params: Vec<KvRow>,
     editing_cookies: Vec<KvRow>,
+    editing_body_ext: Option<BodyExt>,
     editing_auth: Auth,
+    editing_request_id_for_history: Option<String>,
 
     storage_path: PathBuf,
 
@@ -57,6 +60,10 @@ struct ApiClient {
 
     show_snippet_panel: bool,
     snippet_lang: SnippetLang,
+
+    sidebar_view: SidebarView,
+    show_env_modal: bool,
+    selected_env_for_edit: Option<String>,
 
     toast: Option<(String, f32)>,
     focus_search_next_frame: bool,
@@ -84,6 +91,9 @@ impl Default for ApiClient {
                 requests: vec![],
                 subfolders: vec![],
             }],
+            environments: vec![],
+            active_env_id: None,
+            history: vec![],
         });
 
         Self {
@@ -103,7 +113,9 @@ impl Default for ApiClient {
             editing_headers: vec![],
             editing_params: vec![],
             editing_cookies: vec![],
+            editing_body_ext: None,
             editing_auth: Auth::None,
+            editing_request_id_for_history: None,
             storage_path,
             request_promise: None,
             renaming_folder_id: None,
@@ -115,6 +127,9 @@ impl Default for ApiClient {
             paste_error: String::new(),
             show_snippet_panel: false,
             snippet_lang: SnippetLang::Curl,
+            sidebar_view: SidebarView::Collections,
+            show_env_modal: false,
+            selected_env_for_edit: None,
             toast: None,
             focus_search_next_frame: false,
             app_icon: None,
@@ -192,6 +207,7 @@ impl ApiClient {
         let headers = self.editing_headers.clone();
         let params = self.editing_params.clone();
         let cookies = self.editing_cookies.clone();
+        let body_ext = self.editing_body_ext.clone();
         let auth = self.editing_auth.clone();
         self.update_current_request(|req| {
             req.name = name;
@@ -201,12 +217,14 @@ impl ApiClient {
             req.headers = headers;
             req.query_params = params;
             req.cookies = cookies;
+            req.body_ext = body_ext;
             req.auth = auth;
         });
     }
 
     fn send_request(&mut self) {
         self.commit_editing();
+        let env = self.active_environment().cloned();
         if let Some(request) = self.get_current_request() {
             self.is_loading = true;
             self.response_text = "Loading...".to_string();
@@ -214,16 +232,73 @@ impl ApiClient {
             self.response_time = String::new();
             self.response_headers.clear();
             self.request_promise = Some(Promise::spawn_thread("request", move || {
-                Self::execute_request(&request)
+                Self::execute_request(&request, env.as_ref())
             }));
         }
     }
 
-    fn execute_request(request: &Request) -> ResponseData {
+    fn active_environment(&self) -> Option<&Environment> {
+        let id = self.state.active_env_id.as_ref()?;
+        self.state.environments.iter().find(|e| &e.id == id)
+    }
+
+    fn push_history_entry(&mut self) {
+        let Some(req) = self.get_current_request() else {
+            return;
+        };
+        let mut preview = self.response_text.clone();
+        if preview.len() > 256 {
+            preview.truncate(256);
+            preview.push_str("…");
+        }
+        let time_ms = self
+            .response_time
+            .trim_end_matches("ms")
+            .parse::<u64>()
+            .unwrap_or(0);
+        let entry = HistoryEntry {
+            id: Uuid::new_v4().to_string(),
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0),
+            method: req.method,
+            url: req.url,
+            status: self.response_status.clone(),
+            time_ms,
+            response_preview: preview,
+        };
+        self.state.history.insert(0, entry);
+        const MAX: usize = 200;
+        if self.state.history.len() > MAX {
+            self.state.history.truncate(MAX);
+        }
+        self.save_state();
+    }
+
+    fn execute_request(request: &Request, env: Option<&Environment>) -> ResponseData {
         let rt = tokio::runtime::Runtime::new().unwrap();
+
+        // Apply environment substitution to all string fields up-front.
+        let final_url_base = substitute_vars(&request.url, env);
+        let sub_params = substitute_kvs(&request.query_params, env);
+        let sub_headers = substitute_kvs(&request.headers, env);
+        let sub_cookies = substitute_kvs(&request.cookies, env);
+        let sub_body = substitute_vars(&request.body, env);
+        let sub_auth = match &request.auth {
+            Auth::None => Auth::None,
+            Auth::Bearer { token } => Auth::Bearer {
+                token: substitute_vars(token, env),
+            },
+            Auth::Basic { username, password } => Auth::Basic {
+                username: substitute_vars(username, env),
+                password: substitute_vars(password, env),
+            },
+        };
+
         rt.block_on(async {
             let client = reqwest::Client::new();
-            let final_url = curl::build_full_url(&request.url, &request.query_params);
+            let final_url = curl::build_full_url(&final_url_base, &sub_params);
 
             let mut req_builder = match request.method {
                 HttpMethod::GET => client.get(&final_url),
@@ -236,7 +311,7 @@ impl ApiClient {
             };
 
             let mut cookie_parts: Vec<String> = Vec::new();
-            for h in &request.headers {
+            for h in &sub_headers {
                 if !h.enabled || h.key.trim().is_empty() {
                     continue;
                 }
@@ -246,7 +321,7 @@ impl ApiClient {
                 }
                 req_builder = req_builder.header(&h.key, &h.value);
             }
-            for c in &request.cookies {
+            for c in &sub_cookies {
                 if c.enabled && !c.key.is_empty() {
                     cookie_parts.push(format!("{}={}", c.key, c.value));
                 }
@@ -255,7 +330,7 @@ impl ApiClient {
                 req_builder = req_builder.header("Cookie", cookie_parts.join("; "));
             }
 
-            match &request.auth {
+            match &sub_auth {
                 Auth::Bearer { token } if !token.is_empty() => {
                     req_builder = req_builder.header("Authorization", format!("Bearer {}", token));
                 }
@@ -268,8 +343,40 @@ impl ApiClient {
                 _ => {}
             }
 
-            if !request.body.is_empty() {
-                req_builder = req_builder.body(request.body.clone());
+            // Body handling — depends on body_ext mode.
+            match &request.body_ext {
+                None => {
+                    if !sub_body.is_empty() {
+                        req_builder = req_builder.body(sub_body.clone());
+                    }
+                }
+                Some(BodyExt::FormUrlEncoded { fields }) => {
+                    let pairs: Vec<(String, String)> = substitute_kvs(fields, env)
+                        .into_iter()
+                        .filter(|f| f.enabled && !f.key.is_empty())
+                        .map(|f| (f.key, f.value))
+                        .collect();
+                    req_builder = req_builder.form(&pairs);
+                }
+                Some(BodyExt::MultipartForm { fields }) => {
+                    let mut form = reqwest::multipart::Form::new();
+                    for f in substitute_kvs(fields, env) {
+                        if f.enabled && !f.key.is_empty() {
+                            form = form.text(f.key, f.value);
+                        }
+                    }
+                    req_builder = req_builder.multipart(form);
+                }
+                Some(BodyExt::GraphQL { variables }) => {
+                    let vars_value: serde_json::Value =
+                        serde_json::from_str(&substitute_vars(variables, env))
+                            .unwrap_or(serde_json::json!({}));
+                    let body_json = serde_json::json!({
+                        "query": sub_body,
+                        "variables": vars_value,
+                    });
+                    req_builder = req_builder.json(&body_json);
+                }
             }
 
             let start = std::time::Instant::now();
@@ -326,11 +433,15 @@ impl ApiClient {
             self.editing_url = r.url;
             self.editing_body = r.body;
             self.editing_name = r.name;
-            self.editing_method = r.method;
+            self.editing_method = r.method.clone();
             self.editing_headers = r.headers;
             self.editing_params = r.query_params;
             self.editing_cookies = r.cookies;
+            self.editing_body_ext = r.body_ext;
             self.editing_auth = r.auth;
+            self.editing_request_id_for_history = Some(r.id);
+            // Capture method for history entry too
+            let _ = r.method;
         }
     }
 
@@ -566,6 +677,7 @@ impl eframe::App for ApiClient {
                 self.response_headers = r.headers.clone();
                 self.is_loading = false;
                 self.request_promise = None;
+                self.push_history_entry();
             } else {
                 ctx.request_repaint();
             }
@@ -577,6 +689,7 @@ impl eframe::App for ApiClient {
         self.render_snippet_panel(ctx);
         self.render_central(ctx);
         self.render_paste_modal(ctx);
+        self.render_env_modal(ctx);
         self.render_toast(ctx);
     }
 }
@@ -609,13 +722,53 @@ impl ApiClient {
                             .color(C_TEXT),
                     );
                 });
-                ui.add_space(4.0);
-                ui.label(
-                    egui::RichText::new("Collections")
-                        .size(11.0)
-                        .color(C_MUTED),
-                );
+                ui.add_space(6.0);
+                self.render_environment_picker(ui);
                 ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    let v = self.sidebar_view;
+                    if ui
+                        .selectable_label(
+                            v == SidebarView::Collections,
+                            egui::RichText::new(format!(
+                                "Collections ({})",
+                                self.state.folders.len()
+                            ))
+                            .size(12.0)
+                            .strong()
+                            .color(if v == SidebarView::Collections {
+                                C_ACCENT
+                            } else {
+                                C_MUTED
+                            }),
+                        )
+                        .clicked()
+                    {
+                        self.sidebar_view = SidebarView::Collections;
+                    }
+                    ui.add_space(8.0);
+                    if ui
+                        .selectable_label(
+                            v == SidebarView::History,
+                            egui::RichText::new(format!("History ({})", self.state.history.len()))
+                                .size(12.0)
+                                .strong()
+                                .color(if v == SidebarView::History {
+                                    C_ACCENT
+                                } else {
+                                    C_MUTED
+                                }),
+                        )
+                        .clicked()
+                    {
+                        self.sidebar_view = SidebarView::History;
+                    }
+                });
+                ui.add_space(8.0);
+                if self.sidebar_view == SidebarView::History {
+                    self.render_history_view(ui);
+                    return;
+                }
 
                 if ui
                     .add_sized(
@@ -753,6 +906,321 @@ impl ApiClient {
                         }
                     });
             });
+    }
+
+    fn render_environment_picker(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new("Env").size(11.0).color(C_MUTED));
+            let active_name = self
+                .state
+                .active_env_id
+                .as_ref()
+                .and_then(|id| self.state.environments.iter().find(|e| &e.id == id))
+                .map(|e| e.name.clone())
+                .unwrap_or_else(|| "No env".to_string());
+            egui::ComboBox::from_id_salt("env_picker")
+                .selected_text(active_name)
+                .width(ui.available_width() - 70.0)
+                .show_ui(ui, |ui| {
+                    let mut new_id: Option<Option<String>> = None;
+                    if ui
+                        .selectable_label(self.state.active_env_id.is_none(), "No env")
+                        .clicked()
+                    {
+                        new_id = Some(None);
+                    }
+                    for env in &self.state.environments {
+                        let selected = self.state.active_env_id.as_deref() == Some(&env.id);
+                        if ui.selectable_label(selected, &env.name).clicked() {
+                            new_id = Some(Some(env.id.clone()));
+                        }
+                    }
+                    if let Some(v) = new_id {
+                        self.state.active_env_id = v;
+                        self.save_state();
+                    }
+                });
+            if ui
+                .add(
+                    egui::Button::new(egui::RichText::new("⚙").size(13.0))
+                        .min_size(egui::vec2(28.0, 24.0)),
+                )
+                .on_hover_text("Manage environments")
+                .clicked()
+            {
+                self.show_env_modal = true;
+                if self.selected_env_for_edit.is_none() {
+                    self.selected_env_for_edit =
+                        self.state.environments.first().map(|e| e.id.clone());
+                }
+            }
+        });
+    }
+
+    fn render_history_view(&mut self, ui: &mut egui::Ui) {
+        if self.state.history.is_empty() {
+            ui.add_space(20.0);
+            ui.vertical_centered(|ui| {
+                ui.label(
+                    egui::RichText::new("No requests sent yet.")
+                        .color(C_MUTED)
+                        .size(12.0),
+                );
+            });
+            return;
+        }
+        let mut clear = false;
+        ui.horizontal(|ui| {
+            ui.label(
+                egui::RichText::new(format!("{} entries (newest first)", self.state.history.len()))
+                    .size(11.0)
+                    .color(C_MUTED),
+            );
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui
+                    .small_button(egui::RichText::new("Clear").size(11.0).color(C_RED))
+                    .clicked()
+                {
+                    clear = true;
+                }
+            });
+        });
+        ui.add_space(4.0);
+
+        if clear {
+            self.state.history.clear();
+            self.save_state();
+            return;
+        }
+
+        egui::ScrollArea::vertical()
+            .id_salt("history_scroll")
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                let entries = self.state.history.clone();
+                for entry in &entries {
+                    let mc = method_color(&entry.method);
+                    let sc = status_color(&entry.status);
+                    let (rect, resp) = ui.allocate_exact_size(
+                        egui::vec2(ui.available_width(), 50.0),
+                        egui::Sense::click(),
+                    );
+                    if ui.is_rect_visible(rect) {
+                        let bg = if resp.hovered() {
+                            C_ELEVATED
+                        } else {
+                            egui::Color32::TRANSPARENT
+                        };
+                        ui.painter()
+                            .rect_filled(rect, egui::Rounding::same(6.0), bg);
+
+                        // Method pill
+                        let pill_w = 50.0;
+                        let pill_h = 18.0;
+                        let pill_rect = egui::Rect::from_min_size(
+                            egui::pos2(rect.left() + 8.0, rect.top() + 8.0),
+                            egui::vec2(pill_w, pill_h),
+                        );
+                        ui.painter()
+                            .rect_filled(pill_rect, egui::Rounding::same(4.0), mc);
+                        ui.painter().text(
+                            pill_rect.center(),
+                            egui::Align2::CENTER_CENTER,
+                            format!("{}", entry.method),
+                            egui::FontId::new(10.0, egui::FontFamily::Proportional),
+                            pill_text_color(mc),
+                        );
+
+                        // Status + time on the right of the pill row
+                        let info = format!("{}  ·  {}ms", entry.status, entry.time_ms);
+                        ui.painter().text(
+                            egui::pos2(pill_rect.right() + 8.0, pill_rect.center().y),
+                            egui::Align2::LEFT_CENTER,
+                            info,
+                            egui::FontId::new(11.0, egui::FontFamily::Proportional),
+                            sc,
+                        );
+
+                        // URL beneath
+                        let url_font = egui::FontId::new(11.5, egui::FontFamily::Proportional);
+                        let max_w = rect.width() - 16.0;
+                        let elided = elide(&entry.url, max_w, &url_font, ui);
+                        ui.painter().text(
+                            egui::pos2(rect.left() + 8.0, rect.top() + 33.0),
+                            egui::Align2::LEFT_TOP,
+                            elided,
+                            url_font,
+                            C_TEXT,
+                        );
+                    }
+                    ui.add_space(2.0);
+                }
+            });
+    }
+
+    fn render_env_modal(&mut self, ctx: &egui::Context) {
+        if !self.show_env_modal {
+            return;
+        }
+        let mut open = self.show_env_modal;
+        let mut close_modal = false;
+        let mut create_env = false;
+        let mut delete_id: Option<String> = None;
+
+        egui::Window::new("Environments")
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(true)
+            .default_width(560.0)
+            .default_height(420.0)
+            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    // Left column: env list
+                    ui.vertical(|ui| {
+                        ui.set_min_width(160.0);
+                        ui.set_max_width(160.0);
+                        ui.label(
+                            egui::RichText::new("Environments")
+                                .size(11.0)
+                                .strong()
+                                .color(C_MUTED),
+                        );
+                        ui.add_space(4.0);
+                        let envs = self.state.environments.clone();
+                        for env in &envs {
+                            let selected =
+                                self.selected_env_for_edit.as_deref() == Some(env.id.as_str());
+                            if ui
+                                .selectable_label(selected, &env.name)
+                                .clicked()
+                            {
+                                self.selected_env_for_edit = Some(env.id.clone());
+                            }
+                        }
+                        ui.add_space(6.0);
+                        if ui
+                            .add(
+                                egui::Button::new(
+                                    egui::RichText::new("+ New environment")
+                                        .size(11.0)
+                                        .color(C_ACCENT),
+                                )
+                                .fill(egui::Color32::TRANSPARENT)
+                                .stroke(egui::Stroke::new(1.0, C_BORDER)),
+                            )
+                            .clicked()
+                        {
+                            create_env = true;
+                        }
+                    });
+
+                    ui.separator();
+
+                    // Right column: editor for selected env
+                    ui.vertical(|ui| {
+                        let id = self.selected_env_for_edit.clone();
+                        let env_idx = id.as_ref().and_then(|id| {
+                            self.state.environments.iter().position(|e| &e.id == id)
+                        });
+                        if let Some(idx) = env_idx {
+                            let mut name = self.state.environments[idx].name.clone();
+                            ui.horizontal(|ui| {
+                                ui.label(
+                                    egui::RichText::new("Name")
+                                        .size(11.0)
+                                        .color(C_MUTED),
+                                );
+                                if ui
+                                    .add(
+                                        egui::TextEdit::singleline(&mut name)
+                                            .desired_width(ui.available_width() - 80.0),
+                                    )
+                                    .changed()
+                                {
+                                    self.state.environments[idx].name = name.clone();
+                                    self.save_state();
+                                }
+                                if ui
+                                    .add(
+                                        egui::Button::new(
+                                            egui::RichText::new("Delete").color(C_RED).size(11.0),
+                                        )
+                                        .fill(egui::Color32::TRANSPARENT)
+                                        .stroke(egui::Stroke::new(1.0, C_RED)),
+                                    )
+                                    .clicked()
+                                {
+                                    delete_id = Some(self.state.environments[idx].id.clone());
+                                }
+                            });
+                            ui.add_space(8.0);
+                            ui.label(
+                                egui::RichText::new("Variables  (use {{name}} in URL/headers/body)")
+                                    .size(11.0)
+                                    .color(C_MUTED),
+                            );
+                            ui.add_space(4.0);
+                            let mut vars =
+                                self.state.environments[idx].variables.clone();
+                            let changed = render_kv_table(ui, "Variables", &mut vars, false);
+                            if changed {
+                                self.state.environments[idx].variables = vars;
+                                self.save_state();
+                            }
+                        } else {
+                            ui.label(
+                                egui::RichText::new(
+                                    "Select an environment on the left, or create a new one.",
+                                )
+                                .color(C_MUTED),
+                            );
+                        }
+                    });
+                });
+
+                ui.separator();
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui
+                        .add(
+                            egui::Button::new(
+                                egui::RichText::new("Done").color(egui::Color32::WHITE).strong(),
+                            )
+                            .fill(C_ACCENT)
+                            .min_size(egui::vec2(80.0, 28.0)),
+                        )
+                        .clicked()
+                    {
+                        close_modal = true;
+                    }
+                });
+            });
+        self.show_env_modal = open;
+
+        if create_env {
+            let new = Environment {
+                id: Uuid::new_v4().to_string(),
+                name: format!("Environment {}", self.state.environments.len() + 1),
+                variables: vec![],
+            };
+            let new_id = new.id.clone();
+            self.state.environments.push(new);
+            self.selected_env_for_edit = Some(new_id);
+            self.save_state();
+        }
+        if let Some(id) = delete_id {
+            self.state.environments.retain(|e| e.id != id);
+            if self.state.active_env_id.as_deref() == Some(&id) {
+                self.state.active_env_id = None;
+            }
+            if self.selected_env_for_edit.as_deref() == Some(&id) {
+                self.selected_env_for_edit = self.state.environments.first().map(|e| e.id.clone());
+            }
+            self.save_state();
+        }
+        if close_modal {
+            self.show_env_modal = false;
+        }
     }
 
     fn render_central(&mut self, ctx: &egui::Context) {
@@ -1194,18 +1662,59 @@ impl ApiClient {
     }
 
     fn render_body_tab(&mut self, ui: &mut egui::Ui) {
+        let current_mode = match &self.editing_body_ext {
+            None => BodyMode::Raw,
+            Some(BodyExt::FormUrlEncoded { .. }) => BodyMode::FormUrlEncoded,
+            Some(BodyExt::MultipartForm { .. }) => BodyMode::MultipartForm,
+            Some(BodyExt::GraphQL { .. }) => BodyMode::GraphQL,
+        };
+        let mut new_mode = current_mode;
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new("Body type").size(11.0).color(C_MUTED));
+            for &m in &[
+                BodyMode::Raw,
+                BodyMode::FormUrlEncoded,
+                BodyMode::MultipartForm,
+                BodyMode::GraphQL,
+            ] {
+                ui.selectable_value(&mut new_mode, m, m.label());
+            }
+        });
+        if new_mode != current_mode {
+            self.editing_body_ext = match new_mode {
+                BodyMode::Raw => None,
+                BodyMode::FormUrlEncoded => Some(BodyExt::FormUrlEncoded { fields: vec![] }),
+                BodyMode::MultipartForm => Some(BodyExt::MultipartForm { fields: vec![] }),
+                BodyMode::GraphQL => Some(BodyExt::GraphQL {
+                    variables: String::new(),
+                }),
+            };
+            let body_ext = self.editing_body_ext.clone();
+            self.update_current_request(|r| r.body_ext = body_ext);
+        }
+        ui.add_space(8.0);
+
+        match new_mode {
+            BodyMode::Raw => self.render_body_raw(ui),
+            BodyMode::FormUrlEncoded => self.render_body_form(ui, false),
+            BodyMode::MultipartForm => self.render_body_form(ui, true),
+            BodyMode::GraphQL => self.render_body_graphql(ui),
+        }
+    }
+
+    fn render_body_raw(&mut self, ui: &mut egui::Ui) {
         let mut prettify = false;
         let mut minify = false;
         ui.horizontal(|ui| {
             if ui
-                .small_button(egui::RichText::new("✨ Prettify JSON").size(11.0))
+                .small_button(egui::RichText::new("Prettify JSON").size(11.0))
                 .on_hover_text("Format body as pretty JSON")
                 .clicked()
             {
                 prettify = true;
             }
             if ui
-                .small_button(egui::RichText::new("🗜 Minify").size(11.0))
+                .small_button(egui::RichText::new("Minify").size(11.0))
                 .on_hover_text("Collapse JSON to one line")
                 .clicked()
             {
@@ -1265,6 +1774,91 @@ impl ApiClient {
         {
             let body = self.editing_body.clone();
             self.update_current_request(|r| r.body = body);
+        }
+    }
+
+    fn render_body_form(&mut self, ui: &mut egui::Ui, multipart: bool) {
+        ui.label(
+            egui::RichText::new(if multipart {
+                "multipart/form-data fields (text only)"
+            } else {
+                "x-www-form-urlencoded fields"
+            })
+            .size(11.0)
+            .color(C_MUTED),
+        );
+        ui.add_space(4.0);
+        // Take ownership of the inner Vec<KvRow>, render the table, write back.
+        let mut fields = match &self.editing_body_ext {
+            Some(BodyExt::FormUrlEncoded { fields }) | Some(BodyExt::MultipartForm { fields }) => {
+                fields.clone()
+            }
+            _ => vec![],
+        };
+        let changed = render_kv_table(ui, "Fields", &mut fields, false);
+        if changed {
+            let new_ext = if multipart {
+                BodyExt::MultipartForm { fields }
+            } else {
+                BodyExt::FormUrlEncoded { fields }
+            };
+            self.editing_body_ext = Some(new_ext);
+            let body_ext = self.editing_body_ext.clone();
+            self.update_current_request(|r| r.body_ext = body_ext);
+        }
+    }
+
+    fn render_body_graphql(&mut self, ui: &mut egui::Ui) {
+        ui.label(
+            egui::RichText::new("Sent as JSON `{ query, variables }` with application/json.")
+                .size(11.0)
+                .color(C_MUTED),
+        );
+        ui.add_space(4.0);
+
+        let avail_h = ui.available_height();
+        let query_h = (avail_h * 0.6).max(80.0);
+        let vars_h = (avail_h - query_h - 30.0).max(60.0);
+
+        ui.label(egui::RichText::new("Query").size(11.0).strong().color(C_TEXT));
+        if ui
+            .add_sized(
+                [ui.available_width(), query_h],
+                egui::TextEdit::multiline(&mut self.editing_body)
+                    .code_editor()
+                    .hint_text("query MyQuery { ... }")
+                    .font(egui::TextStyle::Monospace),
+            )
+            .changed()
+        {
+            let body = self.editing_body.clone();
+            self.update_current_request(|r| r.body = body);
+        }
+
+        ui.add_space(6.0);
+        ui.label(
+            egui::RichText::new("Variables (JSON)")
+                .size(11.0)
+                .strong()
+                .color(C_TEXT),
+        );
+        let mut vars = match &self.editing_body_ext {
+            Some(BodyExt::GraphQL { variables }) => variables.clone(),
+            _ => String::new(),
+        };
+        if ui
+            .add_sized(
+                [ui.available_width(), vars_h],
+                egui::TextEdit::multiline(&mut vars)
+                    .code_editor()
+                    .hint_text("{ \"id\": 123 }")
+                    .font(egui::TextStyle::Monospace),
+            )
+            .changed()
+        {
+            self.editing_body_ext = Some(BodyExt::GraphQL { variables: vars });
+            let body_ext = self.editing_body_ext.clone();
+            self.update_current_request(|r| r.body_ext = body_ext);
         }
     }
 
@@ -1672,6 +2266,7 @@ impl ApiClient {
                         headers: vec![],
                         cookies: vec![],
                         body: String::new(),
+                        body_ext: None,
                         auth: Auth::None,
                     };
                     let new_id = new_req.id.clone();

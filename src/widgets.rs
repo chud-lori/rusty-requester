@@ -1,6 +1,33 @@
-use crate::model::{Folder, HttpMethod, KvRow};
+use crate::model::{Environment, Folder, HttpMethod, KvRow};
 use crate::theme::*;
 use eframe::egui;
+
+/// Replace `{{var}}` tokens in `text` with values from the active environment.
+pub fn substitute_vars(text: &str, env: Option<&Environment>) -> String {
+    let Some(env) = env else {
+        return text.to_string();
+    };
+    let mut out = text.to_string();
+    for v in &env.variables {
+        if v.enabled && !v.key.is_empty() {
+            let pat = format!("{{{{{}}}}}", v.key);
+            out = out.replace(&pat, &v.value);
+        }
+    }
+    out
+}
+
+/// Apply `{{var}}` substitution to every key/value in a list (returns a new vec).
+pub fn substitute_kvs(rows: &[KvRow], env: Option<&Environment>) -> Vec<KvRow> {
+    rows.iter()
+        .map(|r| KvRow {
+            enabled: r.enabled,
+            key: substitute_vars(&r.key, env),
+            value: substitute_vars(&r.value, env),
+            description: r.description.clone(),
+        })
+        .collect()
+}
 
 pub fn paint_x(
     painter: &egui::Painter,

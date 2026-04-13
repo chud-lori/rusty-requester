@@ -1,3 +1,5 @@
+pub mod curl;
+
 use crate::model::{Auth, Folder, HttpMethod, KvRow, Request};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -303,6 +305,7 @@ fn postman_to_request(name: &str, r: &PostmanRequest) -> Request {
         headers: filtered_headers,
         cookies: Vec::new(),
         body,
+        body_ext: None,
         auth: final_auth,
     }
 }
@@ -419,6 +422,7 @@ mod tests {
                 headers: vec![KvRow::new("X-Foo", "bar")],
                 cookies: vec![],
                 body: String::new(),
+                body_ext: None,
                 auth: Auth::None,
             }],
             subfolders: vec![],

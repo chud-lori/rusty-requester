@@ -23,7 +23,10 @@ Vibe-coded because I got tired of Postman's bloat and cloud sync I never wanted,
 - 🔗 Query-param builder with live "final URL" preview
 - 🍪 Cookies list (merged into a `Cookie` header on send)
 - 🔐 Auth presets: **No Auth · Bearer Token · Basic Auth**
+- 📦 **Body modes**: Raw / `x-www-form-urlencoded` / `multipart/form-data` / **GraphQL** (query + variables, sent as `application/json`)
 - ✨ **Prettify / Minify** JSON body (one-click)
+- 🌱 **Environment variables** — define key/value vars per environment, reference them anywhere with `{{varname}}`. Switch active env from the sidebar.
+- 📜 **Request history** — every send is logged (method, URL, status, time, response preview); browse the last 200 from the sidebar's History tab.
 
 ### Responses
 - 📊 Status code, response time, and **all response headers** displayed
@@ -153,6 +156,35 @@ to grab it.
 - **Sidebar → 📤 Export → Export all as JSON / YAML…** — dumps every collection into a single file (good for backups).
 - **Right-click any collection / folder → Export as JSON / YAML…** — exports just that subtree (this is the "collection-level" export for sharing).
 
+### Environment variables
+
+Use the **Env** dropdown at the top of the sidebar to switch between
+environments (e.g. *Local*, *Staging*, *Prod*). Click the **⚙** button next to
+it to open the **Environments** manager: add an environment, rename it, and
+fill in key/value pairs. Then reference any variable as `{{name}}` anywhere in
+your URL, query params, headers, cookies, body, or auth — substitution happens
+at send time.
+
+Example: set `host = api.staging.com` and `token = abc123`, then a request URL
+of `https://{{host}}/v1/users` with header `Authorization: Bearer {{token}}`
+will send to the right host with the right token, and you can switch the whole
+thing by changing the active environment.
+
+### Request history
+
+Every send is logged in the **History** tab in the sidebar — method, URL,
+status code, response time, and a 256-character preview of the body. The last
+200 entries are kept and persisted to disk. Hit **Clear** to wipe the log.
+
+### Body modes
+
+In the request's **Body** tab pick a mode:
+
+- **Raw** — what you'd expect; pair with a `Content-Type` header for JSON / XML / etc.
+- **x-www-form-urlencoded** — table of key/value fields, encoded as `key=val&...`.
+- **form-data** — same shape but sent as `multipart/form-data` (text fields only for now).
+- **GraphQL** — Query + Variables (JSON) editors. Sent as `{ "query": ..., "variables": ... }` with `application/json`.
+
 ### Searching
 
 Type in the **🔎 Search** box in the sidebar. It filters by request name, URL, HTTP method, and folder name in real time. Collections auto-expand while searching. Click **✕** to clear.
@@ -238,21 +270,34 @@ scripts/
 
 ## 🗺️ Roadmap
 
-- [x] cURL import / export
+**Shipped:**
+
+- [x] cURL import (paste in URL bar) / export (right-side code panel: cURL, Python, JS, HTTPie)
 - [x] Postman Collection v2.1 import
-- [x] JSON / YAML export & import
-- [x] Query parameter builder
+- [x] JSON / YAML export & import (per-collection or all)
+- [x] Query parameter builder (table layout with enable/disable + description)
 - [x] Cookies tab
 - [x] Bearer / Basic auth presets
-- [x] Response headers viewer
-- [x] Search
+- [x] Response headers viewer (separate Body / Headers tabs)
+- [x] Search across requests, URLs, methods, folder names
 - [x] Subfolders
-- [ ] Request history
-- [ ] Environment variables
-- [ ] Request chaining / pre-request scripts
-- [ ] GraphQL support
-- [ ] WebSocket testing
-- [ ] Form-data / urlencoded body modes
+- [x] **Form-data / urlencoded body modes**
+- [x] **GraphQL body mode** — query + variables, sent as `application/json`
+- [x] **Environment variables** — `{{var}}` substitution with active env selector + manage modal
+- [x] **Request history** — last 200 sends with preview, accessible from sidebar
+- [x] Postman-style request tabs (open multiple requests, switch with one click)
+- [x] Inline rename via double-click
+
+**In progress / planned:**
+
+- [ ] **WebSocket testing** — needs a separate connection lifecycle and message-log UI;
+      the plan is to add a `RequestKind::WebSocket` mode using `tokio-tungstenite` with a
+      send box + scrolling message log per request.
+- [ ] **Request chaining / pre-request scripts** — needs an embedded scripting engine.
+      The lightweight first step is *post-response extractors*: simple JSONPath / regex
+      rules that capture a value from a response into an environment variable, so the
+      next request can `{{token}}` it. Full JS-style scripts (with Rhai or Boa) are
+      a stretch goal.
 
 ---
 
@@ -268,11 +313,6 @@ scripts/
 ## 📝 License
 
 MIT — see [`LICENSE`](./LICENSE).
-
-## 🙏 Acknowledgments
-
-- [egui](https://github.com/emilk/egui) by Emil Ernerfeldt — the reason this is so fast
-- [Tokyo Night](https://github.com/enkia/tokyo-night-vscode-theme) — color palette inspiration
 
 ## 📬 Contact
 

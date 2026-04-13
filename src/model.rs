@@ -13,8 +13,43 @@ pub struct Request {
     #[serde(default)]
     pub cookies: Vec<KvRow>,
     pub body: String,
+    /// When `body_ext` is present, the body content / encoding is determined
+    /// by it. When absent, `body` is used as raw text.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body_ext: Option<BodyExt>,
     #[serde(default)]
     pub auth: Auth,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(tag = "type")]
+pub enum BodyExt {
+    /// Sent as `application/x-www-form-urlencoded` with keys/values from `fields`.
+    FormUrlEncoded { fields: Vec<KvRow> },
+    /// Sent as `multipart/form-data` with text-only parts from `fields`.
+    MultipartForm { fields: Vec<KvRow> },
+    /// Sent as JSON `{"query": <body>, "variables": <parsed variables>}`
+    /// with `application/json` content type.
+    GraphQL { variables: String },
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum BodyMode {
+    Raw,
+    FormUrlEncoded,
+    MultipartForm,
+    GraphQL,
+}
+
+impl BodyMode {
+    pub fn label(&self) -> &'static str {
+        match self {
+            BodyMode::Raw => "Raw",
+            BodyMode::FormUrlEncoded => "x-www-form-urlencoded",
+            BodyMode::MultipartForm => "form-data",
+            BodyMode::GraphQL => "GraphQL",
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -64,7 +99,7 @@ impl From<&Auth> for AuthKind {
     }
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, PartialEq)]
 pub struct KvRow {
     pub enabled: bool,
     pub key: String,
@@ -145,6 +180,33 @@ pub struct Folder {
 #[derive(Serialize, Deserialize, Default)]
 pub struct AppState {
     pub folders: Vec<Folder>,
+    #[serde(default)]
+    pub environments: Vec<Environment>,
+    #[serde(default)]
+    pub active_env_id: Option<String>,
+    #[serde(default)]
+    pub history: Vec<HistoryEntry>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Environment {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub variables: Vec<KvRow>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct HistoryEntry {
+    pub id: String,
+    /// Unix epoch seconds.
+    pub timestamp: i64,
+    pub method: HttpMethod,
+    pub url: String,
+    pub status: String,
+    pub time_ms: u64,
+    /// Up to ~256 chars of the response body, for preview.
+    pub response_preview: String,
 }
 
 #[derive(Clone, Debug)]
@@ -166,6 +228,12 @@ pub enum RequestTab {
 pub enum ResponseTab {
     Body,
     Headers,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum SidebarView {
+    Collections,
+    History,
 }
 
 pub struct ResponseData {
