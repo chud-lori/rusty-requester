@@ -233,10 +233,6 @@ src/
 
 ---
 
-## 📝 License
-
-MIT — see `LICENSE`.
-
 ## 🙏 Acknowledgments
 
 - [egui](https://github.com/emilk/egui) by Emil Ernerfeldt — the reason this is so fast
@@ -245,7 +241,3 @@ MIT — see `LICENSE`.
 ## 📬 Contact
 
 Created by [@chud-lori](https://github.com/chud-lori).
-
----
-
-**Made with 🦀 and ❤️ in Rust**

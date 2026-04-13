@@ -86,6 +86,12 @@ struct AppState {
     folders: Vec<Folder>,
 }
 
+#[derive(Clone, Debug)]
+struct OpenTab {
+    folder_path: Vec<String>,
+    request_id: String,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum RequestTab {
     Params,
@@ -154,6 +160,11 @@ struct ApiClient {
     focus_search_next_frame: bool,
 
     app_icon: Option<egui::TextureHandle>,
+
+    open_tabs: Vec<OpenTab>,
+
+    renaming_request_id: Option<String>,
+    rename_request_text: String,
 }
 
 impl Default for ApiClient {
@@ -208,6 +219,9 @@ impl Default for ApiClient {
             toast: None,
             focus_search_next_frame: false,
             app_icon: None,
+            open_tabs: vec![],
+            renaming_request_id: None,
+            rename_request_text: String::new(),
         }
     }
 }
@@ -441,6 +455,122 @@ impl ApiClient {
         self.toast = Some((msg.into(), 2.5));
     }
 
+    fn open_request(&mut self, folder_path: Vec<String>, request_id: String) {
+        if let Some(existing) = self.open_tabs.iter().position(|t| t.request_id == request_id) {
+            let tab = self.open_tabs[existing].clone();
+            self.selected_folder_path = tab.folder_path;
+            self.selected_request_id = Some(tab.request_id);
+        } else {
+            self.open_tabs.push(OpenTab {
+                folder_path: folder_path.clone(),
+                request_id: request_id.clone(),
+            });
+            self.selected_folder_path = folder_path;
+            self.selected_request_id = Some(request_id);
+        }
+        self.load_request_for_editing();
+        self.response_text.clear();
+        self.response_status.clear();
+        self.response_time.clear();
+        self.response_headers.clear();
+    }
+
+    fn close_tab(&mut self, idx: usize) {
+        if idx >= self.open_tabs.len() {
+            return;
+        }
+        let closing = self.open_tabs.remove(idx);
+        let was_active = self.selected_request_id.as_deref() == Some(closing.request_id.as_str());
+        if was_active {
+            if self.open_tabs.is_empty() {
+                self.clear_selection();
+            } else {
+                let new_idx = idx.min(self.open_tabs.len() - 1);
+                let tab = self.open_tabs[new_idx].clone();
+                self.selected_folder_path = tab.folder_path;
+                self.selected_request_id = Some(tab.request_id);
+                self.load_request_for_editing();
+                self.response_text.clear();
+                self.response_status.clear();
+                self.response_time.clear();
+                self.response_headers.clear();
+            }
+        }
+    }
+
+    fn close_other_tabs(&mut self, keep_idx: usize) {
+        if keep_idx >= self.open_tabs.len() {
+            return;
+        }
+        let keep = self.open_tabs.remove(keep_idx);
+        self.open_tabs.clear();
+        self.open_tabs.push(keep.clone());
+        self.selected_folder_path = keep.folder_path;
+        self.selected_request_id = Some(keep.request_id);
+        self.load_request_for_editing();
+    }
+
+    fn close_all_tabs(&mut self) {
+        self.open_tabs.clear();
+        self.clear_selection();
+    }
+
+    fn prune_stale_tabs(&mut self) {
+        let folders = &self.state.folders;
+        self.open_tabs
+            .retain(|t| find_request_info(folders, &t.folder_path, &t.request_id).is_some());
+        if let Some(rid) = self.selected_request_id.clone() {
+            if !self.open_tabs.iter().any(|t| t.request_id == rid) {
+                if let Some(first) = self.open_tabs.first().cloned() {
+                    self.selected_folder_path = first.folder_path;
+                    self.selected_request_id = Some(first.request_id);
+                    self.load_request_for_editing();
+                } else {
+                    self.clear_selection();
+                }
+            }
+        }
+    }
+
+    fn clear_selection(&mut self) {
+        self.selected_folder_path.clear();
+        self.selected_request_id = None;
+        self.editing_name.clear();
+        self.editing_url.clear();
+        self.editing_body.clear();
+        self.editing_headers.clear();
+        self.editing_params.clear();
+        self.editing_cookies.clear();
+        self.editing_auth = Auth::None;
+        self.response_text.clear();
+        self.response_status.clear();
+        self.response_time.clear();
+        self.response_headers.clear();
+    }
+
+    fn rename_request(&mut self, request_id: &str, new_name: String) {
+        fn go(folders: &mut Vec<Folder>, id: &str, name: &str) -> bool {
+            for f in folders {
+                for r in f.requests.iter_mut() {
+                    if r.id == id {
+                        r.name = name.to_string();
+                        return true;
+                    }
+                }
+                if go(&mut f.subfolders, id, name) {
+                    return true;
+                }
+            }
+            false
+        }
+        if go(&mut self.state.folders, request_id, &new_name) {
+            if self.selected_request_id.as_deref() == Some(request_id) {
+                self.editing_name = new_name;
+            }
+            self.save_state();
+        }
+    }
+
     fn do_import_file(&mut self) {
         let path = rfd::FileDialog::new()
             .add_filter("Collections", &["json", "yaml", "yml"])
@@ -659,6 +789,7 @@ impl eframe::App for ApiClient {
         self.render_sidebar(ctx);
         self.render_central(ctx);
         self.render_paste_modal(ctx);
+        self.render_rename_request_modal(ctx);
         self.render_toast(ctx);
     }
 }
@@ -842,9 +973,10 @@ impl ApiClient {
             .frame(
                 egui::Frame::none()
                     .fill(C_BG)
-                    .inner_margin(egui::Margin::symmetric(14.0, 10.0)),
+                    .inner_margin(egui::Margin::symmetric(0.0, 0.0)),
             )
             .show(ctx, |ui| {
+            self.render_tabs_bar(ui);
             if self.selected_request_id.is_none() {
                 ui.centered_and_justified(|ui| {
                     ui.vertical_centered(|ui| {
@@ -876,70 +1008,161 @@ impl ApiClient {
                 return;
             }
 
-            ui.add_space(10.0);
-            self.render_name_bar(ui);
-            ui.add_space(8.0);
-            self.render_url_bar(ui);
-            ui.add_space(10.0);
-            self.render_request_tabs(ui);
-            ui.add_space(10.0);
-            self.render_response(ui);
+            egui::Frame::none()
+                .inner_margin(egui::Margin::symmetric(14.0, 10.0))
+                .show(ui, |ui| {
+                    self.render_url_bar(ui);
+                    ui.add_space(10.0);
+                    self.render_request_tabs(ui);
+                    ui.add_space(10.0);
+                    self.render_response(ui);
+                });
         });
     }
 
-    fn render_name_bar(&mut self, ui: &mut egui::Ui) {
+    fn render_tabs_bar(&mut self, ui: &mut egui::Ui) {
+        // Always-rendered top bar (height stays constant even when empty)
+        let bar_height = 38.0;
         egui::Frame::none()
-            .fill(C_PANEL)
-            .inner_margin(12.0)
-            .rounding(10.0)
-            .stroke(egui::Stroke::new(1.0, C_BORDER))
+            .fill(C_PANEL_DARK)
+            .inner_margin(egui::Margin {
+                left: 10.0,
+                right: 10.0,
+                top: 4.0,
+                bottom: 0.0,
+            })
             .show(ui, |ui| {
+                ui.set_min_height(bar_height);
+                ui.set_max_height(bar_height);
+
+                let mut activate: Option<usize> = None;
+                let mut close: Option<usize> = None;
+                let mut close_others: Option<usize> = None;
+                let mut close_all = false;
+
                 ui.horizontal(|ui| {
-                    ui.label(
-                        egui::RichText::new("Name")
-                            .size(13.0)
-                            .color(C_ACCENT),
-                    );
-                    let avail = ui.available_width();
+                    ui.spacing_mut().item_spacing.x = 4.0;
+                    egui::ScrollArea::horizontal()
+                        .id_salt("tabs_bar_scroll")
+                        .auto_shrink([false, false])
+                        .scroll_bar_visibility(
+                            egui::scroll_area::ScrollBarVisibility::AlwaysHidden,
+                        )
+                        .show(ui, |ui| {
+                            ui.horizontal(|ui| {
+                                ui.spacing_mut().item_spacing.x = 4.0;
+                                let tabs_snapshot = self.open_tabs.clone();
+                                for (i, tab) in tabs_snapshot.iter().enumerate() {
+                                    let info = find_request_info(
+                                        &self.state.folders,
+                                        &tab.folder_path,
+                                        &tab.request_id,
+                                    );
+                                    let (method, name) = info
+                                        .clone()
+                                        .unwrap_or((HttpMethod::GET, "(missing)".to_string()));
+                                    let is_active = self.selected_request_id.as_deref()
+                                        == Some(tab.request_id.as_str());
+
+                                    let action =
+                                        render_single_tab(ui, i, &method, &name, is_active);
+                                    match action {
+                                        TabAction::Activate => activate = Some(i),
+                                        TabAction::Close => close = Some(i),
+                                        TabAction::CloseOthers => close_others = Some(i),
+                                        TabAction::CloseAll => close_all = true,
+                                        TabAction::None => {}
+                                    }
+                                }
+                            });
+                        });
+                });
+
+                if let Some(i) = activate {
+                    if let Some(tab) = self.open_tabs.get(i).cloned() {
+                        self.selected_folder_path = tab.folder_path;
+                        self.selected_request_id = Some(tab.request_id);
+                        self.load_request_for_editing();
+                        self.response_text.clear();
+                        self.response_status.clear();
+                        self.response_time.clear();
+                        self.response_headers.clear();
+                    }
+                }
+                if let Some(i) = close {
+                    self.close_tab(i);
+                }
+                if let Some(i) = close_others {
+                    self.close_other_tabs(i);
+                }
+                if close_all {
+                    self.close_all_tabs();
+                }
+            });
+    }
+
+    fn render_rename_request_modal(&mut self, ctx: &egui::Context) {
+        let Some(rename_id) = self.renaming_request_id.clone() else {
+            return;
+        };
+        let mut do_save = false;
+        let mut do_cancel = false;
+        let mut open = true;
+        egui::Window::new("Rename request")
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .show(ctx, |ui| {
+                ui.set_min_width(360.0);
+                let resp = ui.add(
+                    egui::TextEdit::singleline(&mut self.rename_request_text)
+                        .desired_width(f32::INFINITY)
+                        .hint_text("Request name"),
+                );
+                if !resp.has_focus() {
+                    resp.request_focus();
+                }
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
                     if ui
                         .add(
-                            egui::TextEdit::singleline(&mut self.editing_name)
-                                .desired_width(avail - 90.0)
-                                .font(egui::TextStyle::Body),
+                            egui::Button::new(
+                                egui::RichText::new("Save").color(egui::Color32::WHITE).strong(),
+                            )
+                            .fill(C_ACCENT)
+                            .min_size(egui::vec2(80.0, 28.0)),
                         )
-                        .changed()
+                        .clicked()
                     {
-                        let name = self.editing_name.clone();
-                        self.update_current_request(|req| req.name = name);
+                        do_save = true;
                     }
-                    let delete_btn = egui::Button::new(
-                        egui::RichText::new("🗑 Delete").size(12.0).color(egui::Color32::WHITE),
-                    )
-                    .fill(C_RED)
-                    .stroke(egui::Stroke::NONE);
-
-                    if ui.add(delete_btn).clicked() {
-                        if let Some(req_id) = self.selected_request_id.clone() {
-                            if let Some(folder) = self.get_current_folder_mut() {
-                                folder.requests.retain(|r| r.id != req_id);
-                            }
-                            self.save_state();
-                            self.selected_request_id = None;
-                            self.editing_name.clear();
-                            self.editing_url.clear();
-                            self.editing_body.clear();
-                            self.editing_headers.clear();
-                            self.editing_params.clear();
-                            self.editing_cookies.clear();
-                            self.editing_auth = Auth::None;
-                            self.response_text.clear();
-                            self.response_status.clear();
-                            self.response_time.clear();
-                            self.response_headers.clear();
-                        }
+                    if ui.button("Cancel").clicked() {
+                        do_cancel = true;
+                    }
+                });
+                ui.input(|i| {
+                    if i.key_pressed(egui::Key::Enter) {
+                        do_save = true;
+                    }
+                    if i.key_pressed(egui::Key::Escape) {
+                        do_cancel = true;
                     }
                 });
             });
+        if !open {
+            do_cancel = true;
+        }
+        if do_save {
+            let new_name = self.rename_request_text.trim().to_string();
+            if !new_name.is_empty() {
+                self.rename_request(&rename_id, new_name);
+            }
+            self.renaming_request_id = None;
+        }
+        if do_cancel {
+            self.renaming_request_id = None;
+        }
     }
 
     fn render_url_bar(&mut self, ui: &mut egui::Ui) {
@@ -1690,12 +1913,8 @@ impl ApiClient {
                 folder.requests.push(req);
             }
             self.save_state();
-            self.selected_request_id = Some(new_id);
-            self.load_request_for_editing();
-            self.response_text.clear();
-            self.response_status.clear();
-            self.response_time.clear();
-            self.response_headers.clear();
+            let p = self.selected_folder_path.clone();
+            self.open_request(p, new_id);
             self.show_paste_modal = false;
             self.show_toast("Request imported");
         }
@@ -1777,6 +1996,7 @@ impl ApiClient {
                         body: String::new(),
                         auth: Auth::None,
                     };
+                    let new_id = new_req.id.clone();
 
                     self.selected_folder_path = path.clone();
 
@@ -1784,6 +2004,7 @@ impl ApiClient {
                         f.requests.push(new_req);
                     }
                     self.save_state();
+                    self.open_request(path.clone(), new_id);
                 }
 
                 if ui
@@ -1889,22 +2110,23 @@ impl ApiClient {
                 }
 
                 if resp.clicked() {
-                    self.selected_folder_path = path.clone();
-                    self.selected_request_id = Some(req.id.clone());
-                    self.load_request_for_editing();
-                    self.response_text.clear();
-                    self.response_status.clear();
-                    self.response_time.clear();
-                    self.response_headers.clear();
+                    self.open_request(path.clone(), req.id.clone());
                 }
+                let req_id_for_menu = req.id.clone();
+                let req_name_for_menu = req.name.clone();
                 resp.context_menu(|ui| {
+                    if ui.button("✏ Rename").clicked() {
+                        self.renaming_request_id = Some(req_id_for_menu.clone());
+                        self.rename_request_text = req_name_for_menu.clone();
+                        ui.close_menu();
+                    }
                     if ui.button("📋 Duplicate").clicked() {
-                        to_duplicate = Some(req.id.clone());
+                        to_duplicate = Some(req_id_for_menu.clone());
                         ui.close_menu();
                     }
                     ui.separator();
                     if ui.button("🗑 Delete").clicked() {
-                        to_delete = Some(req.id.clone());
+                        to_delete = Some(req_id_for_menu.clone());
                         ui.close_menu();
                     }
                 });
@@ -1926,8 +2148,8 @@ impl ApiClient {
                 }
                 self.save_state();
                 if let Some(new_id) = new_req_opt {
-                    self.selected_request_id = Some(new_id);
-                    self.load_request_for_editing();
+                    let p = path.clone();
+                    self.open_request(p, new_id);
                     self.show_toast("Request duplicated");
                 }
             }
@@ -1937,17 +2159,8 @@ impl ApiClient {
                 if let Some(f) = self.get_current_folder_mut() {
                     f.requests.retain(|r| r.id != del_id);
                 }
-                if self.selected_request_id.as_deref() == Some(del_id.as_str()) {
-                    self.selected_request_id = None;
-                    self.editing_name.clear();
-                    self.editing_url.clear();
-                    self.editing_body.clear();
-                    self.editing_headers.clear();
-                    self.editing_params.clear();
-                    self.editing_cookies.clear();
-                    self.editing_auth = Auth::None;
-                }
                 self.save_state();
+                self.prune_stale_tabs();
             }
 
             for subfolder in &folder.subfolders {
@@ -2078,8 +2291,7 @@ impl ApiClient {
         }
         if go(&mut self.state.folders, folder_id) {
             self.save_state();
-            self.selected_folder_path.clear();
-            self.selected_request_id = None;
+            self.prune_stale_tabs();
         }
     }
 }
@@ -2121,6 +2333,153 @@ fn tab_button<T: PartialEq + Copy>(
     if resp.clicked() {
         *current = value;
     }
+}
+
+#[derive(Clone, Copy)]
+enum TabAction {
+    None,
+    Activate,
+    Close,
+    CloseOthers,
+    CloseAll,
+}
+
+fn render_single_tab(
+    ui: &mut egui::Ui,
+    idx: usize,
+    method: &HttpMethod,
+    name: &str,
+    is_active: bool,
+) -> TabAction {
+    let tab_height = 32.0;
+    let tab_width = 180.0;
+    let (rect, resp) = ui.allocate_exact_size(
+        egui::vec2(tab_width, tab_height),
+        egui::Sense::click(),
+    );
+
+    let mut action = TabAction::None;
+
+    if ui.is_rect_visible(rect) {
+        let bg = if is_active {
+            C_BG
+        } else if resp.hovered() {
+            C_ELEVATED
+        } else {
+            C_PANEL
+        };
+        let rounding = egui::Rounding {
+            nw: 8.0,
+            ne: 8.0,
+            sw: 0.0,
+            se: 0.0,
+        };
+        ui.painter().rect_filled(rect, rounding, bg);
+
+        if is_active {
+            let top = egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), 2.0));
+            ui.painter().rect_filled(top, rounding, C_ACCENT);
+        }
+
+        let mc = method_color(method);
+        let method_str = format!("{}", method);
+        let method_font = egui::FontId::new(10.0, egui::FontFamily::Proportional);
+        let pad_left = rect.left() + 12.0;
+        let mid_y = rect.center().y;
+
+        let method_galley = ui.fonts(|f| {
+            f.layout_no_wrap(method_str.clone(), method_font.clone(), mc)
+        });
+        let method_w = method_galley.size().x;
+        ui.painter().text(
+            egui::pos2(pad_left, mid_y),
+            egui::Align2::LEFT_CENTER,
+            method_str,
+            method_font,
+            mc,
+        );
+
+        let name_x = pad_left + method_w + 8.0;
+        let name_color = if is_active { C_TEXT } else { C_MUTED };
+        let name_font = egui::FontId::new(12.0, egui::FontFamily::Proportional);
+        let max_w = (rect.right() - 28.0) - name_x;
+        let display = elide(name, max_w.max(0.0), &name_font, ui);
+        ui.painter().text(
+            egui::pos2(name_x, mid_y),
+            egui::Align2::LEFT_CENTER,
+            display,
+            name_font,
+            name_color,
+        );
+    }
+
+    let close_rect = egui::Rect::from_min_size(
+        egui::pos2(rect.right() - 22.0, rect.center().y - 9.0),
+        egui::vec2(18.0, 18.0),
+    );
+    let close_resp = ui.interact(
+        close_rect,
+        ui.make_persistent_id(format!("tab_close_{}", idx)),
+        egui::Sense::click(),
+    );
+    if ui.is_rect_visible(close_rect) {
+        if close_resp.hovered() {
+            ui.painter()
+                .rect_filled(close_rect, egui::Rounding::same(4.0), C_RED.linear_multiply(0.35));
+        }
+        ui.painter().text(
+            close_rect.center(),
+            egui::Align2::CENTER_CENTER,
+            "✕",
+            egui::FontId::new(11.0, egui::FontFamily::Proportional),
+            if close_resp.hovered() { C_RED } else { C_MUTED },
+        );
+    }
+
+    if close_resp.clicked() {
+        action = TabAction::Close;
+    } else if resp.clicked() {
+        let click_pos = ui.input(|i| i.pointer.interact_pos()).unwrap_or_default();
+        if !close_rect.contains(click_pos) {
+            action = TabAction::Activate;
+        }
+    }
+
+    resp.context_menu(|ui| {
+        if ui.button("✕ Close").clicked() {
+            action = TabAction::Close;
+            ui.close_menu();
+        }
+        if ui.button("Close others").clicked() {
+            action = TabAction::CloseOthers;
+            ui.close_menu();
+        }
+        if ui.button("Close all").clicked() {
+            action = TabAction::CloseAll;
+            ui.close_menu();
+        }
+    });
+
+    action
+}
+
+fn find_request_info(
+    folders: &[Folder],
+    folder_path: &[String],
+    request_id: &str,
+) -> Option<(HttpMethod, String)> {
+    if folder_path.is_empty() {
+        return None;
+    }
+    let mut folder = folders.iter().find(|f| f.id == folder_path[0])?;
+    for id in &folder_path[1..] {
+        folder = folder.subfolders.iter().find(|f| &f.id == id)?;
+    }
+    folder
+        .requests
+        .iter()
+        .find(|r| r.id == request_id)
+        .map(|r| (r.method.clone(), r.name.clone()))
 }
 
 fn elide(text: &str, max_width: f32, font: &egui::FontId, ui: &egui::Ui) -> String {
