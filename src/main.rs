@@ -16,13 +16,83 @@ pub struct Request {
     pub method: HttpMethod,
     pub url: String,
     #[serde(default)]
-    pub query_params: Vec<(String, String)>,
-    pub headers: Vec<(String, String)>,
+    pub query_params: Vec<KvRow>,
     #[serde(default)]
-    pub cookies: Vec<(String, String)>,
+    pub headers: Vec<KvRow>,
+    #[serde(default)]
+    pub cookies: Vec<KvRow>,
     pub body: String,
     #[serde(default)]
     pub auth: Auth,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct KvRow {
+    pub enabled: bool,
+    pub key: String,
+    pub value: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub description: String,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl KvRow {
+    pub fn new(key: impl Into<String>, value: impl Into<String>) -> Self {
+        Self {
+            enabled: true,
+            key: key.into(),
+            value: value.into(),
+            description: String::new(),
+        }
+    }
+
+    pub fn empty() -> Self {
+        Self::new("", "")
+    }
+
+    pub fn is_blank(&self) -> bool {
+        self.key.is_empty() && self.value.is_empty()
+    }
+}
+
+impl<'de> Deserialize<'de> for KvRow {
+    fn deserialize<D>(d: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Either {
+            Tuple(String, String),
+            Struct {
+                #[serde(default = "default_true")]
+                enabled: bool,
+                #[serde(default)]
+                key: String,
+                #[serde(default)]
+                value: String,
+                #[serde(default)]
+                description: String,
+            },
+        }
+        match Either::deserialize(d)? {
+            Either::Tuple(k, v) => Ok(KvRow::new(k, v)),
+            Either::Struct {
+                enabled,
+                key,
+                value,
+                description,
+            } => Ok(KvRow {
+                enabled,
+                key,
+                value,
+                description,
+            }),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -86,6 +156,169 @@ struct AppState {
     folders: Vec<Folder>,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SnippetLang {
+    Curl,
+    Python,
+    JavaScript,
+    HttpieShell,
+}
+
+impl SnippetLang {
+    fn label(&self) -> &'static str {
+        match self {
+            SnippetLang::Curl => "cURL",
+            SnippetLang::Python => "Python (requests)",
+            SnippetLang::JavaScript => "JavaScript (fetch)",
+            SnippetLang::HttpieShell => "HTTPie",
+        }
+    }
+}
+
+fn render_snippet(req: &Request, lang: SnippetLang) -> String {
+    match lang {
+        SnippetLang::Curl => curl::to_curl(req),
+        SnippetLang::Python => snippet_python(req),
+        SnippetLang::JavaScript => snippet_javascript(req),
+        SnippetLang::HttpieShell => snippet_httpie(req),
+    }
+}
+
+fn collect_send_headers(req: &Request) -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = req
+        .headers
+        .iter()
+        .filter(|h| h.enabled && !h.key.trim().is_empty())
+        .map(|h| (h.key.clone(), h.value.clone()))
+        .collect();
+    match &req.auth {
+        Auth::Bearer { token } if !token.is_empty() => {
+            out.push(("Authorization".into(), format!("Bearer {}", token)));
+        }
+        _ => {}
+    }
+    out
+}
+
+fn snippet_python(req: &Request) -> String {
+    let mut s = String::new();
+    s.push_str("import requests\n\n");
+    let url = curl::build_full_url(&req.url, &req.query_params);
+    s.push_str(&format!("url = {:?}\n", url));
+    let headers = collect_send_headers(req);
+    if !headers.is_empty() {
+        s.push_str("headers = {\n");
+        for (k, v) in &headers {
+            s.push_str(&format!("    {:?}: {:?},\n", k, v));
+        }
+        s.push_str("}\n");
+    } else {
+        s.push_str("headers = {}\n");
+    }
+    let cookies: Vec<(&String, &String)> = req
+        .cookies
+        .iter()
+        .filter(|c| c.enabled && !c.key.is_empty())
+        .map(|c| (&c.key, &c.value))
+        .collect();
+    if !cookies.is_empty() {
+        s.push_str("cookies = {\n");
+        for (k, v) in &cookies {
+            s.push_str(&format!("    {:?}: {:?},\n", k, v));
+        }
+        s.push_str("}\n");
+    }
+    let mut auth_arg = String::new();
+    if let Auth::Basic { username, password } = &req.auth {
+        if !username.is_empty() {
+            auth_arg = format!(", auth=({:?}, {:?})", username, password);
+        }
+    }
+    let cookies_arg = if cookies.is_empty() { "" } else { ", cookies=cookies" };
+    let method = format!("{}", req.method).to_lowercase();
+    if !req.body.is_empty() {
+        s.push_str(&format!("payload = {:?}\n\n", req.body));
+        s.push_str(&format!(
+            "response = requests.{}(url, headers=headers{}{}, data=payload)\n",
+            method, cookies_arg, auth_arg
+        ));
+    } else {
+        s.push_str(&format!(
+            "\nresponse = requests.{}(url, headers=headers{}{})\n",
+            method, cookies_arg, auth_arg
+        ));
+    }
+    s.push_str("print(response.status_code)\nprint(response.text)\n");
+    s
+}
+
+fn snippet_javascript(req: &Request) -> String {
+    let mut s = String::new();
+    let url = curl::build_full_url(&req.url, &req.query_params);
+    s.push_str(&format!("const url = {:?};\n\n", url));
+    s.push_str("const options = {\n");
+    s.push_str(&format!("  method: {:?},\n", req.method.to_string()));
+    let headers = collect_send_headers(req);
+    let cookies: Vec<String> = req
+        .cookies
+        .iter()
+        .filter(|c| c.enabled && !c.key.is_empty())
+        .map(|c| format!("{}={}", c.key, c.value))
+        .collect();
+    let mut header_lines: Vec<String> = headers
+        .iter()
+        .map(|(k, v)| format!("    {:?}: {:?}", k, v))
+        .collect();
+    if !cookies.is_empty() {
+        header_lines.push(format!("    \"Cookie\": {:?}", cookies.join("; ")));
+    }
+    if !header_lines.is_empty() {
+        s.push_str("  headers: {\n");
+        s.push_str(&header_lines.join(",\n"));
+        s.push_str(",\n  },\n");
+    }
+    if !req.body.is_empty() {
+        s.push_str(&format!("  body: {:?},\n", req.body));
+    }
+    s.push_str("};\n\n");
+    s.push_str("fetch(url, options)\n");
+    s.push_str("  .then((res) => res.text())\n");
+    s.push_str("  .then(console.log)\n");
+    s.push_str("  .catch(console.error);\n");
+    s
+}
+
+fn snippet_httpie(req: &Request) -> String {
+    let mut parts: Vec<String> = vec!["http".into(), format!("{}", req.method)];
+    let url = curl::build_full_url(&req.url, &req.query_params);
+    parts.push(format!("'{}'", url.replace('\'', "'\\''")));
+    for (k, v) in collect_send_headers(req) {
+        parts.push(format!("'{}:{}'", k, v));
+    }
+    if let Auth::Basic { username, password } = &req.auth {
+        if !username.is_empty() {
+            parts.push(format!("--auth='{}:{}'", username, password));
+        }
+    }
+    let cookies: Vec<String> = req
+        .cookies
+        .iter()
+        .filter(|c| c.enabled && !c.key.is_empty())
+        .map(|c| format!("{}={}", c.key, c.value))
+        .collect();
+    if !cookies.is_empty() {
+        parts.push(format!("'Cookie:{}'", cookies.join("; ")));
+    }
+    let mut s = parts.join(" ");
+    if !req.body.is_empty() {
+        s.push_str(&format!(
+            "\n# body (use --raw or pipe stdin):\n# echo {:?} | http ...",
+            req.body
+        ));
+    }
+    s
+}
+
 #[derive(Clone, Debug)]
 struct OpenTab {
     folder_path: Vec<String>,
@@ -119,12 +352,6 @@ struct ApiClient {
     selected_folder_path: Vec<String>,
     selected_request_id: Option<String>,
 
-    new_header_key: String,
-    new_header_value: String,
-    new_param_key: String,
-    new_param_value: String,
-    new_cookie_key: String,
-    new_cookie_value: String,
     search_query: String,
 
     response_text: String,
@@ -137,9 +364,9 @@ struct ApiClient {
     editing_body: String,
     editing_name: String,
     editing_method: HttpMethod,
-    editing_headers: Vec<(String, String)>,
-    editing_params: Vec<(String, String)>,
-    editing_cookies: Vec<(String, String)>,
+    editing_headers: Vec<KvRow>,
+    editing_params: Vec<KvRow>,
+    editing_cookies: Vec<KvRow>,
     editing_auth: Auth,
 
     storage_path: PathBuf,
@@ -155,6 +382,9 @@ struct ApiClient {
     show_paste_modal: bool,
     paste_curl_text: String,
     paste_error: String,
+
+    show_snippet_modal: bool,
+    snippet_lang: SnippetLang,
 
     toast: Option<(String, f32)>,
     focus_search_next_frame: bool,
@@ -187,12 +417,6 @@ impl Default for ApiClient {
             state,
             selected_folder_path: vec![],
             selected_request_id: None,
-            new_header_key: String::new(),
-            new_header_value: String::new(),
-            new_param_key: String::new(),
-            new_param_value: String::new(),
-            new_cookie_key: String::new(),
-            new_cookie_value: String::new(),
             search_query: String::new(),
             response_text: String::new(),
             response_status: String::new(),
@@ -216,6 +440,8 @@ impl Default for ApiClient {
             show_paste_modal: false,
             paste_curl_text: String::new(),
             paste_error: String::new(),
+            show_snippet_modal: false,
+            snippet_lang: SnippetLang::Curl,
             toast: None,
             focus_search_next_frame: false,
             app_icon: None,
@@ -353,19 +579,19 @@ impl ApiClient {
             };
 
             let mut cookie_parts: Vec<String> = Vec::new();
-            for (key, value) in &request.headers {
-                if key.trim().is_empty() {
+            for h in &request.headers {
+                if !h.enabled || h.key.trim().is_empty() {
                     continue;
                 }
-                if key.eq_ignore_ascii_case("cookie") {
-                    cookie_parts.push(value.clone());
+                if h.key.eq_ignore_ascii_case("cookie") {
+                    cookie_parts.push(h.value.clone());
                     continue;
                 }
-                req_builder = req_builder.header(key, value);
+                req_builder = req_builder.header(&h.key, &h.value);
             }
-            for (k, v) in &request.cookies {
-                if !k.is_empty() {
-                    cookie_parts.push(format!("{}={}", k, v));
+            for c in &request.cookies {
+                if c.enabled && !c.key.is_empty() {
+                    cookie_parts.push(format!("{}={}", c.key, c.value));
                 }
             }
             if !cookie_parts.is_empty() {
@@ -790,6 +1016,7 @@ impl eframe::App for ApiClient {
         self.render_central(ctx);
         self.render_paste_modal(ctx);
         self.render_rename_request_modal(ctx);
+        self.render_snippet_modal(ctx);
         self.render_toast(ctx);
     }
 }
@@ -1101,6 +1328,91 @@ impl ApiClient {
             });
     }
 
+    fn render_snippet_modal(&mut self, ctx: &egui::Context) {
+        if !self.show_snippet_modal {
+            return;
+        }
+        let req = match self.get_current_request() {
+            Some(r) => r,
+            None => {
+                self.show_snippet_modal = false;
+                return;
+            }
+        };
+        let mut open = self.show_snippet_modal;
+        let snippet = render_snippet(&req, self.snippet_lang);
+
+        egui::Window::new("Code snippet")
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(true)
+            .default_width(640.0)
+            .default_height(440.0)
+            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(
+                        egui::RichText::new("Language")
+                            .color(C_MUTED)
+                            .size(11.0),
+                    );
+                    egui::ComboBox::from_id_salt("snippet_lang")
+                        .selected_text(self.snippet_lang.label())
+                        .show_ui(ui, |ui| {
+                            for &lang in &[
+                                SnippetLang::Curl,
+                                SnippetLang::Python,
+                                SnippetLang::JavaScript,
+                                SnippetLang::HttpieShell,
+                            ] {
+                                ui.selectable_value(&mut self.snippet_lang, lang, lang.label());
+                            }
+                        });
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui
+                            .add(
+                                egui::Button::new(
+                                    egui::RichText::new("📋 Copy")
+                                        .color(egui::Color32::WHITE)
+                                        .strong(),
+                                )
+                                .fill(C_ACCENT)
+                                .min_size(egui::vec2(80.0, 28.0)),
+                            )
+                            .clicked()
+                        {
+                            ui.output_mut(|o| o.copied_text = snippet.clone());
+                            self.show_toast("Snippet copied");
+                        }
+                    });
+                });
+                ui.add_space(8.0);
+                egui::Frame::none()
+                    .fill(C_PANEL_DARK)
+                    .stroke(egui::Stroke::new(1.0, C_BORDER))
+                    .rounding(egui::Rounding::same(8.0))
+                    .inner_margin(10.0)
+                    .show(ui, |ui| {
+                        let avail_h = ui.available_height();
+                        egui::ScrollArea::vertical()
+                            .id_salt("snippet_scroll")
+                            .auto_shrink([false, false])
+                            .max_height(avail_h)
+                            .show(ui, |ui| {
+                                let mut text = snippet.clone();
+                                ui.add(
+                                    egui::TextEdit::multiline(&mut text)
+                                        .code_editor()
+                                        .interactive(false)
+                                        .desired_width(f32::INFINITY)
+                                        .font(egui::TextStyle::Monospace),
+                                );
+                            });
+                    });
+            });
+        self.show_snippet_modal = open;
+    }
+
     fn render_rename_request_modal(&mut self, ctx: &egui::Context) {
         let Some(rename_id) = self.renaming_request_id.clone() else {
             return;
@@ -1242,19 +1554,15 @@ impl ApiClient {
 
                     if ui
                         .add(
-                            egui::Button::new(egui::RichText::new("📋 cURL").size(12.0))
+                            egui::Button::new(egui::RichText::new("</> Code").size(12.0))
                                 .fill(C_BORDER)
-                                .min_size(egui::vec2(70.0, 28.0)),
+                                .min_size(egui::vec2(74.0, 28.0)),
                         )
-                        .on_hover_text("Copy as cURL")
+                        .on_hover_text("View as cURL / Python / JS / HTTPie")
                         .clicked()
                     {
                         self.commit_editing();
-                        if let Some(req) = self.get_current_request() {
-                            let text = curl::to_curl(&req);
-                            ui.output_mut(|o| o.copied_text = text);
-                            self.show_toast("Copied as cURL");
-                        }
+                        self.show_snippet_modal = true;
                     }
 
                     if ui
@@ -1336,128 +1644,23 @@ impl ApiClient {
     }
 
     fn render_params_tab(&mut self, ui: &mut egui::Ui) {
-        let mut changed = false;
-        let mut to_remove = None;
-        for (i, (k, v)) in self.editing_params.iter_mut().enumerate() {
-            ui.horizontal(|ui| {
-                if ui
-                    .add(
-                        egui::TextEdit::singleline(k)
-                            .desired_width(160.0)
-                            .hint_text("Key"),
-                    )
-                    .changed()
-                {
-                    changed = true;
-                }
-                if ui
-                    .add(
-                        egui::TextEdit::singleline(v)
-                            .desired_width(ui.available_width() - 40.0)
-                            .hint_text("Value"),
-                    )
-                    .changed()
-                {
-                    changed = true;
-                }
-                if ui.small_button("🗑").clicked() {
-                    to_remove = Some(i);
-                }
-            });
-        }
-        if let Some(i) = to_remove {
-            self.editing_params.remove(i);
-            changed = true;
-        }
-        ui.add_space(6.0);
-        ui.horizontal(|ui| {
-            ui.add(
-                egui::TextEdit::singleline(&mut self.new_param_key)
-                    .desired_width(160.0)
-                    .hint_text("New key"),
-            );
-            ui.add(
-                egui::TextEdit::singleline(&mut self.new_param_value)
-                    .desired_width(ui.available_width() - 90.0)
-                    .hint_text("New value"),
-            );
-            if ui.button("➕ Add").clicked() && !self.new_param_key.is_empty() {
-                self.editing_params
-                    .push((self.new_param_key.clone(), self.new_param_value.clone()));
-                self.new_param_key.clear();
-                self.new_param_value.clear();
-                changed = true;
-            }
-        });
+        let final_url = curl::build_full_url(&self.editing_url, &self.editing_params);
+        let changed = render_kv_table(ui, "Query Params", &mut self.editing_params, true);
+        ui.add_space(8.0);
+        ui.label(
+            egui::RichText::new(format!("Final URL: {}", final_url))
+                .size(11.0)
+                .color(C_MUTED),
+        );
+        // Trim trailing blank if user typed in it (it stays as a real entry now)
         if changed {
             let params = self.editing_params.clone();
             self.update_current_request(|r| r.query_params = params);
         }
-        ui.add_space(6.0);
-        ui.label(
-            egui::RichText::new(format!(
-                "Final URL: {}",
-                curl::build_full_url(&self.editing_url, &self.editing_params)
-            ))
-            .size(11.0)
-            .color(C_MUTED),
-        );
     }
 
     fn render_headers_tab(&mut self, ui: &mut egui::Ui) {
-        let mut changed = false;
-        let mut to_remove = None;
-        for (i, (k, v)) in self.editing_headers.iter_mut().enumerate() {
-            ui.horizontal(|ui| {
-                if ui
-                    .add(
-                        egui::TextEdit::singleline(k)
-                            .desired_width(160.0)
-                            .hint_text("Key"),
-                    )
-                    .changed()
-                {
-                    changed = true;
-                }
-                if ui
-                    .add(
-                        egui::TextEdit::singleline(v)
-                            .desired_width(ui.available_width() - 40.0)
-                            .hint_text("Value"),
-                    )
-                    .changed()
-                {
-                    changed = true;
-                }
-                if ui.small_button("🗑").clicked() {
-                    to_remove = Some(i);
-                }
-            });
-        }
-        if let Some(i) = to_remove {
-            self.editing_headers.remove(i);
-            changed = true;
-        }
-        ui.add_space(6.0);
-        ui.horizontal(|ui| {
-            ui.add(
-                egui::TextEdit::singleline(&mut self.new_header_key)
-                    .desired_width(160.0)
-                    .hint_text("New key"),
-            );
-            ui.add(
-                egui::TextEdit::singleline(&mut self.new_header_value)
-                    .desired_width(ui.available_width() - 90.0)
-                    .hint_text("New value"),
-            );
-            if ui.button("➕ Add").clicked() && !self.new_header_key.is_empty() {
-                self.editing_headers
-                    .push((self.new_header_key.clone(), self.new_header_value.clone()));
-                self.new_header_key.clear();
-                self.new_header_value.clear();
-                changed = true;
-            }
-        });
+        let changed = render_kv_table(ui, "Headers", &mut self.editing_headers, true);
         if changed {
             let headers = self.editing_headers.clone();
             self.update_current_request(|r| r.headers = headers);
@@ -1541,64 +1744,12 @@ impl ApiClient {
 
     fn render_cookies_tab(&mut self, ui: &mut egui::Ui) {
         ui.label(
-            egui::RichText::new("Cookies listed here are merged into a Cookie header on send.")
+            egui::RichText::new("Cookies are merged into a Cookie header on send.")
                 .size(11.0)
                 .color(C_MUTED),
         );
-        ui.add_space(6.0);
-        let mut changed = false;
-        let mut to_remove = None;
-        for (i, (k, v)) in self.editing_cookies.iter_mut().enumerate() {
-            ui.horizontal(|ui| {
-                if ui
-                    .add(
-                        egui::TextEdit::singleline(k)
-                            .desired_width(160.0)
-                            .hint_text("Name"),
-                    )
-                    .changed()
-                {
-                    changed = true;
-                }
-                if ui
-                    .add(
-                        egui::TextEdit::singleline(v)
-                            .desired_width(ui.available_width() - 40.0)
-                            .hint_text("Value"),
-                    )
-                    .changed()
-                {
-                    changed = true;
-                }
-                if ui.small_button("🗑").clicked() {
-                    to_remove = Some(i);
-                }
-            });
-        }
-        if let Some(i) = to_remove {
-            self.editing_cookies.remove(i);
-            changed = true;
-        }
-        ui.add_space(6.0);
-        ui.horizontal(|ui| {
-            ui.add(
-                egui::TextEdit::singleline(&mut self.new_cookie_key)
-                    .desired_width(160.0)
-                    .hint_text("New name"),
-            );
-            ui.add(
-                egui::TextEdit::singleline(&mut self.new_cookie_value)
-                    .desired_width(ui.available_width() - 90.0)
-                    .hint_text("New value"),
-            );
-            if ui.button("➕ Add").clicked() && !self.new_cookie_key.is_empty() {
-                self.editing_cookies
-                    .push((self.new_cookie_key.clone(), self.new_cookie_value.clone()));
-                self.new_cookie_key.clear();
-                self.new_cookie_value.clear();
-                changed = true;
-            }
-        });
+        ui.add_space(4.0);
+        let changed = render_kv_table(ui, "Cookies", &mut self.editing_cookies, false);
         if changed {
             let cookies = self.editing_cookies.clone();
             self.update_current_request(|r| r.cookies = cookies);
@@ -2423,17 +2574,16 @@ fn render_single_tab(
         egui::Sense::click(),
     );
     if ui.is_rect_visible(close_rect) {
-        if close_resp.hovered() {
-            ui.painter()
-                .rect_filled(close_rect, egui::Rounding::same(4.0), C_RED.linear_multiply(0.35));
+        let hovered = close_resp.hovered();
+        if hovered {
+            ui.painter().rect_filled(
+                close_rect,
+                egui::Rounding::same(4.0),
+                C_RED.linear_multiply(0.35),
+            );
         }
-        ui.painter().text(
-            close_rect.center(),
-            egui::Align2::CENTER_CENTER,
-            "✕",
-            egui::FontId::new(11.0, egui::FontFamily::Proportional),
-            if close_resp.hovered() { C_RED } else { C_MUTED },
-        );
+        let color = if hovered { C_RED } else { C_MUTED };
+        paint_x(ui.painter(), close_rect.center(), 4.0, color, 1.5);
     }
 
     if close_resp.clicked() {
@@ -2446,7 +2596,7 @@ fn render_single_tab(
     }
 
     resp.context_menu(|ui| {
-        if ui.button("✕ Close").clicked() {
+        if ui.button("Close").clicked() {
             action = TabAction::Close;
             ui.close_menu();
         }
@@ -2461,6 +2611,198 @@ fn render_single_tab(
     });
 
     action
+}
+
+fn render_kv_table(
+    ui: &mut egui::Ui,
+    title: &str,
+    rows: &mut Vec<KvRow>,
+    show_description: bool,
+) -> bool {
+    let mut changed = false;
+
+    ui.label(
+        egui::RichText::new(title)
+            .size(11.0)
+            .strong()
+            .color(C_MUTED),
+    );
+    ui.add_space(4.0);
+
+    // Always keep one empty placeholder row at the bottom for fast adding
+    if rows.last().map(|r| !r.is_blank()).unwrap_or(true) {
+        rows.push(KvRow::empty());
+    }
+
+    let avail = ui.available_width();
+    let cb_w = 22.0;
+    let del_w = 22.0;
+    let key_w = 200.0;
+    let row_h = 24.0;
+    let cell_pad = 6.0;
+    let (val_w, desc_w) = if show_description {
+        let total = (avail - cb_w - key_w - del_w - cell_pad * 4.0).max(200.0);
+        (total * 0.55, total * 0.45)
+    } else {
+        let val = avail - cb_w - key_w - del_w - cell_pad * 3.0;
+        (val.max(150.0), 0.0)
+    };
+
+    // Header
+    ui.horizontal(|ui| {
+        ui.add_space(cb_w + cell_pad);
+        ui.label(
+            egui::RichText::new("KEY")
+                .size(10.0)
+                .color(C_MUTED),
+        );
+        ui.add_space(key_w - 20.0);
+        ui.label(
+            egui::RichText::new("VALUE")
+                .size(10.0)
+                .color(C_MUTED),
+        );
+        if show_description {
+            ui.add_space(val_w - 30.0);
+            ui.label(
+                egui::RichText::new("DESCRIPTION")
+                    .size(10.0)
+                    .color(C_MUTED),
+            );
+        }
+    });
+    ui.add_space(2.0);
+    ui.painter().line_segment(
+        [
+            egui::pos2(ui.cursor().left(), ui.cursor().top()),
+            egui::pos2(
+                ui.cursor().left() + ui.available_width(),
+                ui.cursor().top(),
+            ),
+        ],
+        egui::Stroke::new(1.0, C_BORDER.linear_multiply(0.6)),
+    );
+    ui.add_space(4.0);
+
+    let mut to_remove: Option<usize> = None;
+    let row_count = rows.len();
+    for (i, row) in rows.iter_mut().enumerate() {
+        let is_blank = row.is_blank();
+        let is_last_blank = is_blank && i == row_count - 1;
+        ui.horizontal(|ui| {
+            // Checkbox (use blank when placeholder)
+            if is_last_blank {
+                ui.add_space(cb_w);
+            } else {
+                let cb = ui.add(egui::Checkbox::new(&mut row.enabled, ""));
+                if cb.changed() {
+                    changed = true;
+                }
+            }
+            ui.add_space(cell_pad);
+
+            // Key
+            let key_resp = ui.add_sized(
+                [key_w, row_h],
+                egui::TextEdit::singleline(&mut row.key)
+                    .hint_text(if is_last_blank { "Key" } else { "" })
+                    .frame(false)
+                    .text_color(if row.enabled { C_TEXT } else { C_MUTED }),
+            );
+            if key_resp.changed() {
+                changed = true;
+            }
+            ui.add_space(cell_pad);
+
+            // Value
+            let val_resp = ui.add_sized(
+                [val_w, row_h],
+                egui::TextEdit::singleline(&mut row.value)
+                    .hint_text(if is_last_blank { "Value" } else { "" })
+                    .frame(false)
+                    .text_color(if row.enabled { C_TEXT } else { C_MUTED }),
+            );
+            if val_resp.changed() {
+                changed = true;
+            }
+
+            // Description
+            if show_description {
+                ui.add_space(cell_pad);
+                let desc_resp = ui.add_sized(
+                    [desc_w, row_h],
+                    egui::TextEdit::singleline(&mut row.description)
+                        .hint_text(if is_last_blank { "Description" } else { "" })
+                        .frame(false)
+                        .text_color(if row.enabled { C_TEXT } else { C_MUTED }),
+                );
+                if desc_resp.changed() {
+                    changed = true;
+                }
+            }
+
+            // Delete (hidden for placeholder)
+            ui.add_space(cell_pad);
+            if is_last_blank {
+                ui.add_space(del_w);
+            } else if close_x_button(ui, "Remove row").clicked() {
+                to_remove = Some(i);
+            }
+        });
+        // Subtle separator between rows
+        let sep_y = ui.cursor().top();
+        ui.painter().line_segment(
+            [
+                egui::pos2(ui.cursor().left(), sep_y),
+                egui::pos2(ui.cursor().left() + ui.available_width(), sep_y),
+            ],
+            egui::Stroke::new(1.0, C_BORDER.linear_multiply(0.3)),
+        );
+        ui.add_space(2.0);
+    }
+
+    if let Some(i) = to_remove {
+        rows.remove(i);
+        changed = true;
+    }
+
+    changed
+}
+
+fn paint_x(painter: &egui::Painter, center: egui::Pos2, half: f32, color: egui::Color32, width: f32) {
+    let stroke = egui::Stroke::new(width, color);
+    painter.line_segment(
+        [
+            egui::pos2(center.x - half, center.y - half),
+            egui::pos2(center.x + half, center.y + half),
+        ],
+        stroke,
+    );
+    painter.line_segment(
+        [
+            egui::pos2(center.x - half, center.y + half),
+            egui::pos2(center.x + half, center.y - half),
+        ],
+        stroke,
+    );
+}
+
+fn close_x_button(ui: &mut egui::Ui, hover_text: &str) -> egui::Response {
+    let size = egui::vec2(20.0, 20.0);
+    let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::click());
+    if ui.is_rect_visible(rect) {
+        let hovered = resp.hovered();
+        if hovered {
+            ui.painter().rect_filled(
+                rect,
+                egui::Rounding::same(4.0),
+                C_RED.linear_multiply(0.35),
+            );
+        }
+        let color = if hovered { C_RED } else { C_MUTED };
+        paint_x(ui.painter(), rect.center(), 4.0, color, 1.5);
+    }
+    resp.on_hover_text(hover_text)
 }
 
 fn find_request_info(

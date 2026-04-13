@@ -1,4 +1,4 @@
-use crate::{Auth, HttpMethod, Request};
+use crate::{Auth, HttpMethod, KvRow, Request};
 use uuid::Uuid;
 
 pub fn to_curl(req: &Request) -> String {
@@ -9,11 +9,11 @@ pub fn to_curl(req: &Request) -> String {
     let full_url = build_full_url(&req.url, &req.query_params);
     parts.push(format!("'{}'", esc(&full_url)));
 
-    for (k, v) in &req.headers {
-        if k.trim().is_empty() {
+    for h in &req.headers {
+        if !h.enabled || h.key.trim().is_empty() {
             continue;
         }
-        parts.push(format!("-H '{}: {}'", esc(k), esc(v)));
+        parts.push(format!("-H '{}: {}'", esc(&h.key), esc(&h.value)));
     }
 
     match &req.auth {
@@ -26,17 +26,15 @@ pub fn to_curl(req: &Request) -> String {
         _ => {}
     }
 
-    if !req.cookies.is_empty() {
-        let cookie_str = req
-            .cookies
-            .iter()
-            .filter(|(k, _)| !k.is_empty())
-            .map(|(k, v)| format!("{}={}", k, v))
-            .collect::<Vec<_>>()
-            .join("; ");
-        if !cookie_str.is_empty() {
-            parts.push(format!("-b '{}'", esc(&cookie_str)));
-        }
+    let cookie_str = req
+        .cookies
+        .iter()
+        .filter(|c| c.enabled && !c.key.is_empty())
+        .map(|c| format!("{}={}", c.key, c.value))
+        .collect::<Vec<_>>()
+        .join("; ");
+    if !cookie_str.is_empty() {
+        parts.push(format!("-b '{}'", esc(&cookie_str)));
     }
 
     if !req.body.is_empty() {
@@ -46,14 +44,17 @@ pub fn to_curl(req: &Request) -> String {
     parts.join(" \\\n  ")
 }
 
-pub fn build_full_url(base: &str, params: &[(String, String)]) -> String {
-    let enabled: Vec<&(String, String)> = params.iter().filter(|(k, _)| !k.is_empty()).collect();
+pub fn build_full_url(base: &str, params: &[KvRow]) -> String {
+    let enabled: Vec<&KvRow> = params
+        .iter()
+        .filter(|p| p.enabled && !p.key.is_empty())
+        .collect();
     if enabled.is_empty() {
         return base.to_string();
     }
     let query = enabled
         .iter()
-        .map(|(k, v)| format!("{}={}", url_encode(k), url_encode(v)))
+        .map(|p| format!("{}={}", url_encode(&p.key), url_encode(&p.value)))
         .collect::<Vec<_>>()
         .join("&");
     let sep = if base.contains('?') { '&' } else { '?' };
@@ -85,8 +86,8 @@ pub fn parse_curl(input: &str) -> Result<Request, String> {
 
     let mut method: Option<HttpMethod> = None;
     let mut url: Option<String> = None;
-    let mut headers: Vec<(String, String)> = Vec::new();
-    let mut cookies: Vec<(String, String)> = Vec::new();
+    let mut headers: Vec<KvRow> = Vec::new();
+    let mut cookies: Vec<KvRow> = Vec::new();
     let mut body = String::new();
     let mut auth = Auth::None;
     let mut data_given = false;
@@ -106,7 +107,7 @@ pub fn parse_curl(input: &str) -> Result<Request, String> {
                 i += 1;
                 if i < tokens.len() {
                     if let Some((k, v)) = split_header(&tokens[i]) {
-                        headers.push((k, v));
+                        headers.push(KvRow::new(k, v));
                     }
                 }
             }
@@ -149,7 +150,7 @@ pub fn parse_curl(input: &str) -> Result<Request, String> {
             "-A" | "--user-agent" => {
                 i += 1;
                 if i < tokens.len() {
-                    headers.push(("User-Agent".to_string(), tokens[i].clone()));
+                    headers.push(KvRow::new("User-Agent", tokens[i].clone()));
                 }
             }
             "-b" | "--cookie" => {
@@ -161,7 +162,7 @@ pub fn parse_curl(input: &str) -> Result<Request, String> {
                             continue;
                         }
                         if let Some((k, v)) = part.split_once('=') {
-                            cookies.push((k.trim().to_string(), v.trim().to_string()));
+                            cookies.push(KvRow::new(k.trim(), v.trim()));
                         }
                     }
                 }
@@ -169,7 +170,7 @@ pub fn parse_curl(input: &str) -> Result<Request, String> {
             "-e" | "--referer" => {
                 i += 1;
                 if i < tokens.len() {
-                    headers.push(("Referer".to_string(), tokens[i].clone()));
+                    headers.push(KvRow::new("Referer", tokens[i].clone()));
                 }
             }
             "-I" | "--head" => {
@@ -203,19 +204,23 @@ pub fn parse_curl(input: &str) -> Result<Request, String> {
 
     let method = method.unwrap_or(if data_given { HttpMethod::POST } else { HttpMethod::GET });
 
-    // Detect Bearer in Authorization header
-    let mut filtered_headers: Vec<(String, String)> = Vec::new();
-    for (k, v) in headers {
-        if k.eq_ignore_ascii_case("Authorization") {
-            let trimmed = v.trim();
-            if let Some(rest) = trimmed.strip_prefix("Bearer ").or_else(|| trimmed.strip_prefix("bearer ")) {
+    let mut filtered_headers: Vec<KvRow> = Vec::new();
+    for h in headers {
+        if h.key.eq_ignore_ascii_case("Authorization") {
+            let trimmed = h.value.trim();
+            if let Some(rest) = trimmed
+                .strip_prefix("Bearer ")
+                .or_else(|| trimmed.strip_prefix("bearer "))
+            {
                 if matches!(auth, Auth::None) {
-                    auth = Auth::Bearer { token: rest.to_string() };
+                    auth = Auth::Bearer {
+                        token: rest.to_string(),
+                    };
                     continue;
                 }
             }
         }
-        filtered_headers.push((k, v));
+        filtered_headers.push(h);
     }
 
     Ok(Request {
@@ -249,7 +254,7 @@ fn split_header(s: &str) -> Option<(String, String)> {
     Some((k.trim().to_string(), v.trim().to_string()))
 }
 
-fn split_url(full: &str) -> (String, Vec<(String, String)>) {
+fn split_url(full: &str) -> (String, Vec<KvRow>) {
     match full.split_once('?') {
         None => (full.to_string(), Vec::new()),
         Some((base, query)) => {
@@ -257,8 +262,8 @@ fn split_url(full: &str) -> (String, Vec<(String, String)>) {
                 .split('&')
                 .filter(|p| !p.is_empty())
                 .map(|p| match p.split_once('=') {
-                    Some((k, v)) => (url_decode(k), url_decode(v)),
-                    None => (url_decode(p), String::new()),
+                    Some((k, v)) => KvRow::new(url_decode(k), url_decode(v)),
+                    None => KvRow::new(url_decode(p), ""),
                 })
                 .collect();
             (base.to_string(), params)
@@ -425,8 +430,8 @@ mod tests {
             name: "n".into(),
             method: HttpMethod::POST,
             url: "https://a.com".into(),
-            query_params: vec![("q".into(), "1".into())],
-            headers: vec![("X-Foo".into(), "bar".into())],
+            query_params: vec![KvRow::new("q", "1")],
+            headers: vec![KvRow::new("X-Foo", "bar")],
             cookies: vec![],
             body: "{}".into(),
             auth: Auth::None,

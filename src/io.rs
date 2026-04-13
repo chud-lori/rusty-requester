@@ -1,4 +1,4 @@
-use crate::{Auth, Folder, HttpMethod, Request};
+use crate::{Auth, Folder, HttpMethod, KvRow, Request};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::Path;
@@ -149,7 +149,8 @@ struct PostmanRequest {
     header: Vec<PostmanHeader>,
     #[serde(default)]
     body: Option<PostmanBody>,
-    url: Option<PostmanUrl>,
+    #[serde(default)]
+    url: serde_json::Value,
     #[serde(default)]
     auth: Option<PostmanAuth>,
 }
@@ -172,26 +173,49 @@ struct PostmanBody {
     raw: String,
 }
 
-#[derive(Deserialize)]
-#[serde(untagged)]
-enum PostmanUrl {
-    Str(String),
-    Obj {
-        #[serde(default)]
-        raw: String,
-        #[serde(default)]
-        query: Vec<PostmanQuery>,
-    },
-}
-
-#[derive(Deserialize)]
-struct PostmanQuery {
-    #[serde(default)]
-    key: String,
-    #[serde(default)]
-    value: String,
-    #[serde(default)]
-    disabled: bool,
+fn parse_postman_url(v: &serde_json::Value) -> (String, Vec<KvRow>) {
+    match v {
+        serde_json::Value::String(s) => split_url_basic(s),
+        serde_json::Value::Object(obj) => {
+            let raw = obj
+                .get("raw")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let query: Vec<KvRow> = obj
+                .get("query")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|q| {
+                            let key = q.get("key").and_then(|k| k.as_str())?.to_string();
+                            let value = q
+                                .get("value")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            let disabled = q
+                                .get("disabled")
+                                .and_then(|d| d.as_bool())
+                                .unwrap_or(false);
+                            Some(KvRow {
+                                enabled: !disabled,
+                                key,
+                                value,
+                                description: String::new(),
+                            })
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            if query.is_empty() {
+                split_url_basic(&raw)
+            } else {
+                (strip_query(&raw), query)
+            }
+        }
+        _ => (String::new(), Vec::new()),
+    }
 }
 
 #[derive(Deserialize)]
@@ -243,29 +267,18 @@ fn process_item(item: &PostmanItem, parent: &mut Folder) {
 fn postman_to_request(name: &str, r: &PostmanRequest) -> Request {
     let method = parse_method(&r.method);
 
-    let (url, query_params) = match &r.url {
-        None => (String::new(), Vec::new()),
-        Some(PostmanUrl::Str(s)) => split_url_basic(s),
-        Some(PostmanUrl::Obj { raw, query }) => {
-            let params: Vec<(String, String)> = query
-                .iter()
-                .filter(|q| !q.disabled)
-                .map(|q| (q.key.clone(), q.value.clone()))
-                .collect();
-            let base = strip_query(raw);
-            if params.is_empty() {
-                split_url_basic(raw)
-            } else {
-                (base, params)
-            }
-        }
-    };
+    let (url, query_params) = parse_postman_url(&r.url);
 
-    let headers: Vec<(String, String)> = r
+    let headers: Vec<KvRow> = r
         .header
         .iter()
-        .filter(|h| !h.disabled && !h.key.is_empty())
-        .map(|h| (h.key.clone(), h.value.clone()))
+        .filter(|h| !h.key.is_empty())
+        .map(|h| KvRow {
+            enabled: !h.disabled,
+            key: h.key.clone(),
+            value: h.value.clone(),
+            description: String::new(),
+        })
         .collect();
 
     let body = match &r.body {
@@ -330,15 +343,12 @@ fn extract_auth(extra: &serde_json::Map<String, Value>, section: &str, key: &str
     }
 }
 
-fn promote_auth_header(
-    headers: Vec<(String, String)>,
-    auth: Auth,
-) -> (Vec<(String, String)>, Auth) {
+fn promote_auth_header(headers: Vec<KvRow>, auth: Auth) -> (Vec<KvRow>, Auth) {
     let mut out = Vec::with_capacity(headers.len());
     let mut final_auth = auth;
-    for (k, v) in headers {
-        if k.eq_ignore_ascii_case("Authorization") && matches!(final_auth, Auth::None) {
-            let trimmed = v.trim();
+    for h in headers {
+        if h.key.eq_ignore_ascii_case("Authorization") && matches!(final_auth, Auth::None) {
+            let trimmed = h.value.trim();
             if let Some(rest) = trimmed
                 .strip_prefix("Bearer ")
                 .or_else(|| trimmed.strip_prefix("bearer "))
@@ -349,7 +359,7 @@ fn promote_auth_header(
                 continue;
             }
         }
-        out.push((k, v));
+        out.push(h);
     }
     (out, final_auth)
 }
@@ -374,7 +384,7 @@ fn strip_query(url: &str) -> String {
     }
 }
 
-fn split_url_basic(full: &str) -> (String, Vec<(String, String)>) {
+fn split_url_basic(full: &str) -> (String, Vec<KvRow>) {
     match full.split_once('?') {
         None => (full.to_string(), Vec::new()),
         Some((base, query)) => {
@@ -382,8 +392,8 @@ fn split_url_basic(full: &str) -> (String, Vec<(String, String)>) {
                 .split('&')
                 .filter(|p| !p.is_empty())
                 .map(|p| match p.split_once('=') {
-                    Some((k, v)) => (k.to_string(), v.to_string()),
-                    None => (p.to_string(), String::new()),
+                    Some((k, v)) => KvRow::new(k, v),
+                    None => KvRow::new(p, ""),
                 })
                 .collect();
             (base.to_string(), params)
@@ -405,8 +415,8 @@ mod tests {
                 name: "GET root".into(),
                 method: HttpMethod::GET,
                 url: "https://example.com".into(),
-                query_params: vec![("q".into(), "1".into())],
-                headers: vec![("X-Foo".into(), "bar".into())],
+                query_params: vec![KvRow::new("q", "1")],
+                headers: vec![KvRow::new("X-Foo", "bar")],
                 cookies: vec![],
                 body: String::new(),
                 auth: Auth::None,
@@ -492,8 +502,38 @@ mod tests {
         let req = &root.subfolders[0].requests[0];
         assert_eq!(req.method, HttpMethod::GET);
         assert_eq!(req.url, "https://api.example.com/users");
-        assert_eq!(req.query_params, vec![("page".to_string(), "1".to_string())]);
+        assert_eq!(req.query_params.len(), 1);
+        assert_eq!(req.query_params[0].key, "page");
+        assert_eq!(req.query_params[0].value, "1");
         assert!(matches!(&req.auth, Auth::Bearer { token } if token == "TOK123"));
+    }
+
+    #[test]
+    #[ignore]
+    fn debug_user_postman_file() {
+        let path = "/Users/nurchudlori/Documents/Personal.postman_collection.json";
+        let content = std::fs::read_to_string(path).expect("read user file");
+        let result = import_from_str(&content, "json");
+        match result {
+            Ok(folders) => {
+                fn walk(f: &Folder, depth: usize) -> (usize, usize) {
+                    let mut reqs = f.requests.len();
+                    let mut subs = f.subfolders.len();
+                    for s in &f.subfolders {
+                        let (r, sub) = walk(s, depth + 1);
+                        reqs += r;
+                        subs += sub;
+                    }
+                    (reqs, subs)
+                }
+                println!("Imported {} top-level folder(s)", folders.len());
+                for f in &folders {
+                    let (r, s) = walk(f, 0);
+                    println!("  {} → {} requests, {} subfolders total", f.name, r, s);
+                }
+            }
+            Err(e) => panic!("import failed: {}", e),
+        }
     }
 
     #[test]
