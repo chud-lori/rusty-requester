@@ -14,8 +14,8 @@ Vibe-coded because I got tired of Postman's bloat and cloud sync I never wanted,
 ### Core
 - 🚀 **Truly native** — Rust + `egui`, no Electron, no Chromium
 - 💾 **Fully offline** — all data lives in one local JSON file, no cloud sync, no telemetry
-- 🎨 **Dracula-inspired dark UI** with color-coded HTTP methods
-- 🍎 **Apple Silicon optimized** (but builds anywhere Rust runs)
+- 🎨 **Tokyo-Night-inspired dark UI** with colored HTTP-method pills and underlined tabs
+- 🍎 Builds for Apple Silicon, Intel Mac, Linux, and Windows
 
 ### Request building
 - 🔧 Full HTTP methods: `GET`, `POST`, `PUT`, `DELETE`, `PATCH`, `HEAD`, `OPTIONS`
@@ -37,9 +37,10 @@ Vibe-coded because I got tired of Postman's bloat and cloud sync I never wanted,
 
 ### Collections
 - 📚 **Collections & subfolders** — organize requests in nested folders
-- 🔎 **Search** across request names, URLs, methods, and folder names
+- 🔎 **Search** across request names, URLs, methods, and folder names (⌘K to focus)
 - 📤 **Export** a single collection or all collections as **JSON** or **YAML**
 - 📥 **Import** JSON, YAML, or **Postman Collection v2.1** files
+- 📋 **Duplicate** a request via right-click
 - ✏️ Rename via right-click
 
 ---
@@ -138,9 +139,11 @@ Type in the **🔎 Search** box in the sidebar. It filters by request name, URL,
 
 ### Keyboard shortcuts
 
-- **Enter** (in URL field) → Send request
+- **⌘/Ctrl + Enter** → Send the current request (from anywhere)
+- **Enter** (while focused in the URL field) → Send request
+- **⌘/Ctrl + K** → Focus the sidebar search
 - **Right-click collection / folder** → Rename / Add subfolder / Export / Delete
-- **Right-click request** → Delete
+- **Right-click request** → Duplicate / Delete
 
 ### Where is my data stored?
 
@@ -156,12 +159,14 @@ Back it up, version-control it, or hand it to a teammate. It's just JSON.
 
 ## 🎨 UI conventions
 
-### HTTP method colors
+### HTTP method pills
+
+Each request row shows a compact colored pill with the method:
 
 - 🟢 **GET** — green
 - 🟠 **POST** — orange
-- 🔵 **PUT** — cyan
-- 🔴 **DELETE** — pink
+- 🔵 **PUT** — blue (accent)
+- 🩷 **DELETE** — pink
 - 🟣 **PATCH** — purple
 - ⚪ **HEAD / OPTIONS** — muted
 
@@ -235,7 +240,7 @@ MIT — see `LICENSE`.
 ## 🙏 Acknowledgments
 
 - [egui](https://github.com/emilk/egui) by Emil Ernerfeldt — the reason this is so fast
-- [Dracula Theme](https://draculatheme.com) — color palette inspiration
+- [Tokyo Night](https://github.com/enkia/tokyo-night-vscode-theme) — color palette inspiration
 
 ## 📬 Contact
 

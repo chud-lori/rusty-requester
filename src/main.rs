@@ -151,6 +151,7 @@ struct ApiClient {
     paste_error: String,
 
     toast: Option<(String, f32)>,
+    focus_search_next_frame: bool,
 }
 
 impl Default for ApiClient {
@@ -203,6 +204,7 @@ impl Default for ApiClient {
             paste_curl_text: String::new(),
             paste_error: String::new(),
             toast: None,
+            focus_search_next_frame: false,
         }
     }
 }
@@ -548,6 +550,19 @@ fn status_color(status: &str) -> egui::Color32 {
 
 impl eframe::App for ApiClient {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        let (cmd_enter, cmd_k) = ctx.input(|i| {
+            (
+                i.modifiers.command && i.key_pressed(egui::Key::Enter),
+                i.modifiers.command && i.key_pressed(egui::Key::K),
+            )
+        });
+        if cmd_enter && self.selected_request_id.is_some() && !self.is_loading {
+            self.send_request();
+        }
+        if cmd_k {
+            self.focus_search_next_frame = true;
+        }
+
         if let Some(promise) = &self.request_promise {
             if let Some(r) = promise.ready() {
                 self.response_text = r.body.clone();
@@ -620,9 +635,9 @@ impl eframe::App for ApiClient {
 impl ApiClient {
     fn render_sidebar(&mut self, ctx: &egui::Context) {
         egui::SidePanel::left("sidebar")
-            .default_width(320.0)
-            .width_range(280.0..=520.0)
-            .resizable(true)
+            .exact_width(320.0)
+            .resizable(false)
+            .show_separator_line(true)
             .frame(
                 egui::Frame::none()
                     .fill(C_PANEL)
@@ -743,11 +758,15 @@ impl ApiClient {
 
                 ui.horizontal(|ui| {
                     let clear_w = if self.search_query.is_empty() { 0.0 } else { 26.0 };
-                    ui.add(
+                    let search_resp = ui.add(
                         egui::TextEdit::singleline(&mut self.search_query)
                             .desired_width(ui.available_width() - clear_w)
-                            .hint_text("🔎 Search requests, URLs, folders"),
+                            .hint_text("🔎 Search (⌘K)"),
                     );
+                    if self.focus_search_next_frame {
+                        self.focus_search_next_frame = false;
+                        search_resp.request_focus();
+                    }
                     if !self.search_query.is_empty()
                         && ui.small_button("✕").on_hover_text("Clear search").clicked()
                     {
@@ -953,7 +972,10 @@ impl ApiClient {
                     .fill(C_PURPLE)
                     .min_size(egui::vec2(80.0, 28.0));
 
-                    let send_click = ui.add_enabled(!self.is_loading, send_btn).clicked();
+                    let send_click = ui
+                        .add_enabled(!self.is_loading, send_btn)
+                        .on_hover_text("Send (⌘/Ctrl + Enter)")
+                        .clicked();
 
                     if ui
                         .add(
@@ -1752,6 +1774,7 @@ impl ApiClient {
             ui.add_space(4.0);
 
             let mut to_delete: Option<String> = None;
+            let mut to_duplicate: Option<String> = None;
             for req in &folder.requests {
                 if searching
                     && !request_matches(req, &query)
@@ -1835,6 +1858,11 @@ impl ApiClient {
                     self.response_headers.clear();
                 }
                 resp.context_menu(|ui| {
+                    if ui.button("📋 Duplicate").clicked() {
+                        to_duplicate = Some(req.id.clone());
+                        ui.close_menu();
+                    }
+                    ui.separator();
                     if ui.button("🗑 Delete").clicked() {
                         to_delete = Some(req.id.clone());
                         ui.close_menu();
@@ -1842,6 +1870,26 @@ impl ApiClient {
                 });
 
                 ui.add_space(2.0);
+            }
+
+            if let Some(dup_id) = to_duplicate {
+                self.selected_folder_path = path.clone();
+                let mut new_req_opt = None;
+                if let Some(f) = self.get_current_folder_mut() {
+                    if let Some(original) = f.requests.iter().find(|r| r.id == dup_id).cloned() {
+                        let mut copy = original;
+                        copy.id = Uuid::new_v4().to_string();
+                        copy.name = format!("{} (copy)", copy.name);
+                        new_req_opt = Some(copy.id.clone());
+                        f.requests.push(copy);
+                    }
+                }
+                self.save_state();
+                if let Some(new_id) = new_req_opt {
+                    self.selected_request_id = Some(new_id);
+                    self.load_request_for_editing();
+                    self.show_toast("Request duplicated");
+                }
             }
 
             if let Some(del_id) = to_delete {
