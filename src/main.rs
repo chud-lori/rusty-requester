@@ -1,351 +1,23 @@
 mod curl;
+mod icon;
 mod io;
+mod model;
+mod snippet;
+mod theme;
+mod widgets;
 
 use base64::Engine;
 use eframe::egui;
+use icon::{load_icon_color_image, load_window_icon};
+use model::*;
 use poll_promise::Promise;
-use serde::{Deserialize, Serialize};
+use snippet::{render_snippet, SnippetLang};
 use std::fs;
 use std::path::PathBuf;
+use theme::*;
 use uuid::Uuid;
+use widgets::*;
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct Request {
-    pub id: String,
-    pub name: String,
-    pub method: HttpMethod,
-    pub url: String,
-    #[serde(default)]
-    pub query_params: Vec<KvRow>,
-    #[serde(default)]
-    pub headers: Vec<KvRow>,
-    #[serde(default)]
-    pub cookies: Vec<KvRow>,
-    pub body: String,
-    #[serde(default)]
-    pub auth: Auth,
-}
-
-#[derive(Clone, Debug, Serialize)]
-pub struct KvRow {
-    pub enabled: bool,
-    pub key: String,
-    pub value: String,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub description: String,
-}
-
-fn default_true() -> bool {
-    true
-}
-
-impl KvRow {
-    pub fn new(key: impl Into<String>, value: impl Into<String>) -> Self {
-        Self {
-            enabled: true,
-            key: key.into(),
-            value: value.into(),
-            description: String::new(),
-        }
-    }
-
-    pub fn empty() -> Self {
-        Self::new("", "")
-    }
-
-    pub fn is_blank(&self) -> bool {
-        self.key.is_empty() && self.value.is_empty()
-    }
-}
-
-impl<'de> Deserialize<'de> for KvRow {
-    fn deserialize<D>(d: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        #[serde(untagged)]
-        enum Either {
-            Tuple(String, String),
-            Struct {
-                #[serde(default = "default_true")]
-                enabled: bool,
-                #[serde(default)]
-                key: String,
-                #[serde(default)]
-                value: String,
-                #[serde(default)]
-                description: String,
-            },
-        }
-        match Either::deserialize(d)? {
-            Either::Tuple(k, v) => Ok(KvRow::new(k, v)),
-            Either::Struct {
-                enabled,
-                key,
-                value,
-                description,
-            } => Ok(KvRow {
-                enabled,
-                key,
-                value,
-                description,
-            }),
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-pub enum HttpMethod {
-    GET,
-    POST,
-    PUT,
-    DELETE,
-    PATCH,
-    HEAD,
-    OPTIONS,
-}
-
-impl std::fmt::Display for HttpMethod {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-pub enum Auth {
-    None,
-    Bearer { token: String },
-    Basic { username: String, password: String },
-}
-
-impl Default for Auth {
-    fn default() -> Self {
-        Auth::None
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum AuthKind {
-    None,
-    Bearer,
-    Basic,
-}
-
-impl From<&Auth> for AuthKind {
-    fn from(a: &Auth) -> Self {
-        match a {
-            Auth::None => AuthKind::None,
-            Auth::Bearer { .. } => AuthKind::Bearer,
-            Auth::Basic { .. } => AuthKind::Basic,
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct Folder {
-    pub id: String,
-    pub name: String,
-    pub requests: Vec<Request>,
-    #[serde(default)]
-    pub subfolders: Vec<Folder>,
-}
-
-#[derive(Serialize, Deserialize, Default)]
-struct AppState {
-    folders: Vec<Folder>,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum SnippetLang {
-    Curl,
-    Python,
-    JavaScript,
-    HttpieShell,
-}
-
-impl SnippetLang {
-    fn label(&self) -> &'static str {
-        match self {
-            SnippetLang::Curl => "cURL",
-            SnippetLang::Python => "Python (requests)",
-            SnippetLang::JavaScript => "JavaScript (fetch)",
-            SnippetLang::HttpieShell => "HTTPie",
-        }
-    }
-}
-
-fn render_snippet(req: &Request, lang: SnippetLang) -> String {
-    match lang {
-        SnippetLang::Curl => curl::to_curl(req),
-        SnippetLang::Python => snippet_python(req),
-        SnippetLang::JavaScript => snippet_javascript(req),
-        SnippetLang::HttpieShell => snippet_httpie(req),
-    }
-}
-
-fn collect_send_headers(req: &Request) -> Vec<(String, String)> {
-    let mut out: Vec<(String, String)> = req
-        .headers
-        .iter()
-        .filter(|h| h.enabled && !h.key.trim().is_empty())
-        .map(|h| (h.key.clone(), h.value.clone()))
-        .collect();
-    match &req.auth {
-        Auth::Bearer { token } if !token.is_empty() => {
-            out.push(("Authorization".into(), format!("Bearer {}", token)));
-        }
-        _ => {}
-    }
-    out
-}
-
-fn snippet_python(req: &Request) -> String {
-    let mut s = String::new();
-    s.push_str("import requests\n\n");
-    let url = curl::build_full_url(&req.url, &req.query_params);
-    s.push_str(&format!("url = {:?}\n", url));
-    let headers = collect_send_headers(req);
-    if !headers.is_empty() {
-        s.push_str("headers = {\n");
-        for (k, v) in &headers {
-            s.push_str(&format!("    {:?}: {:?},\n", k, v));
-        }
-        s.push_str("}\n");
-    } else {
-        s.push_str("headers = {}\n");
-    }
-    let cookies: Vec<(&String, &String)> = req
-        .cookies
-        .iter()
-        .filter(|c| c.enabled && !c.key.is_empty())
-        .map(|c| (&c.key, &c.value))
-        .collect();
-    if !cookies.is_empty() {
-        s.push_str("cookies = {\n");
-        for (k, v) in &cookies {
-            s.push_str(&format!("    {:?}: {:?},\n", k, v));
-        }
-        s.push_str("}\n");
-    }
-    let mut auth_arg = String::new();
-    if let Auth::Basic { username, password } = &req.auth {
-        if !username.is_empty() {
-            auth_arg = format!(", auth=({:?}, {:?})", username, password);
-        }
-    }
-    let cookies_arg = if cookies.is_empty() { "" } else { ", cookies=cookies" };
-    let method = format!("{}", req.method).to_lowercase();
-    if !req.body.is_empty() {
-        s.push_str(&format!("payload = {:?}\n\n", req.body));
-        s.push_str(&format!(
-            "response = requests.{}(url, headers=headers{}{}, data=payload)\n",
-            method, cookies_arg, auth_arg
-        ));
-    } else {
-        s.push_str(&format!(
-            "\nresponse = requests.{}(url, headers=headers{}{})\n",
-            method, cookies_arg, auth_arg
-        ));
-    }
-    s.push_str("print(response.status_code)\nprint(response.text)\n");
-    s
-}
-
-fn snippet_javascript(req: &Request) -> String {
-    let mut s = String::new();
-    let url = curl::build_full_url(&req.url, &req.query_params);
-    s.push_str(&format!("const url = {:?};\n\n", url));
-    s.push_str("const options = {\n");
-    s.push_str(&format!("  method: {:?},\n", req.method.to_string()));
-    let headers = collect_send_headers(req);
-    let cookies: Vec<String> = req
-        .cookies
-        .iter()
-        .filter(|c| c.enabled && !c.key.is_empty())
-        .map(|c| format!("{}={}", c.key, c.value))
-        .collect();
-    let mut header_lines: Vec<String> = headers
-        .iter()
-        .map(|(k, v)| format!("    {:?}: {:?}", k, v))
-        .collect();
-    if !cookies.is_empty() {
-        header_lines.push(format!("    \"Cookie\": {:?}", cookies.join("; ")));
-    }
-    if !header_lines.is_empty() {
-        s.push_str("  headers: {\n");
-        s.push_str(&header_lines.join(",\n"));
-        s.push_str(",\n  },\n");
-    }
-    if !req.body.is_empty() {
-        s.push_str(&format!("  body: {:?},\n", req.body));
-    }
-    s.push_str("};\n\n");
-    s.push_str("fetch(url, options)\n");
-    s.push_str("  .then((res) => res.text())\n");
-    s.push_str("  .then(console.log)\n");
-    s.push_str("  .catch(console.error);\n");
-    s
-}
-
-fn snippet_httpie(req: &Request) -> String {
-    let mut parts: Vec<String> = vec!["http".into(), format!("{}", req.method)];
-    let url = curl::build_full_url(&req.url, &req.query_params);
-    parts.push(format!("'{}'", url.replace('\'', "'\\''")));
-    for (k, v) in collect_send_headers(req) {
-        parts.push(format!("'{}:{}'", k, v));
-    }
-    if let Auth::Basic { username, password } = &req.auth {
-        if !username.is_empty() {
-            parts.push(format!("--auth='{}:{}'", username, password));
-        }
-    }
-    let cookies: Vec<String> = req
-        .cookies
-        .iter()
-        .filter(|c| c.enabled && !c.key.is_empty())
-        .map(|c| format!("{}={}", c.key, c.value))
-        .collect();
-    if !cookies.is_empty() {
-        parts.push(format!("'Cookie:{}'", cookies.join("; ")));
-    }
-    let mut s = parts.join(" ");
-    if !req.body.is_empty() {
-        s.push_str(&format!(
-            "\n# body (use --raw or pipe stdin):\n# echo {:?} | http ...",
-            req.body
-        ));
-    }
-    s
-}
-
-#[derive(Clone, Debug)]
-struct OpenTab {
-    folder_path: Vec<String>,
-    request_id: String,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum RequestTab {
-    Params,
-    Headers,
-    Cookies,
-    Body,
-    Auth,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum ResponseTab {
-    Body,
-    Headers,
-}
-
-struct ResponseData {
-    body: String,
-    status: String,
-    time: String,
-    headers: Vec<(String, String)>,
-}
 
 struct ApiClient {
     state: AppState,
@@ -383,7 +55,7 @@ struct ApiClient {
     paste_curl_text: String,
     paste_error: String,
 
-    show_snippet_modal: bool,
+    show_snippet_panel: bool,
     snippet_lang: SnippetLang,
 
     toast: Option<(String, f32)>,
@@ -395,6 +67,7 @@ struct ApiClient {
 
     renaming_request_id: Option<String>,
     rename_request_text: String,
+    request_rename_focus_pending: bool,
 }
 
 impl Default for ApiClient {
@@ -440,7 +113,7 @@ impl Default for ApiClient {
             show_paste_modal: false,
             paste_curl_text: String::new(),
             paste_error: String::new(),
-            show_snippet_modal: false,
+            show_snippet_panel: false,
             snippet_lang: SnippetLang::Curl,
             toast: None,
             focus_search_next_frame: false,
@@ -448,27 +121,11 @@ impl Default for ApiClient {
             open_tabs: vec![],
             renaming_request_id: None,
             rename_request_text: String::new(),
+            request_rename_focus_pending: false,
         }
     }
 }
 
-const APP_ICON_BYTES: &[u8] = include_bytes!("../assets/icon.png");
-
-fn load_icon_color_image() -> Option<egui::ColorImage> {
-    let img = image::load_from_memory(APP_ICON_BYTES).ok()?.into_rgba8();
-    let size = [img.width() as usize, img.height() as usize];
-    Some(egui::ColorImage::from_rgba_unmultiplied(size, img.as_raw()))
-}
-
-fn load_window_icon() -> Option<egui::IconData> {
-    let img = image::load_from_memory(APP_ICON_BYTES).ok()?.into_rgba8();
-    let (width, height) = img.dimensions();
-    Some(egui::IconData {
-        rgba: img.into_raw(),
-        width,
-        height,
-    })
-}
 
 impl ApiClient {
     fn load_state(path: &PathBuf) -> Option<AppState> {
@@ -874,56 +531,7 @@ impl ApiClient {
     }
 }
 
-fn sanitize_filename(name: &str) -> Option<String> {
-    let cleaned: String = name
-        .chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
-        .collect();
-    let trimmed = cleaned.trim_matches('_').to_string();
-    if trimmed.is_empty() {
-        None
-    } else {
-        Some(trimmed)
-    }
-}
 
-// ====== Colors (Tokyo-Night inspired) ======
-const C_BG: egui::Color32 = egui::Color32::from_rgb(15, 17, 26);
-const C_PANEL: egui::Color32 = egui::Color32::from_rgb(26, 29, 41);
-const C_PANEL_DARK: egui::Color32 = egui::Color32::from_rgb(12, 14, 20);
-const C_ELEVATED: egui::Color32 = egui::Color32::from_rgb(36, 40, 59);
-const C_BORDER: egui::Color32 = egui::Color32::from_rgb(47, 53, 73);
-const C_ACCENT: egui::Color32 = egui::Color32::from_rgb(122, 162, 247);
-const C_PURPLE: egui::Color32 = egui::Color32::from_rgb(187, 154, 247);
-const C_GREEN: egui::Color32 = egui::Color32::from_rgb(158, 206, 106);
-const C_ORANGE: egui::Color32 = egui::Color32::from_rgb(224, 175, 104);
-const C_PINK: egui::Color32 = egui::Color32::from_rgb(247, 118, 142);
-const C_RED: egui::Color32 = egui::Color32::from_rgb(247, 118, 142);
-const C_MUTED: egui::Color32 = egui::Color32::from_rgb(86, 95, 137);
-const C_TEXT: egui::Color32 = egui::Color32::from_rgb(192, 202, 245);
-
-fn method_color(m: &HttpMethod) -> egui::Color32 {
-    match m {
-        HttpMethod::GET => C_GREEN,
-        HttpMethod::POST => C_ORANGE,
-        HttpMethod::PUT => C_ACCENT,
-        HttpMethod::DELETE => C_PINK,
-        HttpMethod::PATCH => C_PURPLE,
-        _ => C_MUTED,
-    }
-}
-
-fn status_color(status: &str) -> egui::Color32 {
-    if status.starts_with('2') {
-        C_GREEN
-    } else if status.starts_with('3') {
-        C_ORANGE
-    } else if status.starts_with('4') || status.starts_with('5') {
-        C_RED
-    } else {
-        C_MUTED
-    }
-}
 
 impl eframe::App for ApiClient {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
@@ -963,60 +571,12 @@ impl eframe::App for ApiClient {
             }
         }
 
-        // Apply theme
-        let mut style = (*ctx.style()).clone();
-        style.visuals.window_fill = C_BG;
-        style.visuals.panel_fill = C_BG;
-        style.visuals.extreme_bg_color = C_PANEL_DARK;
-        style.visuals.override_text_color = Some(C_TEXT);
-        style.visuals.selection.bg_fill = C_ACCENT.gamma_multiply(0.4);
-        style.visuals.selection.stroke = egui::Stroke::new(1.0, C_ACCENT);
-        style.visuals.hyperlink_color = C_ACCENT;
-        style.visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, C_BORDER);
-        style.visuals.widgets.noninteractive.fg_stroke = egui::Stroke::new(1.0, C_TEXT);
-        style.visuals.widgets.noninteractive.rounding = egui::Rounding::same(8.0);
-        style.visuals.widgets.inactive.bg_fill = C_ELEVATED;
-        style.visuals.widgets.inactive.weak_bg_fill = C_ELEVATED;
-        style.visuals.widgets.inactive.bg_stroke = egui::Stroke::NONE;
-        style.visuals.widgets.inactive.rounding = egui::Rounding::same(8.0);
-        style.visuals.widgets.hovered.bg_fill = C_BORDER;
-        style.visuals.widgets.hovered.weak_bg_fill = C_BORDER;
-        style.visuals.widgets.hovered.bg_stroke = egui::Stroke::new(1.0, C_ACCENT.gamma_multiply(0.4));
-        style.visuals.widgets.hovered.rounding = egui::Rounding::same(8.0);
-        style.visuals.widgets.active.bg_fill = C_BORDER;
-        style.visuals.widgets.active.weak_bg_fill = C_BORDER;
-        style.visuals.widgets.active.bg_stroke = egui::Stroke::new(1.0, C_ACCENT);
-        style.visuals.widgets.active.rounding = egui::Rounding::same(8.0);
-        style.visuals.widgets.open.bg_fill = C_BORDER;
-        style.visuals.widgets.open.rounding = egui::Rounding::same(8.0);
-        style.visuals.menu_rounding = egui::Rounding::same(10.0);
-        style.visuals.window_rounding = egui::Rounding::same(12.0);
-        style.visuals.window_stroke = egui::Stroke::new(1.0, C_BORDER);
-
-        style.spacing.item_spacing = egui::vec2(8.0, 8.0);
-        style.spacing.button_padding = egui::vec2(10.0, 6.0);
-        style.spacing.window_margin = egui::Margin::same(12.0);
-        style.spacing.menu_margin = egui::Margin::same(6.0);
-        style.spacing.scroll.bar_width = 10.0;
-        style.spacing.scroll.floating = false;
-
-        use egui::{FontFamily, FontId, TextStyle};
-        style.text_styles = [
-            (TextStyle::Heading, FontId::new(20.0, FontFamily::Proportional)),
-            (TextStyle::Body, FontId::new(13.5, FontFamily::Proportional)),
-            (TextStyle::Monospace, FontId::new(12.5, FontFamily::Monospace)),
-            (TextStyle::Button, FontId::new(13.0, FontFamily::Proportional)),
-            (TextStyle::Small, FontId::new(11.0, FontFamily::Proportional)),
-        ]
-        .into();
-
-        ctx.set_style(style);
+        theme::apply_style(ctx);
 
         self.render_sidebar(ctx);
+        self.render_snippet_panel(ctx);
         self.render_central(ctx);
         self.render_paste_modal(ctx);
-        self.render_rename_request_modal(ctx);
-        self.render_snippet_modal(ctx);
         self.render_toast(ctx);
     }
 }
@@ -1328,36 +888,49 @@ impl ApiClient {
             });
     }
 
-    fn render_snippet_modal(&mut self, ctx: &egui::Context) {
-        if !self.show_snippet_modal {
+    fn render_snippet_panel(&mut self, ctx: &egui::Context) {
+        if !self.show_snippet_panel {
             return;
         }
         let req = match self.get_current_request() {
             Some(r) => r,
             None => {
-                self.show_snippet_modal = false;
+                self.show_snippet_panel = false;
                 return;
             }
         };
-        let mut open = self.show_snippet_modal;
         let snippet = render_snippet(&req, self.snippet_lang);
+        let mut copy_clicked = false;
+        let mut close_clicked = false;
 
-        egui::Window::new("Code snippet")
-            .open(&mut open)
-            .collapsible(false)
+        egui::SidePanel::right("snippet_panel")
             .resizable(true)
-            .default_width(640.0)
-            .default_height(440.0)
-            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .default_width(380.0)
+            .width_range(280.0..=600.0)
+            .frame(
+                egui::Frame::none()
+                    .fill(C_PANEL)
+                    .inner_margin(egui::Margin::symmetric(10.0, 10.0)),
+            )
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     ui.label(
-                        egui::RichText::new("Language")
-                            .color(C_MUTED)
-                            .size(11.0),
+                        egui::RichText::new("Code snippet")
+                            .size(14.0)
+                            .strong()
+                            .color(C_TEXT),
                     );
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if close_x_button(ui, "Close panel").clicked() {
+                            close_clicked = true;
+                        }
+                    });
+                });
+                ui.add_space(6.0);
+                ui.horizontal(|ui| {
                     egui::ComboBox::from_id_salt("snippet_lang")
                         .selected_text(self.snippet_lang.label())
+                        .width(160.0)
                         .show_ui(ui, |ui| {
                             for &lang in &[
                                 SnippetLang::Curl,
@@ -1372,17 +945,16 @@ impl ApiClient {
                         if ui
                             .add(
                                 egui::Button::new(
-                                    egui::RichText::new("📋 Copy")
+                                    egui::RichText::new("Copy")
                                         .color(egui::Color32::WHITE)
                                         .strong(),
                                 )
                                 .fill(C_ACCENT)
-                                .min_size(egui::vec2(80.0, 28.0)),
+                                .min_size(egui::vec2(70.0, 26.0)),
                             )
                             .clicked()
                         {
-                            ui.output_mut(|o| o.copied_text = snippet.clone());
-                            self.show_toast("Snippet copied");
+                            copy_clicked = true;
                         }
                     });
                 });
@@ -1410,70 +982,13 @@ impl ApiClient {
                             });
                     });
             });
-        self.show_snippet_modal = open;
-    }
 
-    fn render_rename_request_modal(&mut self, ctx: &egui::Context) {
-        let Some(rename_id) = self.renaming_request_id.clone() else {
-            return;
-        };
-        let mut do_save = false;
-        let mut do_cancel = false;
-        let mut open = true;
-        egui::Window::new("Rename request")
-            .open(&mut open)
-            .collapsible(false)
-            .resizable(false)
-            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
-            .show(ctx, |ui| {
-                ui.set_min_width(360.0);
-                let resp = ui.add(
-                    egui::TextEdit::singleline(&mut self.rename_request_text)
-                        .desired_width(f32::INFINITY)
-                        .hint_text("Request name"),
-                );
-                if !resp.has_focus() {
-                    resp.request_focus();
-                }
-                ui.add_space(8.0);
-                ui.horizontal(|ui| {
-                    if ui
-                        .add(
-                            egui::Button::new(
-                                egui::RichText::new("Save").color(egui::Color32::WHITE).strong(),
-                            )
-                            .fill(C_ACCENT)
-                            .min_size(egui::vec2(80.0, 28.0)),
-                        )
-                        .clicked()
-                    {
-                        do_save = true;
-                    }
-                    if ui.button("Cancel").clicked() {
-                        do_cancel = true;
-                    }
-                });
-                ui.input(|i| {
-                    if i.key_pressed(egui::Key::Enter) {
-                        do_save = true;
-                    }
-                    if i.key_pressed(egui::Key::Escape) {
-                        do_cancel = true;
-                    }
-                });
-            });
-        if !open {
-            do_cancel = true;
+        if copy_clicked {
+            ctx.output_mut(|o| o.copied_text = snippet);
+            self.show_toast("Snippet copied");
         }
-        if do_save {
-            let new_name = self.rename_request_text.trim().to_string();
-            if !new_name.is_empty() {
-                self.rename_request(&rename_id, new_name);
-            }
-            self.renaming_request_id = None;
-        }
-        if do_cancel {
-            self.renaming_request_id = None;
+        if close_clicked {
+            self.show_snippet_panel = false;
         }
     }
 
@@ -1521,18 +1036,43 @@ impl ApiClient {
                             }
                         });
 
-                    // Reserve space for Send + cURL + Paste buttons (~240 px)
-                    let btn_space = 260.0;
+                    // Reserve space for Send + Code buttons (~180 px)
+                    let btn_space = 180.0;
                     let avail = (ui.available_width() - btn_space).max(200.0);
                     let url_edit = ui.add(
                         egui::TextEdit::singleline(&mut self.editing_url)
                             .desired_width(avail)
-                            .hint_text("https://api.example.com/endpoint")
+                            .hint_text("https://api.example.com/endpoint  (or paste a cURL command)")
                             .font(egui::TextStyle::Monospace),
                     );
                     if url_edit.changed() {
-                        let url = self.editing_url.clone();
-                        self.update_current_request(|req| req.url = url);
+                        let trimmed = self.editing_url.trim_start();
+                        let looks_like_curl = trimmed.starts_with("curl ")
+                            || trimmed.starts_with("curl\t")
+                            || trimmed.starts_with("curl\n")
+                            || trimmed == "curl";
+                        if looks_like_curl && trimmed.len() > 5 {
+                            match curl::parse_curl(&self.editing_url) {
+                                Ok(parsed) => {
+                                    self.editing_method = parsed.method;
+                                    self.editing_url = parsed.url;
+                                    self.editing_params = parsed.query_params;
+                                    self.editing_headers = parsed.headers;
+                                    self.editing_cookies = parsed.cookies;
+                                    self.editing_body = parsed.body;
+                                    self.editing_auth = parsed.auth;
+                                    self.commit_editing();
+                                    self.show_toast("Imported cURL into request");
+                                }
+                                Err(_) => {
+                                    let url = self.editing_url.clone();
+                                    self.update_current_request(|req| req.url = url);
+                                }
+                            }
+                        } else {
+                            let url = self.editing_url.clone();
+                            self.update_current_request(|req| req.url = url);
+                        }
                     }
 
                     let send_pressed = url_edit.lost_focus()
@@ -1558,25 +1098,11 @@ impl ApiClient {
                                 .fill(C_BORDER)
                                 .min_size(egui::vec2(74.0, 28.0)),
                         )
-                        .on_hover_text("View as cURL / Python / JS / HTTPie")
+                        .on_hover_text("Toggle code-snippet panel")
                         .clicked()
                     {
                         self.commit_editing();
-                        self.show_snippet_modal = true;
-                    }
-
-                    if ui
-                        .add(
-                            egui::Button::new(egui::RichText::new("📥 Paste").size(12.0))
-                                .fill(C_BORDER)
-                                .min_size(egui::vec2(70.0, 28.0)),
-                        )
-                        .on_hover_text("Paste cURL into this request")
-                        .clicked()
-                    {
-                        self.show_paste_modal = true;
-                        self.paste_curl_text.clear();
-                        self.paste_error.clear();
+                        self.show_snippet_panel = !self.show_snippet_panel;
                     }
 
                     if send_click || send_pressed {
@@ -1897,11 +1423,12 @@ impl ApiClient {
                 if ui
                     .add(
                         egui::Button::new(
-                            egui::RichText::new("📋 Copy").size(12.0).color(C_TEXT),
+                            egui::RichText::new("Copy").size(12.0).color(C_TEXT),
                         )
                         .fill(C_ELEVATED)
                         .stroke(egui::Stroke::NONE)
-                        .rounding(egui::Rounding::same(6.0)),
+                        .rounding(egui::Rounding::same(6.0))
+                        .min_size(egui::vec2(60.0, 24.0)),
                     )
                     .clicked()
                     && !self.response_text.is_empty()
@@ -2222,8 +1749,8 @@ impl ApiClient {
                             .rect_filled(bar, egui::Rounding::same(2.0), C_ACCENT);
                     }
 
-                    // Method pill
-                    let pill_w = 48.0;
+                    // Method pill — solid color + high-contrast text
+                    let pill_w = 52.0;
                     let pill_h = 20.0;
                     let pill_left = rect.left() + 10.0;
                     let pill_top = rect.center().y - pill_h / 2.0;
@@ -2231,56 +1758,94 @@ impl ApiClient {
                         egui::pos2(pill_left, pill_top),
                         egui::vec2(pill_w, pill_h),
                     );
-                    ui.painter().rect_filled(
-                        pill_rect,
-                        egui::Rounding::same(4.0),
-                        mc.linear_multiply(0.25),
-                    );
+                    ui.painter()
+                        .rect_filled(pill_rect, egui::Rounding::same(4.0), mc);
                     ui.painter().text(
                         pill_rect.center(),
                         egui::Align2::CENTER_CENTER,
                         format!("{}", req.method),
                         egui::FontId::new(10.0, egui::FontFamily::Proportional),
-                        mc,
+                        pill_text_color(mc),
                     );
 
-                    // Request name
-                    let name_color = if is_selected { C_TEXT } else { C_TEXT };
-                    let name_x = pill_rect.right() + 10.0;
-                    let name_pos = egui::pos2(name_x, rect.center().y);
-                    let font = egui::FontId::new(13.0, egui::FontFamily::Proportional);
-                    let max_w = rect.right() - name_x - 8.0;
-                    let display_name = elide(&req.name, max_w, &font, ui);
-                    ui.painter().text(
-                        name_pos,
-                        egui::Align2::LEFT_CENTER,
-                        display_name,
-                        font,
-                        name_color,
-                    );
+                    // Request name (skip painting if currently renaming inline)
+                    if !is_renaming {
+                        let name_color = C_TEXT;
+                        let name_x = pill_rect.right() + 10.0;
+                        let name_pos = egui::pos2(name_x, rect.center().y);
+                        let font = egui::FontId::new(13.0, egui::FontFamily::Proportional);
+                        let max_w = rect.right() - name_x - 8.0;
+                        let display_name = elide(&req.name, max_w, &font, ui);
+                        ui.painter().text(
+                            name_pos,
+                            egui::Align2::LEFT_CENTER,
+                            display_name,
+                            font,
+                            name_color,
+                        );
+                    }
                 }
 
-                if resp.clicked() {
-                    self.open_request(path.clone(), req.id.clone());
+                // Inline rename TextEdit overlay
+                if is_renaming {
+                    let pill_right = rect.left() + 10.0 + 52.0;
+                    let edit_rect = egui::Rect::from_min_max(
+                        egui::pos2(pill_right + 6.0, rect.top() + 4.0),
+                        egui::pos2(rect.right() - 6.0, rect.bottom() - 4.0),
+                    );
+                    let edit_resp = ui.put(
+                        edit_rect,
+                        egui::TextEdit::singleline(&mut self.rename_request_text)
+                            .desired_width(edit_rect.width()),
+                    );
+                    if self.request_rename_focus_pending {
+                        self.request_rename_focus_pending = false;
+                        edit_resp.request_focus();
+                    }
+                    let (enter, escape) = ui.input(|i| {
+                        (
+                            i.key_pressed(egui::Key::Enter),
+                            i.key_pressed(egui::Key::Escape),
+                        )
+                    });
+                    if enter && edit_resp.has_focus() {
+                        let id = req.id.clone();
+                        let new_name = self.rename_request_text.trim().to_string();
+                        if !new_name.is_empty() {
+                            self.rename_request(&id, new_name);
+                        }
+                        self.renaming_request_id = None;
+                    } else if escape || (edit_resp.lost_focus() && !enter) {
+                        self.renaming_request_id = None;
+                    }
+                } else {
+                    if resp.double_clicked() {
+                        self.renaming_request_id = Some(req.id.clone());
+                        self.rename_request_text = req.name.clone();
+                        self.request_rename_focus_pending = true;
+                    } else if resp.clicked() {
+                        self.open_request(path.clone(), req.id.clone());
+                    }
+                    let req_id_for_menu = req.id.clone();
+                    let req_name_for_menu = req.name.clone();
+                    resp.context_menu(|ui| {
+                        if ui.button("Rename").clicked() {
+                            self.renaming_request_id = Some(req_id_for_menu.clone());
+                            self.rename_request_text = req_name_for_menu.clone();
+                            self.request_rename_focus_pending = true;
+                            ui.close_menu();
+                        }
+                        if ui.button("Duplicate").clicked() {
+                            to_duplicate = Some(req_id_for_menu.clone());
+                            ui.close_menu();
+                        }
+                        ui.separator();
+                        if ui.button("Delete").clicked() {
+                            to_delete = Some(req_id_for_menu.clone());
+                            ui.close_menu();
+                        }
+                    });
                 }
-                let req_id_for_menu = req.id.clone();
-                let req_name_for_menu = req.name.clone();
-                resp.context_menu(|ui| {
-                    if ui.button("✏ Rename").clicked() {
-                        self.renaming_request_id = Some(req_id_for_menu.clone());
-                        self.rename_request_text = req_name_for_menu.clone();
-                        ui.close_menu();
-                    }
-                    if ui.button("📋 Duplicate").clicked() {
-                        to_duplicate = Some(req_id_for_menu.clone());
-                        ui.close_menu();
-                    }
-                    ui.separator();
-                    if ui.button("🗑 Delete").clicked() {
-                        to_delete = Some(req_id_for_menu.clone());
-                        ui.close_menu();
-                    }
-                });
 
                 ui.add_space(2.0);
             }
@@ -2447,453 +2012,6 @@ impl ApiClient {
     }
 }
 
-fn tab_button<T: PartialEq + Copy>(
-    ui: &mut egui::Ui,
-    current: &mut T,
-    value: T,
-    label: &str,
-) {
-    let selected = *current == value;
-    let (text_color, text) = if selected {
-        (
-            C_ACCENT,
-            egui::RichText::new(label).color(C_ACCENT).strong().size(13.0),
-        )
-    } else {
-        (C_MUTED, egui::RichText::new(label).color(C_MUTED).size(13.0))
-    };
-    let _ = text_color;
-    let btn = egui::Button::new(text)
-        .fill(egui::Color32::TRANSPARENT)
-        .stroke(egui::Stroke::NONE)
-        .rounding(egui::Rounding::same(6.0))
-        .min_size(egui::vec2(90.0, 30.0));
-    let resp = ui.add(btn);
-    if selected {
-        let rect = resp.rect;
-        let y = rect.bottom() - 1.0;
-        let pad = 10.0;
-        ui.painter().line_segment(
-            [
-                egui::pos2(rect.left() + pad, y),
-                egui::pos2(rect.right() - pad, y),
-            ],
-            egui::Stroke::new(2.5, C_ACCENT),
-        );
-    }
-    if resp.clicked() {
-        *current = value;
-    }
-}
-
-#[derive(Clone, Copy)]
-enum TabAction {
-    None,
-    Activate,
-    Close,
-    CloseOthers,
-    CloseAll,
-}
-
-fn render_single_tab(
-    ui: &mut egui::Ui,
-    idx: usize,
-    method: &HttpMethod,
-    name: &str,
-    is_active: bool,
-) -> TabAction {
-    let tab_height = 32.0;
-    let tab_width = 180.0;
-    let (rect, resp) = ui.allocate_exact_size(
-        egui::vec2(tab_width, tab_height),
-        egui::Sense::click(),
-    );
-
-    let mut action = TabAction::None;
-
-    if ui.is_rect_visible(rect) {
-        let bg = if is_active {
-            C_BG
-        } else if resp.hovered() {
-            C_ELEVATED
-        } else {
-            C_PANEL
-        };
-        let rounding = egui::Rounding {
-            nw: 8.0,
-            ne: 8.0,
-            sw: 0.0,
-            se: 0.0,
-        };
-        ui.painter().rect_filled(rect, rounding, bg);
-
-        if is_active {
-            let top = egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), 2.0));
-            ui.painter().rect_filled(top, rounding, C_ACCENT);
-        }
-
-        let mc = method_color(method);
-        let method_str = format!("{}", method);
-        let method_font = egui::FontId::new(10.0, egui::FontFamily::Proportional);
-        let pad_left = rect.left() + 12.0;
-        let mid_y = rect.center().y;
-
-        let method_galley = ui.fonts(|f| {
-            f.layout_no_wrap(method_str.clone(), method_font.clone(), mc)
-        });
-        let method_w = method_galley.size().x;
-        ui.painter().text(
-            egui::pos2(pad_left, mid_y),
-            egui::Align2::LEFT_CENTER,
-            method_str,
-            method_font,
-            mc,
-        );
-
-        let name_x = pad_left + method_w + 8.0;
-        let name_color = if is_active { C_TEXT } else { C_MUTED };
-        let name_font = egui::FontId::new(12.0, egui::FontFamily::Proportional);
-        let max_w = (rect.right() - 28.0) - name_x;
-        let display = elide(name, max_w.max(0.0), &name_font, ui);
-        ui.painter().text(
-            egui::pos2(name_x, mid_y),
-            egui::Align2::LEFT_CENTER,
-            display,
-            name_font,
-            name_color,
-        );
-    }
-
-    let close_rect = egui::Rect::from_min_size(
-        egui::pos2(rect.right() - 22.0, rect.center().y - 9.0),
-        egui::vec2(18.0, 18.0),
-    );
-    let close_resp = ui.interact(
-        close_rect,
-        ui.make_persistent_id(format!("tab_close_{}", idx)),
-        egui::Sense::click(),
-    );
-    if ui.is_rect_visible(close_rect) {
-        let hovered = close_resp.hovered();
-        if hovered {
-            ui.painter().rect_filled(
-                close_rect,
-                egui::Rounding::same(4.0),
-                C_RED.linear_multiply(0.35),
-            );
-        }
-        let color = if hovered { C_RED } else { C_MUTED };
-        paint_x(ui.painter(), close_rect.center(), 4.0, color, 1.5);
-    }
-
-    if close_resp.clicked() {
-        action = TabAction::Close;
-    } else if resp.clicked() {
-        let click_pos = ui.input(|i| i.pointer.interact_pos()).unwrap_or_default();
-        if !close_rect.contains(click_pos) {
-            action = TabAction::Activate;
-        }
-    }
-
-    resp.context_menu(|ui| {
-        if ui.button("Close").clicked() {
-            action = TabAction::Close;
-            ui.close_menu();
-        }
-        if ui.button("Close others").clicked() {
-            action = TabAction::CloseOthers;
-            ui.close_menu();
-        }
-        if ui.button("Close all").clicked() {
-            action = TabAction::CloseAll;
-            ui.close_menu();
-        }
-    });
-
-    action
-}
-
-fn render_kv_table(
-    ui: &mut egui::Ui,
-    title: &str,
-    rows: &mut Vec<KvRow>,
-    show_description: bool,
-) -> bool {
-    let mut changed = false;
-
-    ui.label(
-        egui::RichText::new(title)
-            .size(11.0)
-            .strong()
-            .color(C_MUTED),
-    );
-    ui.add_space(4.0);
-
-    // Always keep one empty placeholder row at the bottom for fast adding
-    if rows.last().map(|r| !r.is_blank()).unwrap_or(true) {
-        rows.push(KvRow::empty());
-    }
-
-    let avail = ui.available_width();
-    let cb_w = 22.0;
-    let del_w = 22.0;
-    let key_w = 200.0;
-    let row_h = 24.0;
-    let cell_pad = 6.0;
-    let (val_w, desc_w) = if show_description {
-        let total = (avail - cb_w - key_w - del_w - cell_pad * 4.0).max(200.0);
-        (total * 0.55, total * 0.45)
-    } else {
-        let val = avail - cb_w - key_w - del_w - cell_pad * 3.0;
-        (val.max(150.0), 0.0)
-    };
-
-    // Header
-    ui.horizontal(|ui| {
-        ui.add_space(cb_w + cell_pad);
-        ui.label(
-            egui::RichText::new("KEY")
-                .size(10.0)
-                .color(C_MUTED),
-        );
-        ui.add_space(key_w - 20.0);
-        ui.label(
-            egui::RichText::new("VALUE")
-                .size(10.0)
-                .color(C_MUTED),
-        );
-        if show_description {
-            ui.add_space(val_w - 30.0);
-            ui.label(
-                egui::RichText::new("DESCRIPTION")
-                    .size(10.0)
-                    .color(C_MUTED),
-            );
-        }
-    });
-    ui.add_space(2.0);
-    ui.painter().line_segment(
-        [
-            egui::pos2(ui.cursor().left(), ui.cursor().top()),
-            egui::pos2(
-                ui.cursor().left() + ui.available_width(),
-                ui.cursor().top(),
-            ),
-        ],
-        egui::Stroke::new(1.0, C_BORDER.linear_multiply(0.6)),
-    );
-    ui.add_space(4.0);
-
-    let mut to_remove: Option<usize> = None;
-    let row_count = rows.len();
-    for (i, row) in rows.iter_mut().enumerate() {
-        let is_blank = row.is_blank();
-        let is_last_blank = is_blank && i == row_count - 1;
-        ui.horizontal(|ui| {
-            // Checkbox (use blank when placeholder)
-            if is_last_blank {
-                ui.add_space(cb_w);
-            } else {
-                let cb = ui.add(egui::Checkbox::new(&mut row.enabled, ""));
-                if cb.changed() {
-                    changed = true;
-                }
-            }
-            ui.add_space(cell_pad);
-
-            // Key
-            let key_resp = ui.add_sized(
-                [key_w, row_h],
-                egui::TextEdit::singleline(&mut row.key)
-                    .hint_text(if is_last_blank { "Key" } else { "" })
-                    .frame(false)
-                    .text_color(if row.enabled { C_TEXT } else { C_MUTED }),
-            );
-            if key_resp.changed() {
-                changed = true;
-            }
-            ui.add_space(cell_pad);
-
-            // Value
-            let val_resp = ui.add_sized(
-                [val_w, row_h],
-                egui::TextEdit::singleline(&mut row.value)
-                    .hint_text(if is_last_blank { "Value" } else { "" })
-                    .frame(false)
-                    .text_color(if row.enabled { C_TEXT } else { C_MUTED }),
-            );
-            if val_resp.changed() {
-                changed = true;
-            }
-
-            // Description
-            if show_description {
-                ui.add_space(cell_pad);
-                let desc_resp = ui.add_sized(
-                    [desc_w, row_h],
-                    egui::TextEdit::singleline(&mut row.description)
-                        .hint_text(if is_last_blank { "Description" } else { "" })
-                        .frame(false)
-                        .text_color(if row.enabled { C_TEXT } else { C_MUTED }),
-                );
-                if desc_resp.changed() {
-                    changed = true;
-                }
-            }
-
-            // Delete (hidden for placeholder)
-            ui.add_space(cell_pad);
-            if is_last_blank {
-                ui.add_space(del_w);
-            } else if close_x_button(ui, "Remove row").clicked() {
-                to_remove = Some(i);
-            }
-        });
-        // Subtle separator between rows
-        let sep_y = ui.cursor().top();
-        ui.painter().line_segment(
-            [
-                egui::pos2(ui.cursor().left(), sep_y),
-                egui::pos2(ui.cursor().left() + ui.available_width(), sep_y),
-            ],
-            egui::Stroke::new(1.0, C_BORDER.linear_multiply(0.3)),
-        );
-        ui.add_space(2.0);
-    }
-
-    if let Some(i) = to_remove {
-        rows.remove(i);
-        changed = true;
-    }
-
-    changed
-}
-
-fn paint_x(painter: &egui::Painter, center: egui::Pos2, half: f32, color: egui::Color32, width: f32) {
-    let stroke = egui::Stroke::new(width, color);
-    painter.line_segment(
-        [
-            egui::pos2(center.x - half, center.y - half),
-            egui::pos2(center.x + half, center.y + half),
-        ],
-        stroke,
-    );
-    painter.line_segment(
-        [
-            egui::pos2(center.x - half, center.y + half),
-            egui::pos2(center.x + half, center.y - half),
-        ],
-        stroke,
-    );
-}
-
-fn close_x_button(ui: &mut egui::Ui, hover_text: &str) -> egui::Response {
-    let size = egui::vec2(20.0, 20.0);
-    let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::click());
-    if ui.is_rect_visible(rect) {
-        let hovered = resp.hovered();
-        if hovered {
-            ui.painter().rect_filled(
-                rect,
-                egui::Rounding::same(4.0),
-                C_RED.linear_multiply(0.35),
-            );
-        }
-        let color = if hovered { C_RED } else { C_MUTED };
-        paint_x(ui.painter(), rect.center(), 4.0, color, 1.5);
-    }
-    resp.on_hover_text(hover_text)
-}
-
-fn find_request_info(
-    folders: &[Folder],
-    folder_path: &[String],
-    request_id: &str,
-) -> Option<(HttpMethod, String)> {
-    if folder_path.is_empty() {
-        return None;
-    }
-    let mut folder = folders.iter().find(|f| f.id == folder_path[0])?;
-    for id in &folder_path[1..] {
-        folder = folder.subfolders.iter().find(|f| &f.id == id)?;
-    }
-    folder
-        .requests
-        .iter()
-        .find(|r| r.id == request_id)
-        .map(|r| (r.method.clone(), r.name.clone()))
-}
-
-fn elide(text: &str, max_width: f32, font: &egui::FontId, ui: &egui::Ui) -> String {
-    if max_width <= 0.0 {
-        return String::new();
-    }
-    let measure = |s: &str| {
-        ui.fonts(|f| f.layout_no_wrap(s.to_string(), font.clone(), egui::Color32::WHITE))
-            .size()
-            .x
-    };
-    if measure(text) <= max_width {
-        return text.to_string();
-    }
-    let ellipsis = "…";
-    let mut lo = 0usize;
-    let mut hi = text.chars().count();
-    while lo < hi {
-        let mid = (lo + hi + 1) / 2;
-        let candidate: String = text.chars().take(mid).collect::<String>() + ellipsis;
-        if measure(&candidate) <= max_width {
-            lo = mid;
-        } else {
-            hi = mid - 1;
-        }
-    }
-    text.chars().take(lo).collect::<String>() + ellipsis
-}
-
-fn folder_matches(folder: &Folder, q: &str) -> bool {
-    if q.is_empty() {
-        return true;
-    }
-    if folder.name.to_lowercase().contains(q) {
-        return true;
-    }
-    if folder.requests.iter().any(|r| request_matches(r, q)) {
-        return true;
-    }
-    folder.subfolders.iter().any(|sub| folder_matches(sub, q))
-}
-
-fn request_matches(r: &Request, q: &str) -> bool {
-    if q.is_empty() {
-        return true;
-    }
-    r.name.to_lowercase().contains(q)
-        || r.url.to_lowercase().contains(q)
-        || format!("{}", r.method).to_lowercase().contains(q)
-}
-
-fn count_matches(folders: &[Folder], q: &str) -> usize {
-    let mut n = 0;
-    for f in folders {
-        for r in &f.requests {
-            if request_matches(r, q) {
-                n += 1;
-            }
-        }
-        n += count_matches(&f.subfolders, q);
-    }
-    n
-}
-
-fn short_name_from_url(url: &str) -> String {
-    let stripped = url
-        .strip_prefix("https://")
-        .or_else(|| url.strip_prefix("http://"))
-        .unwrap_or(url);
-    let cutoff = stripped.find('?').unwrap_or(stripped.len());
-    stripped[..cutoff].trim_end_matches('/').to_string()
-}
 
 fn main() -> Result<(), eframe::Error> {
     let mut viewport = egui::ViewportBuilder::default()

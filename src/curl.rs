@@ -1,4 +1,4 @@
-use crate::{Auth, HttpMethod, KvRow, Request};
+use crate::model::{Auth, HttpMethod, KvRow, Request};
 use uuid::Uuid;
 
 pub fn to_curl(req: &Request) -> String {

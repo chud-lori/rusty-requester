@@ -1,4 +1,4 @@
-use crate::{Auth, Folder, HttpMethod, KvRow, Request};
+use crate::model::{Auth, Folder, HttpMethod, KvRow, Request};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::Path;

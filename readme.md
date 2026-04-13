@@ -67,36 +67,46 @@ Postman is a ~500 MB Electron app that phones home and wants you to log in. Rust
 
 ### Build & run from source
 
+The repo ships with a `Makefile` for the common tasks:
+
 ```bash
-# Clone
 git clone https://github.com/chud-lori/rusty-requester
 cd rusty-requester
 
-# Run in debug mode (fast to compile, great for iteration)
-cargo run
-
-# Or build an optimized release binary
-cargo build --release
-./target/release/rusty-requester
+make run        # debug build + run
+make release    # optimized binary at target/release/rusty-requester
+make test       # unit tests
+make icon       # regenerate assets/icon.png from scripts/generate_icon.py
+make app        # build a macOS .app bundle (in target/bundle/)
+make app-install  # build the bundle and copy it to /Applications
+make help       # list all targets
 ```
 
-### Build for Apple Silicon (M1/M2/M3)
+Or use Cargo directly: `cargo run`, `cargo build --release`, `cargo test`.
+
+### macOS app bundle (so the dock icon works)
+
+When you run via `cargo run` from a terminal, macOS shows the parent
+**Terminal** icon in the Dock and Cmd+Tab — this is a macOS limitation, not
+something we can change at runtime. To get the proper icon, build a `.app`
+bundle:
 
 ```bash
-cargo build --release --target aarch64-apple-darwin
-# Binary at: target/aarch64-apple-darwin/release/rusty-requester
+make app                  # creates target/bundle/RustyRequester.app
+open target/bundle/RustyRequester.app
+
+# or install once and launch from Spotlight / Launchpad:
+make app-install          # copies to /Applications/RustyRequester.app
 ```
 
-### Build for Intel Mac
+The bundle script uses macOS's built-in `sips` and `iconutil` to convert
+`assets/icon.png` into a multi-resolution `AppIcon.icns`.
+
+### Build for Apple Silicon / Intel explicitly
 
 ```bash
-cargo build --release --target x86_64-apple-darwin
-```
-
-### Run the tests
-
-```bash
-cargo test
+cargo build --release --target aarch64-apple-darwin   # M1/M2/M3
+cargo build --release --target x86_64-apple-darwin    # Intel Mac
 ```
 
 ---
@@ -114,18 +124,28 @@ All edits auto-save to local disk as you type.
 
 ### Importing from cURL
 
-Click **📥 Paste** next to Send (or **📥 Import → Paste cURL command…** in the sidebar), paste a `curl` command, and Import. Supports:
+**Just paste it into the URL bar.** When the field's text starts with `curl `,
+the app parses the command and fills in method, URL, headers, params, cookies,
+body, and auth automatically. A toast confirms the import.
+
+Supported `curl` flags:
 
 - `-X / --request` — method
 - `-H / --header` — headers
-- `-d / --data / --data-raw / --data-binary` — body (and implies `POST` if method not given)
+- `-d / --data / --data-raw / --data-binary` — body (also implies `POST` if no `-X`)
 - `-u / --user` — Basic auth
 - `-b / --cookie` — cookies (split into the Cookies list)
 - `-A`, `-e`, `--url`, `-G`, `-I`, and line-continuations (`\`)
 
-### Exporting as cURL
+There's also a **Sidebar → 📥 Import → Paste cURL command…** option for users
+who'd rather use a dedicated dialog.
 
-Click **📋 cURL** next to Send. The full request is copied to your clipboard, ready to paste into a terminal or a docs snippet.
+### Exporting as cURL / Python / JavaScript / HTTPie
+
+Click **`</> Code`** next to Send. A **right-side code panel** opens with a
+language picker (cURL · Python `requests` · JavaScript `fetch` · HTTPie). The
+code respects which headers / params / cookies you've enabled. Click **Copy**
+to grab it.
 
 ### Importing / exporting collections
 
@@ -137,13 +157,14 @@ Click **📋 cURL** next to Send. The full request is copied to your clipboard, 
 
 Type in the **🔎 Search** box in the sidebar. It filters by request name, URL, HTTP method, and folder name in real time. Collections auto-expand while searching. Click **✕** to clear.
 
-### Keyboard shortcuts
+### Keyboard shortcuts & gestures
 
 - **⌘/Ctrl + Enter** → Send the current request (from anywhere)
-- **Enter** (while focused in the URL field) → Send request
+- **Enter** (in URL field) → Send request
 - **⌘/Ctrl + K** → Focus the sidebar search
-- **Right-click collection / folder** → Rename / Add subfolder / Export / Delete
-- **Right-click request** → Duplicate / Delete
+- **Double-click a request** in the sidebar → Inline rename
+- **Right-click a request** → Rename / Duplicate / Delete
+- **Right-click a collection / folder** → Rename / Add subfolder / Export / Delete
 
 ### Where is my data stored?
 
@@ -197,9 +218,20 @@ Source layout:
 
 ```
 src/
-  main.rs   # app state, UI, send pipeline
-  curl.rs   # cURL tokenizer, parser, builder  (unit-tested)
-  io.rs     # JSON/YAML export, JSON/YAML/Postman import  (unit-tested)
+  main.rs       # ApiClient state + UI rendering + main()
+  model.rs      # Data types (Request, KvRow, Auth, HttpMethod, Folder, ...)
+  theme.rs      # Tokyo-Night color constants + global egui style
+  widgets.rs    # Reusable widgets (kv_table, tab pill, paint_x, ...)
+  snippet.rs    # Code-snippet generators (cURL, Python, JS, HTTPie)
+  icon.rs      # App icon loading (texture + window icon)
+  curl.rs       # cURL tokenizer / parser / builder       (unit-tested)
+  io.rs         # JSON / YAML export + Postman v2.1 import (unit-tested)
+
+assets/
+  icon.png      # 512×512 generated by scripts/generate_icon.py
+
+scripts/
+  generate_icon.py
 ```
 
 ---
@@ -232,6 +264,10 @@ src/
 4. Commit, push, open a PR
 
 ---
+
+## 📝 License
+
+MIT — see [`LICENSE`](./LICENSE).
 
 ## 🙏 Acknowledgments
 
