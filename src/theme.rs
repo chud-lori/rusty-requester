@@ -1,20 +1,23 @@
 use crate::model::HttpMethod;
 use eframe::egui;
 
-// ====== Tokyo-Night-inspired palette ======
-pub const C_BG: egui::Color32 = egui::Color32::from_rgb(15, 17, 26);
-pub const C_PANEL: egui::Color32 = egui::Color32::from_rgb(26, 29, 41);
-pub const C_PANEL_DARK: egui::Color32 = egui::Color32::from_rgb(12, 14, 20);
-pub const C_ELEVATED: egui::Color32 = egui::Color32::from_rgb(36, 40, 59);
-pub const C_BORDER: egui::Color32 = egui::Color32::from_rgb(47, 53, 73);
-pub const C_ACCENT: egui::Color32 = egui::Color32::from_rgb(122, 162, 247);
-pub const C_PURPLE: egui::Color32 = egui::Color32::from_rgb(187, 154, 247);
-pub const C_GREEN: egui::Color32 = egui::Color32::from_rgb(158, 206, 106);
-pub const C_ORANGE: egui::Color32 = egui::Color32::from_rgb(224, 175, 104);
-pub const C_PINK: egui::Color32 = egui::Color32::from_rgb(247, 118, 142);
-pub const C_RED: egui::Color32 = egui::Color32::from_rgb(247, 118, 142);
-pub const C_MUTED: egui::Color32 = egui::Color32::from_rgb(86, 95, 137);
-pub const C_TEXT: egui::Color32 = egui::Color32::from_rgb(192, 202, 245);
+// ====== Rust-forge palette ======
+// Warm, oxidised-metal tones that match the "Rusty" brand:
+// dark warm browns for surfaces, rust orange for the primary accent,
+// copper / amber / patina-green for method badges.
+pub const C_BG: egui::Color32 = egui::Color32::from_rgb(24, 15, 10);        // #180F0A deep warm
+pub const C_PANEL: egui::Color32 = egui::Color32::from_rgb(40, 26, 18);     // #281A12 warm dark panel
+pub const C_PANEL_DARK: egui::Color32 = egui::Color32::from_rgb(16, 10, 7); // #100A07 deepest
+pub const C_ELEVATED: egui::Color32 = egui::Color32::from_rgb(58, 39, 27);  // #3A271B hover / tab row
+pub const C_BORDER: egui::Color32 = egui::Color32::from_rgb(82, 57, 40);    // #523928 warm border
+pub const C_ACCENT: egui::Color32 = egui::Color32::from_rgb(206, 66, 43);   // #CE422B rust orange (brand)
+pub const C_PURPLE: egui::Color32 = egui::Color32::from_rgb(186, 120, 80);  // #BA7850 burnt sienna — PATCH
+pub const C_GREEN: egui::Color32 = egui::Color32::from_rgb(134, 172, 113); // #86AC71 patina green — GET
+pub const C_ORANGE: egui::Color32 = egui::Color32::from_rgb(245, 158, 11); // #F59E0B amber gold — POST
+pub const C_PINK: egui::Color32 = egui::Color32::from_rgb(183, 65, 14);    // #B7410E deep rust — PUT
+pub const C_RED: egui::Color32 = egui::Color32::from_rgb(220, 38, 38);     // #DC2626 crimson — DELETE / errors
+pub const C_MUTED: egui::Color32 = egui::Color32::from_rgb(138, 115, 95);  // #8A735F warm muted text
+pub const C_TEXT: egui::Color32 = egui::Color32::from_rgb(245, 230, 208); // #F5E6D0 warm cream
 
 pub fn pill_text_color(bg: egui::Color32) -> egui::Color32 {
     let r = bg.r() as f32 / 255.0;
@@ -30,12 +33,12 @@ pub fn pill_text_color(bg: egui::Color32) -> egui::Color32 {
 
 pub fn method_color(m: &HttpMethod) -> egui::Color32 {
     match m {
-        HttpMethod::GET => C_GREEN,
-        HttpMethod::POST => C_ORANGE,
-        HttpMethod::PUT => C_ACCENT,
-        HttpMethod::DELETE => C_PINK,
-        HttpMethod::PATCH => C_PURPLE,
-        _ => C_MUTED,
+        HttpMethod::GET => C_GREEN,   // patina green — safe read
+        HttpMethod::POST => C_ORANGE, // amber gold — create
+        HttpMethod::PUT => C_PINK,    // deep rust — update
+        HttpMethod::DELETE => C_RED,  // crimson — destructive
+        HttpMethod::PATCH => C_PURPLE, // burnt sienna — partial
+        _ => C_MUTED,                 // warm grey — HEAD / OPTIONS
     }
 }
 

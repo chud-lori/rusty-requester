@@ -14,7 +14,7 @@ Vibe-coded because I got tired of Postman's bloat and cloud sync I never wanted,
 ### Core
 - 🚀 **Truly native** — Rust + `egui`, no Electron, no Chromium
 - 💾 **Fully offline** — all data lives in one local JSON file, no cloud sync, no telemetry
-- 🎨 **Tokyo-Night-inspired dark UI** with colored HTTP-method pills and underlined tabs
+- 🎨 **Rust-forge dark UI** — warm copper / rust-orange / amber palette with colored HTTP-method pills and underlined tabs
 - 🍎 Builds for Apple Silicon, Intel Mac, Linux, and Windows
 
 ### Request building
@@ -247,14 +247,18 @@ Back it up, version-control it, or hand it to a teammate. It's just JSON.
 
 ### HTTP method pills
 
-Each request row shows a compact colored pill with the method:
+Each request row / tab shows a compact colored pill with the method,
+matching the rust-forge palette:
 
-- 🟢 **GET** — green
-- 🟠 **POST** — orange
-- 🔵 **PUT** — blue (accent)
-- 🩷 **DELETE** — pink
-- 🟣 **PATCH** — purple
-- ⚪ **HEAD / OPTIONS** — muted
+- 🟢 **GET** — patina green (`#86AC71`)
+- 🟠 **POST** — amber gold (`#F59E0B`)
+- 🟧 **PUT** — deep rust (`#B7410E`)
+- 🔴 **DELETE** — crimson (`#DC2626`)
+- 🟤 **PATCH** — burnt sienna (`#BA7850`)
+- ⚪ **HEAD / OPTIONS** — warm muted (`#8A735F`)
+
+The primary UI accent (selected tab, Send button, focus ring) is the brand
+**rust orange** `#CE422B`.
 
 ### Status code colors
 
@@ -285,7 +289,7 @@ Source layout:
 src/
   main.rs       # ApiClient state + UI rendering + main()
   model.rs      # Data types (Request, KvRow, Auth, HttpMethod, Folder, ...)
-  theme.rs      # Tokyo-Night color constants + global egui style
+  theme.rs      # Rust-forge color constants + global egui style
   widgets.rs    # Reusable widgets (kv_table, tab pill, paint_x, ...)
   snippet.rs    # Code-snippet generators (cURL, Python, JS, HTTPie)
   icon.rs      # App icon loading (texture + window icon)

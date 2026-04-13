@@ -16,11 +16,13 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 W, H = 600, 400
-GRAD_TOP = (32, 36, 52, 255)
-GRAD_BOT = (15, 17, 26, 255)
-ACCENT = (122, 162, 247, 255)
-TEXT = (192, 202, 245, 255)
-MUTED = (86, 95, 137, 255)
+# Rust-forge palette — warm coppers + rust orange.
+GRAD_TOP = (48, 28, 17, 255)       # #301C11 warm copper top
+GRAD_BOT = (18, 11, 7, 255)        # #120B07 deep warm bottom
+ACCENT = (206, 66, 43, 255)        # #CE422B rust orange
+AMBER = (245, 158, 11, 255)        # #F59E0B amber arrow tip
+TEXT = (245, 230, 208, 255)        # #F5E6D0 warm cream title
+MUTED = (170, 140, 115, 255)       # #AA8C73 warm muted subtitle
 
 FONT_CANDIDATES = [
     "/System/Library/Fonts/Helvetica.ttc",
@@ -74,22 +76,30 @@ def main() -> None:
     draw_centered(draw, "Drag the app onto the Applications folder",
                   78, load_font(13), MUTED)
 
-    # Dashed arrow between icon slots.
+    # Dashed arrow between icon slots — starts rust orange, tip amber.
     arrow_y = 200
     arrow_start = 250
     arrow_end = 348
     dash_w, gap = 10, 6
     x = arrow_start
+    idx = 0
+    n_dashes = max(1, (arrow_end - arrow_start) // (dash_w + gap))
     while x + dash_w <= arrow_end - 4:
+        # lerp from rust orange → amber across the dashes
+        t = idx / max(n_dashes - 1, 1)
+        r = round(ACCENT[0] * (1 - t) + AMBER[0] * t)
+        g = round(ACCENT[1] * (1 - t) + AMBER[1] * t)
+        b = round(ACCENT[2] * (1 - t) + AMBER[2] * t)
         draw.line([(x, arrow_y), (x + dash_w, arrow_y)],
-                  fill=ACCENT, width=3)
+                  fill=(r, g, b, 255), width=3)
         x += dash_w + gap
+        idx += 1
     head = 10
     draw.polygon([
         (arrow_end + head, arrow_y),
         (arrow_end - head + 4, arrow_y - head),
         (arrow_end - head + 4, arrow_y + head),
-    ], fill=ACCENT)
+    ], fill=AMBER)
 
     # Bottom hint
     draw_centered(draw, "Then eject this disk image.",

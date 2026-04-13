@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Generate the Rusty Requester app icon as a PNG.
 
-Produces a 512x512 PNG at assets/icon.png. The icon is a rounded dark square
-(Tokyo Night palette) with a stylized "R" and an accent send-arrow underline.
+Produces a 512x512 PNG at assets/icon.png. Rounded square in oxidised-metal
+warm tones: a dark copper-brown background, a big rust-orange "R", and an
+amber send-arrow underneath to suggest "requester".
 """
 
 from pathlib import Path
@@ -10,13 +11,14 @@ from PIL import Image, ImageDraw, ImageFont
 
 SIZE = 512
 
-# Tokyo Night palette
-PANEL = (26, 29, 41, 255)
-ELEVATED = (36, 40, 59, 255)
-BORDER = (47, 53, 73, 255)
-ACCENT = (122, 162, 247, 255)
-GREEN = (158, 206, 106, 255)
-ORANGE = (224, 175, 104, 255)
+# Rust-forge palette
+PANEL_TOP = (58, 34, 20, 255)      # #3A2214 burnt copper highlight
+PANEL_BOT = (20, 12, 8, 255)       # #140C08 deep warm
+BORDER = (82, 57, 40, 255)         # #523928 warm bronze border
+RUST = (206, 66, 43, 255)          # #CE422B rust orange (the R)
+RUST_DARK = (130, 40, 22, 255)     # #822816 rust orange shadow
+AMBER = (245, 158, 11, 255)        # #F59E0B amber arrow
+CREAM = (245, 230, 208, 255)       # #F5E6D0 warm cream highlight
 
 FONT_CANDIDATES = [
     "/System/Library/Fonts/Helvetica.ttc",
@@ -62,20 +64,20 @@ def main() -> None:
     # Transparent base
     img = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
 
-    # Build a rounded-rectangle mask
+    # Rounded-rectangle mask
     mask = Image.new("L", (SIZE, SIZE), 0)
     ImageDraw.Draw(mask).rounded_rectangle(
         (0, 0, SIZE, SIZE), radius=SIZE // 7, fill=255
     )
 
-    # Gradient background clipped to the rounded mask
-    bg = Image.new("RGBA", (SIZE, SIZE), PANEL)
-    draw_vertical_gradient(bg, (30, 34, 50, 255), (22, 25, 37, 255))
+    # Warm copper gradient behind everything
+    bg = Image.new("RGBA", (SIZE, SIZE), PANEL_BOT)
+    draw_vertical_gradient(bg, PANEL_TOP, PANEL_BOT)
     img.paste(bg, (0, 0), mask)
 
     draw = ImageDraw.Draw(img)
 
-    # Inner border for a subtle bevel
+    # Inner bronze bevel
     inset = 6
     draw.rounded_rectangle(
         (inset, inset, SIZE - inset, SIZE - inset),
@@ -84,7 +86,7 @@ def main() -> None:
         width=3,
     )
 
-    # Centered bold "R"
+    # Big bold "R" in rust orange
     font = load_bold_font(int(SIZE * 0.58))
     text = "R"
     bbox = draw.textbbox((0, 0), text, font=font)
@@ -92,19 +94,19 @@ def main() -> None:
     th = bbox[3] - bbox[1]
     tx = (SIZE - tw) // 2 - bbox[0]
     ty = (SIZE - th) // 2 - bbox[1] - int(SIZE * 0.04)
-    # Drop shadow
-    draw.text((tx + 3, ty + 5), text, fill=(0, 0, 0, 120), font=font)
-    # Main glyph
-    draw.text((tx, ty), text, fill=ACCENT, font=font)
+    # Deep-rust shadow offset behind the glyph
+    draw.text((tx + 5, ty + 7), text, fill=RUST_DARK, font=font)
+    # Main glyph — bold rust orange
+    draw.text((tx, ty), text, fill=RUST, font=font)
 
-    # Accent "send" arrow beneath the R
+    # Amber "send" arrow beneath the R — the Requester half of the name
     arrow_y = int(SIZE * 0.82)
     arrow_start = int(SIZE * 0.32)
     arrow_end = int(SIZE * 0.68)
     line_width = max(SIZE // 50, 6)
     draw.line(
         [(arrow_start, arrow_y), (arrow_end, arrow_y)],
-        fill=GREEN,
+        fill=AMBER,
         width=line_width,
     )
     head = SIZE // 28
@@ -114,7 +116,7 @@ def main() -> None:
             (arrow_end - head // 2, arrow_y - head),
             (arrow_end - head // 2, arrow_y + head),
         ],
-        fill=GREEN,
+        fill=AMBER,
     )
 
     img.save(out_path, format="PNG")
