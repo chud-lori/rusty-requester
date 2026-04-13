@@ -1,4 +1,5 @@
 mod curl;
+mod io;
 
 use base64::Engine;
 use eframe::egui;
@@ -389,6 +390,95 @@ impl ApiClient {
     fn show_toast(&mut self, msg: impl Into<String>) {
         self.toast = Some((msg.into(), 2.5));
     }
+
+    fn do_import_file(&mut self) {
+        let path = rfd::FileDialog::new()
+            .add_filter("Collections", &["json", "yaml", "yml"])
+            .add_filter("All files", &["*"])
+            .pick_file();
+        let Some(path) = path else { return };
+        match io::import_from_file(&path) {
+            Ok(folders) => {
+                let n = folders.len();
+                self.state.folders.extend(folders);
+                self.save_state();
+                self.show_toast(format!("Imported {} folder(s)", n));
+            }
+            Err(e) => {
+                self.show_toast(format!("Import failed: {}", e));
+            }
+        }
+    }
+
+    fn do_export_all(&mut self, format: io::Format) {
+        let (ext, label) = match format {
+            io::Format::Json => ("json", "JSON"),
+            io::Format::Yaml => ("yaml", "YAML"),
+        };
+        let path = rfd::FileDialog::new()
+            .add_filter(label, &[ext])
+            .set_file_name(&format!("rusty-requester.{}", ext))
+            .save_file();
+        let Some(path) = path else { return };
+        match io::export_string(&self.state.folders, format) {
+            Ok(content) => match std::fs::write(&path, content) {
+                Ok(_) => self.show_toast(format!("Exported as {}", label)),
+                Err(e) => self.show_toast(format!("Write failed: {}", e)),
+            },
+            Err(e) => self.show_toast(format!("Export failed: {}", e)),
+        }
+    }
+
+    fn do_export_folder(&mut self, folder_id: &str, format: io::Format) {
+        fn find<'a>(folders: &'a [Folder], id: &str) -> Option<&'a Folder> {
+            for f in folders {
+                if f.id == id {
+                    return Some(f);
+                }
+                if let Some(sub) = find(&f.subfolders, id) {
+                    return Some(sub);
+                }
+            }
+            None
+        }
+        let Some(folder) = find(&self.state.folders, folder_id).cloned() else {
+            return;
+        };
+        let (ext, label) = match format {
+            io::Format::Json => ("json", "JSON"),
+            io::Format::Yaml => ("yaml", "YAML"),
+        };
+        let suggested = format!(
+            "{}.{}",
+            sanitize_filename(&folder.name).unwrap_or_else(|| "collection".to_string()),
+            ext
+        );
+        let path = rfd::FileDialog::new()
+            .add_filter(label, &[ext])
+            .set_file_name(&suggested)
+            .save_file();
+        let Some(path) = path else { return };
+        match io::export_string(std::slice::from_ref(&folder), format) {
+            Ok(content) => match std::fs::write(&path, content) {
+                Ok(_) => self.show_toast(format!("Exported '{}' as {}", folder.name, label)),
+                Err(e) => self.show_toast(format!("Write failed: {}", e)),
+            },
+            Err(e) => self.show_toast(format!("Export failed: {}", e)),
+        }
+    }
+}
+
+fn sanitize_filename(name: &str) -> Option<String> {
+    let cleaned: String = name
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .collect();
+    let trimmed = cleaned.trim_matches('_').to_string();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed)
+    }
 }
 
 // ====== Colors ======
@@ -481,39 +571,88 @@ impl ApiClient {
                 ui.separator();
                 ui.add_space(8.0);
 
-                ui.horizontal(|ui| {
-                    if ui
-                        .add_sized(
-                            [ui.available_width() * 0.55, 30.0],
-                            egui::Button::new(egui::RichText::new("➕ New Folder").size(13.0))
-                                .fill(egui::Color32::from_rgb(56, 170, 100))
-                                .stroke(egui::Stroke::NONE),
-                        )
-                        .clicked()
-                    {
-                        self.state.folders.push(Folder {
-                            id: Uuid::new_v4().to_string(),
-                            name: format!("Folder {}", self.state.folders.len() + 1),
-                            requests: vec![],
-                            subfolders: vec![],
-                        });
-                        self.save_state();
-                    }
+                if ui
+                    .add_sized(
+                        [ui.available_width(), 30.0],
+                        egui::Button::new(egui::RichText::new("➕ New Folder").size(13.0))
+                            .fill(egui::Color32::from_rgb(56, 170, 100))
+                            .stroke(egui::Stroke::NONE),
+                    )
+                    .clicked()
+                {
+                    self.state.folders.push(Folder {
+                        id: Uuid::new_v4().to_string(),
+                        name: format!("Folder {}", self.state.folders.len() + 1),
+                        requests: vec![],
+                        subfolders: vec![],
+                    });
+                    self.save_state();
+                }
 
-                    if ui
-                        .add_sized(
-                            [ui.available_width(), 30.0],
-                            egui::Button::new(egui::RichText::new("📥 Import cURL").size(13.0))
-                                .fill(C_PANEL)
-                                .stroke(egui::Stroke::NONE),
-                        )
-                        .clicked()
-                    {
-                        self.show_paste_modal = true;
-                        self.paste_curl_text.clear();
-                        self.paste_error.clear();
-                    }
+                ui.add_space(6.0);
+
+                let mut action_import_file = false;
+                let mut action_paste_curl = false;
+                let mut action_export_json = false;
+                let mut action_export_yaml = false;
+
+                ui.horizontal(|ui| {
+                    let btn_w = (ui.available_width() - 6.0) / 2.0;
+                    ui.menu_button(
+                        egui::RichText::new("📥 Import").size(12.0).color(C_TEXT),
+                        |ui| {
+                            ui.set_min_width(200.0);
+                            if ui.button("Import collection file...").clicked() {
+                                action_import_file = true;
+                                ui.close_menu();
+                            }
+                            if ui.button("Paste cURL command...").clicked() {
+                                action_paste_curl = true;
+                                ui.close_menu();
+                            }
+                        },
+                    )
+                    .response
+                    .on_hover_text("Import JSON / YAML / Postman / cURL");
+                    let _ = btn_w;
+
+                    ui.menu_button(
+                        egui::RichText::new("📤 Export").size(12.0).color(C_TEXT),
+                        |ui| {
+                            ui.set_min_width(200.0);
+                            let enabled = !self.state.folders.is_empty();
+                            if ui
+                                .add_enabled(enabled, egui::Button::new("Export all as JSON..."))
+                                .clicked()
+                            {
+                                action_export_json = true;
+                                ui.close_menu();
+                            }
+                            if ui
+                                .add_enabled(enabled, egui::Button::new("Export all as YAML..."))
+                                .clicked()
+                            {
+                                action_export_yaml = true;
+                                ui.close_menu();
+                            }
+                        },
+                    );
                 });
+
+                if action_import_file {
+                    self.do_import_file();
+                }
+                if action_paste_curl {
+                    self.show_paste_modal = true;
+                    self.paste_curl_text.clear();
+                    self.paste_error.clear();
+                }
+                if action_export_json {
+                    self.do_export_all(io::Format::Json);
+                }
+                if action_export_yaml {
+                    self.do_export_all(io::Format::Yaml);
+                }
 
                 ui.add_space(10.0);
 
@@ -1371,11 +1510,23 @@ impl ApiClient {
             let folder_name = folder.name.clone();
             let mut start_rename = false;
             let mut delete_folder = false;
+            let mut export_json = false;
+            let mut export_yaml = false;
             header_response.header_response.context_menu(|ui| {
                 if ui.button("✏ Rename").clicked() {
                     start_rename = true;
                     ui.close_menu();
                 }
+                ui.separator();
+                if ui.button("📤 Export as JSON...").clicked() {
+                    export_json = true;
+                    ui.close_menu();
+                }
+                if ui.button("📤 Export as YAML...").clicked() {
+                    export_yaml = true;
+                    ui.close_menu();
+                }
+                ui.separator();
                 if ui.button("🗑 Delete folder").clicked() {
                     delete_folder = true;
                     ui.close_menu();
@@ -1384,6 +1535,12 @@ impl ApiClient {
             if start_rename {
                 self.renaming_folder_id = Some(folder_id.clone());
                 self.rename_folder_text = folder_name;
+            }
+            if export_json {
+                self.do_export_folder(&folder_id, io::Format::Json);
+            }
+            if export_yaml {
+                self.do_export_folder(&folder_id, io::Format::Yaml);
             }
             if delete_folder {
                 self.delete_folder(&folder_id);
