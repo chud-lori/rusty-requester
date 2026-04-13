@@ -10,7 +10,7 @@ APP_BUNDLE     := $(BUNDLE_DIR)/$(APP_NAME).app
 
 DMG_PATH       := $(BUNDLE_DIR)/$(APP_NAME).dmg
 
-.PHONY: help run release test fmt lint clean icon app app-install bundle-mac dmg
+.PHONY: help run release test fmt lint clean icon dmg-bg app app-install bundle-mac dmg
 
 help:
 	@echo "Targets:"
@@ -20,6 +20,7 @@ help:
 	@echo "  make fmt           Format with cargo fmt"
 	@echo "  make lint          Run cargo clippy"
 	@echo "  make icon          Regenerate assets/icon.png from Python"
+	@echo "  make dmg-bg        Regenerate assets/dmg_background.png from Python"
 	@echo "  make app           Build a macOS .app bundle (uses release binary + ICNS icon)"
 	@echo "  make app-install   Build the bundle and copy to /Applications"
 	@echo "  make dmg           Build a drag-to-Applications .dmg installer"
@@ -42,6 +43,9 @@ lint:
 
 icon:
 	python3 scripts/generate_icon.py
+
+dmg-bg:
+	python3 scripts/generate_dmg_bg.py
 
 clean:
 	cargo clean
