@@ -508,19 +508,20 @@ fn sanitize_filename(name: &str) -> Option<String> {
     }
 }
 
-// ====== Colors ======
-const C_BG: egui::Color32 = egui::Color32::from_rgb(26, 27, 38);
-const C_PANEL: egui::Color32 = egui::Color32::from_rgb(40, 42, 54);
-const C_PANEL_DARK: egui::Color32 = egui::Color32::from_rgb(30, 31, 41);
-const C_BORDER: egui::Color32 = egui::Color32::from_rgb(68, 71, 90);
-const C_ACCENT: egui::Color32 = egui::Color32::from_rgb(139, 233, 253);
-const C_PURPLE: egui::Color32 = egui::Color32::from_rgb(189, 147, 249);
-const C_GREEN: egui::Color32 = egui::Color32::from_rgb(80, 250, 123);
-const C_ORANGE: egui::Color32 = egui::Color32::from_rgb(255, 184, 108);
-const C_PINK: egui::Color32 = egui::Color32::from_rgb(255, 121, 198);
-const C_RED: egui::Color32 = egui::Color32::from_rgb(255, 85, 85);
-const C_MUTED: egui::Color32 = egui::Color32::from_rgb(98, 114, 164);
-const C_TEXT: egui::Color32 = egui::Color32::from_rgb(220, 220, 230);
+// ====== Colors (Tokyo-Night inspired) ======
+const C_BG: egui::Color32 = egui::Color32::from_rgb(15, 17, 26);
+const C_PANEL: egui::Color32 = egui::Color32::from_rgb(26, 29, 41);
+const C_PANEL_DARK: egui::Color32 = egui::Color32::from_rgb(12, 14, 20);
+const C_ELEVATED: egui::Color32 = egui::Color32::from_rgb(36, 40, 59);
+const C_BORDER: egui::Color32 = egui::Color32::from_rgb(47, 53, 73);
+const C_ACCENT: egui::Color32 = egui::Color32::from_rgb(122, 162, 247);
+const C_PURPLE: egui::Color32 = egui::Color32::from_rgb(187, 154, 247);
+const C_GREEN: egui::Color32 = egui::Color32::from_rgb(158, 206, 106);
+const C_ORANGE: egui::Color32 = egui::Color32::from_rgb(224, 175, 104);
+const C_PINK: egui::Color32 = egui::Color32::from_rgb(247, 118, 142);
+const C_RED: egui::Color32 = egui::Color32::from_rgb(247, 118, 142);
+const C_MUTED: egui::Color32 = egui::Color32::from_rgb(86, 95, 137);
+const C_TEXT: egui::Color32 = egui::Color32::from_rgb(192, 202, 245);
 
 fn method_color(m: &HttpMethod) -> egui::Color32 {
     match m {
@@ -564,13 +565,49 @@ impl eframe::App for ApiClient {
         let mut style = (*ctx.style()).clone();
         style.visuals.window_fill = C_BG;
         style.visuals.panel_fill = C_BG;
+        style.visuals.extreme_bg_color = C_PANEL_DARK;
         style.visuals.override_text_color = Some(C_TEXT);
-        style.visuals.widgets.noninteractive.bg_stroke =
-            egui::Stroke::new(1.0, C_BORDER);
-        style.visuals.widgets.inactive.bg_fill = C_PANEL;
+        style.visuals.selection.bg_fill = C_ACCENT.gamma_multiply(0.4);
+        style.visuals.selection.stroke = egui::Stroke::new(1.0, C_ACCENT);
+        style.visuals.hyperlink_color = C_ACCENT;
+        style.visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, C_BORDER);
+        style.visuals.widgets.noninteractive.fg_stroke = egui::Stroke::new(1.0, C_TEXT);
+        style.visuals.widgets.noninteractive.rounding = egui::Rounding::same(8.0);
+        style.visuals.widgets.inactive.bg_fill = C_ELEVATED;
+        style.visuals.widgets.inactive.weak_bg_fill = C_ELEVATED;
+        style.visuals.widgets.inactive.bg_stroke = egui::Stroke::NONE;
+        style.visuals.widgets.inactive.rounding = egui::Rounding::same(8.0);
         style.visuals.widgets.hovered.bg_fill = C_BORDER;
+        style.visuals.widgets.hovered.weak_bg_fill = C_BORDER;
+        style.visuals.widgets.hovered.bg_stroke = egui::Stroke::new(1.0, C_ACCENT.gamma_multiply(0.4));
+        style.visuals.widgets.hovered.rounding = egui::Rounding::same(8.0);
         style.visuals.widgets.active.bg_fill = C_BORDER;
-        style.spacing.item_spacing = egui::vec2(6.0, 6.0);
+        style.visuals.widgets.active.weak_bg_fill = C_BORDER;
+        style.visuals.widgets.active.bg_stroke = egui::Stroke::new(1.0, C_ACCENT);
+        style.visuals.widgets.active.rounding = egui::Rounding::same(8.0);
+        style.visuals.widgets.open.bg_fill = C_BORDER;
+        style.visuals.widgets.open.rounding = egui::Rounding::same(8.0);
+        style.visuals.menu_rounding = egui::Rounding::same(10.0);
+        style.visuals.window_rounding = egui::Rounding::same(12.0);
+        style.visuals.window_stroke = egui::Stroke::new(1.0, C_BORDER);
+
+        style.spacing.item_spacing = egui::vec2(8.0, 8.0);
+        style.spacing.button_padding = egui::vec2(10.0, 6.0);
+        style.spacing.window_margin = egui::Margin::same(12.0);
+        style.spacing.menu_margin = egui::Margin::same(6.0);
+        style.spacing.scroll.bar_width = 10.0;
+        style.spacing.scroll.floating = false;
+
+        use egui::{FontFamily, FontId, TextStyle};
+        style.text_styles = [
+            (TextStyle::Heading, FontId::new(20.0, FontFamily::Proportional)),
+            (TextStyle::Body, FontId::new(13.5, FontFamily::Proportional)),
+            (TextStyle::Monospace, FontId::new(12.5, FontFamily::Monospace)),
+            (TextStyle::Button, FontId::new(13.0, FontFamily::Proportional)),
+            (TextStyle::Small, FontId::new(11.0, FontFamily::Proportional)),
+        ]
+        .into();
+
         ctx.set_style(style);
 
         self.render_sidebar(ctx);
@@ -583,27 +620,48 @@ impl eframe::App for ApiClient {
 impl ApiClient {
     fn render_sidebar(&mut self, ctx: &egui::Context) {
         egui::SidePanel::left("sidebar")
-            .min_width(280.0)
+            .default_width(320.0)
+            .width_range(280.0..=520.0)
             .resizable(true)
+            .frame(
+                egui::Frame::none()
+                    .fill(C_PANEL)
+                    .inner_margin(egui::Margin::symmetric(10.0, 10.0)),
+            )
             .show(ctx, |ui| {
-                ui.add_space(10.0);
+                ui.add_space(4.0);
                 ui.horizontal(|ui| {
-                    ui.heading(
-                        egui::RichText::new("📁 Collections")
-                            .size(18.0)
-                            .color(C_ACCENT),
+                    ui.label(
+                        egui::RichText::new("🦀")
+                            .size(20.0),
+                    );
+                    ui.label(
+                        egui::RichText::new("Rusty Requester")
+                            .size(15.0)
+                            .strong()
+                            .color(C_TEXT),
                     );
                 });
-                ui.add_space(5.0);
-                ui.separator();
+                ui.add_space(4.0);
+                ui.label(
+                    egui::RichText::new("Collections")
+                        .size(11.0)
+                        .color(C_MUTED),
+                );
                 ui.add_space(8.0);
 
                 if ui
                     .add_sized(
-                        [ui.available_width(), 30.0],
-                        egui::Button::new(egui::RichText::new("➕ New Collection").size(13.0))
-                            .fill(egui::Color32::from_rgb(56, 170, 100))
-                            .stroke(egui::Stroke::NONE),
+                        [ui.available_width(), 32.0],
+                        egui::Button::new(
+                            egui::RichText::new("➕  New Collection")
+                                .size(13.0)
+                                .color(egui::Color32::WHITE)
+                                .strong(),
+                        )
+                        .fill(C_ACCENT)
+                        .rounding(egui::Rounding::same(8.0))
+                        .stroke(egui::Stroke::NONE),
                     )
                     .clicked()
                 {
@@ -707,28 +765,54 @@ impl ApiClient {
 
                 ui.add_space(6.0);
 
-                egui::ScrollArea::vertical().show(ui, |ui| {
-                    let folders = self.state.folders.clone();
-                    let query = self.search_query.to_lowercase();
-                    for folder in &folders {
-                        if !query.is_empty() && !folder_matches(folder, &query) {
-                            continue;
+                egui::ScrollArea::vertical()
+                    .id_salt("sidebar_scroll")
+                    .auto_shrink([false, false])
+                    .scroll_bar_visibility(
+                        egui::scroll_area::ScrollBarVisibility::AlwaysVisible,
+                    )
+                    .show(ui, |ui| {
+                        let folders = self.state.folders.clone();
+                        let query = self.search_query.to_lowercase();
+                        for folder in &folders {
+                            if !query.is_empty() && !folder_matches(folder, &query) {
+                                continue;
+                            }
+                            self.render_folder(ui, folder, vec![folder.id.clone()], 0);
                         }
-                        self.render_folder(ui, folder, vec![folder.id.clone()], 0);
-                    }
-                });
+                    });
             });
     }
 
     fn render_central(&mut self, ctx: &egui::Context) {
-        egui::CentralPanel::default().show(ctx, |ui| {
+        egui::CentralPanel::default()
+            .frame(
+                egui::Frame::none()
+                    .fill(C_BG)
+                    .inner_margin(egui::Margin::symmetric(14.0, 10.0)),
+            )
+            .show(ctx, |ui| {
             if self.selected_request_id.is_none() {
                 ui.centered_and_justified(|ui| {
-                    ui.label(
-                        egui::RichText::new("Select or create a request to get started")
-                            .size(16.0)
+                    ui.vertical_centered(|ui| {
+                        ui.add_space(ui.available_height() * 0.35);
+                        ui.label(egui::RichText::new("🦀").size(48.0));
+                        ui.add_space(10.0);
+                        ui.label(
+                            egui::RichText::new("Rusty Requester")
+                                .size(22.0)
+                                .strong()
+                                .color(C_TEXT),
+                        );
+                        ui.add_space(4.0);
+                        ui.label(
+                            egui::RichText::new(
+                                "Pick a request from the sidebar, or create a new one.",
+                            )
+                            .size(13.0)
                             .color(C_MUTED),
-                    );
+                        );
+                    });
                 });
                 return;
             }
@@ -747,8 +831,9 @@ impl ApiClient {
     fn render_name_bar(&mut self, ui: &mut egui::Ui) {
         egui::Frame::none()
             .fill(C_PANEL)
-            .inner_margin(10.0)
-            .rounding(6.0)
+            .inner_margin(12.0)
+            .rounding(10.0)
+            .stroke(egui::Stroke::new(1.0, C_BORDER))
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.label(
@@ -801,8 +886,9 @@ impl ApiClient {
     fn render_url_bar(&mut self, ui: &mut egui::Ui) {
         egui::Frame::none()
             .fill(C_PANEL)
-            .inner_margin(10.0)
-            .rounding(6.0)
+            .inner_margin(12.0)
+            .rounding(10.0)
+            .stroke(egui::Stroke::new(1.0, C_BORDER))
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
                     let mc = method_color(&self.editing_method);
@@ -945,7 +1031,7 @@ impl ApiClient {
         egui::Frame::none()
             .fill(C_PANEL)
             .inner_margin(12.0)
-            .rounding(6.0)
+            .rounding(10.0)
             .stroke(egui::Stroke::new(1.0, C_BORDER))
             .show(ui, |ui| {
                 let section_height = (ui.available_height() * 0.38).clamp(140.0, 260.0);
@@ -1340,29 +1426,50 @@ impl ApiClient {
                 egui::RichText::new("Response")
                     .size(15.0)
                     .strong()
-                    .color(C_ACCENT),
+                    .color(C_TEXT),
             );
-            ui.separator();
+            ui.add_space(8.0);
             if !self.response_status.is_empty() {
-                ui.label(egui::RichText::new("Status:").size(12.0).strong());
-                ui.label(
-                    egui::RichText::new(&self.response_status)
-                        .color(status_color(&self.response_status))
-                        .strong()
-                        .size(12.0),
-                );
+                let sc = status_color(&self.response_status);
+                egui::Frame::none()
+                    .fill(sc.linear_multiply(0.2))
+                    .rounding(egui::Rounding::same(6.0))
+                    .inner_margin(egui::Margin::symmetric(8.0, 3.0))
+                    .show(ui, |ui| {
+                        ui.label(
+                            egui::RichText::new(&self.response_status)
+                                .color(sc)
+                                .strong()
+                                .size(12.0),
+                        );
+                    });
             }
             if !self.response_time.is_empty() {
-                ui.separator();
-                ui.label(egui::RichText::new("⏱").size(12.0));
-                ui.label(
-                    egui::RichText::new(&self.response_time)
-                        .color(C_ACCENT)
-                        .size(12.0),
-                );
+                egui::Frame::none()
+                    .fill(C_ELEVATED)
+                    .rounding(egui::Rounding::same(6.0))
+                    .inner_margin(egui::Margin::symmetric(8.0, 3.0))
+                    .show(ui, |ui| {
+                        ui.label(
+                            egui::RichText::new(format!("⏱ {}", self.response_time))
+                                .color(C_ACCENT)
+                                .size(12.0),
+                        );
+                    });
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button("📋 Copy").clicked() && !self.response_text.is_empty() {
+                if ui
+                    .add(
+                        egui::Button::new(
+                            egui::RichText::new("📋 Copy").size(12.0).color(C_TEXT),
+                        )
+                        .fill(C_ELEVATED)
+                        .stroke(egui::Stroke::NONE)
+                        .rounding(egui::Rounding::same(6.0)),
+                    )
+                    .clicked()
+                    && !self.response_text.is_empty()
+                {
                     ui.output_mut(|o| o.copied_text = self.response_text.clone());
                     self.show_toast("Response copied");
                 }
@@ -1391,7 +1498,7 @@ impl ApiClient {
         egui::Frame::none()
             .fill(C_PANEL_DARK)
             .inner_margin(12.0)
-            .rounding(6.0)
+            .rounding(10.0)
             .stroke(egui::Stroke::new(1.0, C_BORDER))
             .show(ui, |ui| {
                 egui::ScrollArea::vertical()
@@ -1550,7 +1657,7 @@ impl ApiClient {
                 egui::Frame::none()
                     .fill(C_PANEL)
                     .stroke(egui::Stroke::new(1.0, C_ACCENT))
-                    .rounding(6.0)
+                    .rounding(10.0)
                     .inner_margin(10.0)
                     .show(ui, |ui| {
                         ui.label(egui::RichText::new(msg).color(C_TEXT).size(13.0));
@@ -1646,46 +1753,91 @@ impl ApiClient {
 
             let mut to_delete: Option<String> = None;
             for req in &folder.requests {
-                if searching && !request_matches(req, &query) && !folder.name.to_lowercase().contains(&query) {
+                if searching
+                    && !request_matches(req, &query)
+                    && !folder.name.to_lowercase().contains(&query)
+                {
                     continue;
                 }
                 let is_selected = self.selected_request_id.as_ref() == Some(&req.id);
                 let mc = method_color(&req.method);
 
-                let bg_color = if is_selected { C_BORDER } else { C_PANEL };
+                let (rect, resp) = ui.allocate_exact_size(
+                    egui::vec2(ui.available_width(), 34.0),
+                    egui::Sense::click(),
+                );
 
-                ui.horizontal(|ui| {
-                    let button = egui::Button::new(
-                        egui::RichText::new(format!("{:<7} {}", req.method, req.name))
-                            .size(12.0)
-                            .color(if is_selected { egui::Color32::WHITE } else { C_TEXT }),
-                    )
-                    .fill(bg_color)
-                    .stroke(if is_selected {
-                        egui::Stroke::new(1.0, mc)
+                if ui.is_rect_visible(rect) {
+                    let bg = if is_selected {
+                        C_ACCENT.linear_multiply(0.18)
+                    } else if resp.hovered() {
+                        C_ELEVATED
                     } else {
-                        egui::Stroke::NONE
-                    });
+                        egui::Color32::TRANSPARENT
+                    };
+                    ui.painter()
+                        .rect_filled(rect, egui::Rounding::same(7.0), bg);
 
-                    let resp = ui.add_sized([ui.available_width() - 26.0, 28.0], button);
-                    if resp.clicked() {
-                        self.selected_folder_path = path.clone();
-                        self.selected_request_id = Some(req.id.clone());
-                        self.load_request_for_editing();
-                        self.response_text.clear();
-                        self.response_status.clear();
-                        self.response_time.clear();
-                        self.response_headers.clear();
+                    if is_selected {
+                        let bar = egui::Rect::from_min_size(
+                            rect.min,
+                            egui::vec2(3.0, rect.height()),
+                        );
+                        ui.painter()
+                            .rect_filled(bar, egui::Rounding::same(2.0), C_ACCENT);
                     }
-                    resp.context_menu(|ui| {
-                        if ui.button("🗑 Delete").clicked() {
-                            to_delete = Some(req.id.clone());
-                            ui.close_menu();
-                        }
-                    });
 
-                    if ui.small_button("✕").on_hover_text("Delete").clicked() {
+                    // Method pill
+                    let pill_w = 48.0;
+                    let pill_h = 20.0;
+                    let pill_left = rect.left() + 10.0;
+                    let pill_top = rect.center().y - pill_h / 2.0;
+                    let pill_rect = egui::Rect::from_min_size(
+                        egui::pos2(pill_left, pill_top),
+                        egui::vec2(pill_w, pill_h),
+                    );
+                    ui.painter().rect_filled(
+                        pill_rect,
+                        egui::Rounding::same(4.0),
+                        mc.linear_multiply(0.25),
+                    );
+                    ui.painter().text(
+                        pill_rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        format!("{}", req.method),
+                        egui::FontId::new(10.0, egui::FontFamily::Proportional),
+                        mc,
+                    );
+
+                    // Request name
+                    let name_color = if is_selected { C_TEXT } else { C_TEXT };
+                    let name_x = pill_rect.right() + 10.0;
+                    let name_pos = egui::pos2(name_x, rect.center().y);
+                    let font = egui::FontId::new(13.0, egui::FontFamily::Proportional);
+                    let max_w = rect.right() - name_x - 8.0;
+                    let display_name = elide(&req.name, max_w, &font, ui);
+                    ui.painter().text(
+                        name_pos,
+                        egui::Align2::LEFT_CENTER,
+                        display_name,
+                        font,
+                        name_color,
+                    );
+                }
+
+                if resp.clicked() {
+                    self.selected_folder_path = path.clone();
+                    self.selected_request_id = Some(req.id.clone());
+                    self.load_request_for_editing();
+                    self.response_text.clear();
+                    self.response_status.clear();
+                    self.response_time.clear();
+                    self.response_headers.clear();
+                }
+                resp.context_menu(|ui| {
+                    if ui.button("🗑 Delete").clicked() {
                         to_delete = Some(req.id.clone());
+                        ui.close_menu();
                     }
                 });
 
@@ -1851,20 +2003,63 @@ fn tab_button<T: PartialEq + Copy>(
     label: &str,
 ) {
     let selected = *current == value;
-    let text_color = if selected { C_TEXT } else { C_MUTED };
-    let fill = if selected { C_BORDER } else { C_PANEL };
-    let stroke = if selected {
-        egui::Stroke::new(2.0, C_ACCENT)
+    let (text_color, text) = if selected {
+        (
+            C_ACCENT,
+            egui::RichText::new(label).color(C_ACCENT).strong().size(13.0),
+        )
     } else {
-        egui::Stroke::new(1.0, C_BORDER)
+        (C_MUTED, egui::RichText::new(label).color(C_MUTED).size(13.0))
     };
-    let btn = egui::Button::new(egui::RichText::new(label).color(text_color).size(12.0))
-        .fill(fill)
-        .stroke(stroke)
-        .min_size(egui::vec2(90.0, 26.0));
-    if ui.add(btn).clicked() {
+    let _ = text_color;
+    let btn = egui::Button::new(text)
+        .fill(egui::Color32::TRANSPARENT)
+        .stroke(egui::Stroke::NONE)
+        .rounding(egui::Rounding::same(6.0))
+        .min_size(egui::vec2(90.0, 30.0));
+    let resp = ui.add(btn);
+    if selected {
+        let rect = resp.rect;
+        let y = rect.bottom() - 1.0;
+        let pad = 10.0;
+        ui.painter().line_segment(
+            [
+                egui::pos2(rect.left() + pad, y),
+                egui::pos2(rect.right() - pad, y),
+            ],
+            egui::Stroke::new(2.5, C_ACCENT),
+        );
+    }
+    if resp.clicked() {
         *current = value;
     }
+}
+
+fn elide(text: &str, max_width: f32, font: &egui::FontId, ui: &egui::Ui) -> String {
+    if max_width <= 0.0 {
+        return String::new();
+    }
+    let measure = |s: &str| {
+        ui.fonts(|f| f.layout_no_wrap(s.to_string(), font.clone(), egui::Color32::WHITE))
+            .size()
+            .x
+    };
+    if measure(text) <= max_width {
+        return text.to_string();
+    }
+    let ellipsis = "…";
+    let mut lo = 0usize;
+    let mut hi = text.chars().count();
+    while lo < hi {
+        let mid = (lo + hi + 1) / 2;
+        let candidate: String = text.chars().take(mid).collect::<String>() + ellipsis;
+        if measure(&candidate) <= max_width {
+            lo = mid;
+        } else {
+            hi = mid - 1;
+        }
+    }
+    text.chars().take(lo).collect::<String>() + ellipsis
 }
 
 fn folder_matches(folder: &Folder, q: &str) -> bool {
