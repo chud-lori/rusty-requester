@@ -62,7 +62,34 @@ Postman is a ~500 MB Electron app that phones home and wants you to log in. Rust
 
 ---
 
-## 📦 Installation
+## 📥 Download (macOS)
+
+Grab the latest `.dmg` from the
+[**Releases page**](https://github.com/chud-lori/rusty-requester/releases/latest)
+(look for `RustyRequester.dmg`).
+
+### Install
+
+1. Open **`RustyRequester.dmg`**
+2. Drag **`RustyRequester.app`** to the **`Applications`** folder shortcut
+3. Eject the disk image
+4. Launch the app from Spotlight, Launchpad, or `/Applications`
+
+### First launch — Gatekeeper
+
+Because the app isn't notarised by Apple (no paid developer account), macOS
+will refuse to open it on the first launch with *"can't be opened because
+Apple cannot check it for malicious software"*. Workaround:
+
+- **Right-click** the app → **Open** → confirm in the dialog, **OR**
+- **System Settings → Privacy & Security**, scroll down, and click
+  **"Open Anyway"** next to the Rusty Requester entry
+
+You only need to do this once.
+
+---
+
+## 📦 Build from source
 
 ### Prerequisites
 - **Rust 1.70+** — install via [rustup.rs](https://rustup.rs)
@@ -87,12 +114,15 @@ make help       # list all targets
 
 Or use Cargo directly: `cargo run`, `cargo build --release`, `cargo test`.
 
-### macOS app bundle (so the dock icon works)
+### macOS dock / Cmd+Tab icon
 
-When you run via `cargo run` from a terminal, macOS shows the parent
-**Terminal** icon in the Dock and Cmd+Tab — this is a macOS limitation, not
-something we can change at runtime. To get the proper icon, build a `.app`
-bundle:
+The app calls `NSApplication.setApplicationIconImage` and forces
+`NSApplicationActivationPolicyRegular` at startup, so even when launched via
+`cargo run` from a terminal it gets its own entry in **Cmd+Tab** and the Dock
+with the Rusty Requester icon — not the parent terminal's icon. (See
+`src/icon.rs::set_macos_dock_icon`.)
+
+For distribution, build a proper `.app` bundle:
 
 ```bash
 make app                  # creates target/bundle/RustyRequester.app
@@ -103,7 +133,8 @@ make app-install          # copies to /Applications/RustyRequester.app
 ```
 
 The bundle script uses macOS's built-in `sips` and `iconutil` to convert
-`assets/icon.png` into a multi-resolution `AppIcon.icns`.
+`assets/icon.png` into a multi-resolution `AppIcon.icns`, plus writes an
+`Info.plist`. The bundle is what you'd ship to other users.
 
 ### Build for Apple Silicon / Intel explicitly
 
@@ -194,7 +225,9 @@ Type in the **🔎 Search** box in the sidebar. It filters by request name, URL,
 - **⌘/Ctrl + Enter** → Send the current request (from anywhere)
 - **Enter** (in URL field) → Send request
 - **⌘/Ctrl + K** → Focus the sidebar search
+- **F2** → Rename the active request (VS Code / Finder convention)
 - **Double-click a request** in the sidebar → Inline rename
+- **Esc** during rename → Cancel; **Enter** → Save
 - **Right-click a request** → Rename / Duplicate / Delete
 - **Right-click a collection / folder** → Rename / Add subfolder / Export / Delete
 
@@ -265,6 +298,46 @@ assets/
 scripts/
   generate_icon.py
 ```
+
+---
+
+## 🚀 Releasing (maintainers)
+
+A push of a `v*` git tag triggers
+[`.github/workflows/release.yml`](.github/workflows/release.yml), which on
+`macos-latest`:
+
+1. Builds the release binary (`cargo build --release`)
+2. Wraps it as a `.app` bundle (`make app`)
+3. Packages a drag-to-Applications **`.dmg`** (`make dmg` →
+   `scripts/make_dmg.sh`)
+4. Creates a GitHub Release for the tag and uploads
+   `RustyRequester.dmg` as an asset, with auto-generated release notes
+
+### Cutting a release
+
+```bash
+# 1. Bump the version in Cargo.toml + Makefile (VERSION := ...)
+$EDITOR Cargo.toml Makefile
+
+# 2. Commit + tag
+git commit -am "Release v0.2.0"
+git tag v0.2.0
+git push origin main --tags
+
+# 3. Watch GitHub Actions build + publish the release
+#    (or run the workflow manually from the Actions tab)
+```
+
+### Building a DMG locally (no GitHub needed)
+
+```bash
+make dmg              # → target/bundle/RustyRequester.dmg
+open target/bundle/RustyRequester.dmg
+```
+
+The resulting `.dmg` is exactly what gets shipped — drag the app to
+Applications and you're done.
 
 ---
 

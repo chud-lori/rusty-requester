@@ -9,7 +9,10 @@ use io::curl;
 
 use base64::Engine;
 use eframe::egui;
-use icon::{load_icon_color_image, load_window_icon};
+use icon::{
+    load_icon_color_image, load_window_icon, set_macos_activation_policy_regular,
+    set_macos_app_icon_image, APP_ICON_BYTES,
+};
 use model::*;
 use poll_promise::Promise;
 use snippet::{render_snippet, SnippetLang};
@@ -69,12 +72,18 @@ struct ApiClient {
     focus_search_next_frame: bool,
 
     app_icon: Option<egui::TextureHandle>,
+    macos_icon_set: bool,
 
     open_tabs: Vec<OpenTab>,
 
     renaming_request_id: Option<String>,
     rename_request_text: String,
     request_rename_focus_pending: bool,
+    /// (request_id, timestamp_secs) of the last click on a request row.
+    /// Used for hand-rolled double-click detection — egui's `double_clicked()`
+    /// doesn't fire reliably in this setup because the first click mutates
+    /// state that re-drives the sidebar layout.
+    last_request_click: Option<(String, f64)>,
 }
 
 impl Default for ApiClient {
@@ -133,10 +142,12 @@ impl Default for ApiClient {
             toast: None,
             focus_search_next_frame: false,
             app_icon: None,
+            macos_icon_set: false,
             open_tabs: vec![],
             renaming_request_id: None,
             rename_request_text: String::new(),
             request_rename_focus_pending: false,
+            last_request_click: None,
         }
     }
 }
@@ -646,10 +657,11 @@ impl ApiClient {
 
 impl eframe::App for ApiClient {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        let (cmd_enter, cmd_k) = ctx.input(|i| {
+        let (cmd_enter, cmd_k, f2) = ctx.input(|i| {
             (
                 i.modifiers.command && i.key_pressed(egui::Key::Enter),
                 i.modifiers.command && i.key_pressed(egui::Key::K),
+                i.key_pressed(egui::Key::F2),
             )
         });
         if cmd_enter && self.selected_request_id.is_some() && !self.is_loading {
@@ -657,6 +669,16 @@ impl eframe::App for ApiClient {
         }
         if cmd_k {
             self.focus_search_next_frame = true;
+        }
+        // F2 — rename the active request (VS Code / Finder convention)
+        if f2 && self.renaming_request_id.is_none() {
+            if let Some(id) = self.selected_request_id.clone() {
+                if let Some(req) = self.get_current_request() {
+                    self.renaming_request_id = Some(id);
+                    self.rename_request_text = req.name;
+                    self.request_rename_focus_pending = true;
+                }
+            }
         }
 
         if self.app_icon.is_none() {
@@ -666,6 +688,23 @@ impl eframe::App for ApiClient {
                     ci,
                     egui::TextureOptions::LINEAR,
                 ));
+            }
+        }
+
+        // Set the macOS Dock / Cmd+Tab icon once the window is up. Doing this
+        // from the first `update()` (rather than from the eframe creation
+        // callback) ensures NSApp is fully initialized by winit/eframe before
+        // we override `applicationIconImage` and force a Regular activation
+        // policy. Without this, the running process inherits the parent
+        // terminal's icon in Cmd+Tab.
+        // Set the icon image once the window is up. Activation policy was
+        // already set in main() before eframe took over the run loop —
+        // setActivationPolicy(Regular) is restricted by macOS once NSApp.run
+        // is processing events.
+        if !self.macos_icon_set {
+            self.macos_icon_set = true;
+            if let Err(e) = set_macos_app_icon_image(APP_ICON_BYTES) {
+                eprintln!("[icon] set_macos_app_icon_image failed: {}", e);
             }
         }
 
@@ -697,6 +736,10 @@ impl eframe::App for ApiClient {
 impl ApiClient {
     fn render_sidebar(&mut self, ctx: &egui::Context) {
         egui::SidePanel::left("sidebar")
+            // Pinned width — egui's `resizable(true)` lets the right-edge
+            // hover style (1px stroke) feed back into `ui.available_width()`
+            // calculations inside the panel, which causes the panel to
+            // visibly shift on pointer movement. Keep it stable.
             .exact_width(320.0)
             .resizable(false)
             .show_separator_line(true)
@@ -2318,6 +2361,12 @@ impl ApiClient {
                 }
                 let is_selected = self.selected_request_id.as_ref() == Some(&req.id);
                 let mc = method_color(&req.method);
+                // Shadow the outer `is_renaming` (which is for the folder
+                // header) with one keyed on this request's id. Without this
+                // shadow the row would fall back to the folder's flag and
+                // the rename TextEdit would never appear.
+                let is_renaming =
+                    self.renaming_request_id.as_deref() == Some(req.id.as_str());
 
                 let (rect, resp) = ui.allocate_exact_size(
                     egui::vec2(ui.available_width(), 34.0),
@@ -2381,17 +2430,29 @@ impl ApiClient {
                     }
                 }
 
-                // Inline rename TextEdit overlay
+                // Inline rename TextEdit overlay (clearly visible against the row)
                 if is_renaming {
                     let pill_right = rect.left() + 10.0 + 52.0;
                     let edit_rect = egui::Rect::from_min_max(
-                        egui::pos2(pill_right + 6.0, rect.top() + 4.0),
-                        egui::pos2(rect.right() - 6.0, rect.bottom() - 4.0),
+                        egui::pos2(pill_right + 6.0, rect.top() + 5.0),
+                        egui::pos2(rect.right() - 6.0, rect.bottom() - 5.0),
                     );
-                    let edit_resp = ui.put(
+                    // Visible background + accent border so the input is obvious.
+                    ui.painter()
+                        .rect_filled(edit_rect, egui::Rounding::same(4.0), C_PANEL_DARK);
+                    ui.painter().rect_stroke(
                         edit_rect,
+                        egui::Rounding::same(4.0),
+                        egui::Stroke::new(1.5, C_ACCENT),
+                    );
+                    let inner = edit_rect.shrink2(egui::vec2(6.0, 2.0));
+                    let edit_resp = ui.put(
+                        inner,
                         egui::TextEdit::singleline(&mut self.rename_request_text)
-                            .desired_width(edit_rect.width()),
+                            .desired_width(inner.width())
+                            .frame(false)
+                            .text_color(C_TEXT)
+                            .font(egui::FontId::new(13.0, egui::FontFamily::Proportional)),
                     );
                     if self.request_rename_focus_pending {
                         self.request_rename_focus_pending = false;
@@ -2414,12 +2475,27 @@ impl ApiClient {
                         self.renaming_request_id = None;
                     }
                 } else {
-                    if resp.double_clicked() {
-                        self.renaming_request_id = Some(req.id.clone());
-                        self.rename_request_text = req.name.clone();
-                        self.request_rename_focus_pending = true;
-                    } else if resp.clicked() {
-                        self.open_request(path.clone(), req.id.clone());
+                    // Hand-rolled double-click: if user clicks the same
+                    // request row twice within DOUBLE_CLICK_SECS, treat as
+                    // a double-click and start rename. Single click opens
+                    // the request after a small grace period.
+                    if resp.clicked() {
+                        const DOUBLE_CLICK_SECS: f64 = 0.4;
+                        let now = ui.input(|i| i.time);
+                        let is_double = self
+                            .last_request_click
+                            .as_ref()
+                            .map(|(id, t)| id == &req.id && (now - t) < DOUBLE_CLICK_SECS)
+                            .unwrap_or(false);
+                        if is_double {
+                            self.renaming_request_id = Some(req.id.clone());
+                            self.rename_request_text = req.name.clone();
+                            self.request_rename_focus_pending = true;
+                            self.last_request_click = None;
+                        } else {
+                            self.open_request(path.clone(), req.id.clone());
+                            self.last_request_click = Some((req.id.clone(), now));
+                        }
                     }
                     let req_id_for_menu = req.id.clone();
                     let req_name_for_menu = req.name.clone();
@@ -2609,6 +2685,15 @@ impl ApiClient {
 
 
 fn main() -> Result<(), eframe::Error> {
+    // Force NSApp into Regular activation policy BEFORE eframe starts the
+    // macOS run loop. Once NSApp.run has begun processing events, macOS
+    // rejects the setActivationPolicy(Regular) call, which is why calling
+    // this from update() / CreationContext didn't work — the process stayed
+    // Accessory/Prohibited and Cmd+Tab showed the parent terminal's icon.
+    if let Err(e) = set_macos_activation_policy_regular() {
+        eprintln!("[icon] activation policy set failed: {}", e);
+    }
+
     let mut viewport = egui::ViewportBuilder::default()
         .with_inner_size([1280.0, 820.0])
         .with_min_inner_size([900.0, 600.0])

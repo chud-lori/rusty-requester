@@ -3042,6 +3042,7 @@ dependencies = [
  "eframe",
  "egui",
  "image",
+ "objc",
  "poll-promise",
  "reqwest",
  "rfd",

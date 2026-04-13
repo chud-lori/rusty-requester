@@ -8,7 +8,9 @@ ICON_PNG       := assets/icon.png
 BUNDLE_DIR     := $(TARGET_DIR)/bundle
 APP_BUNDLE     := $(BUNDLE_DIR)/$(APP_NAME).app
 
-.PHONY: help run release test fmt lint clean icon app app-install bundle-mac
+DMG_PATH       := $(BUNDLE_DIR)/$(APP_NAME).dmg
+
+.PHONY: help run release test fmt lint clean icon app app-install bundle-mac dmg
 
 help:
 	@echo "Targets:"
@@ -20,6 +22,7 @@ help:
 	@echo "  make icon          Regenerate assets/icon.png from Python"
 	@echo "  make app           Build a macOS .app bundle (uses release binary + ICNS icon)"
 	@echo "  make app-install   Build the bundle and copy to /Applications"
+	@echo "  make dmg           Build a drag-to-Applications .dmg installer"
 	@echo "  make clean         cargo clean + remove bundle"
 
 run:
@@ -97,3 +100,8 @@ bundle-mac: $(RELEASE_BIN) $(ICON_PNG)
 
 $(RELEASE_BIN):
 	$(MAKE) release
+
+# ----- DMG installer -----
+dmg: bundle-mac
+	./scripts/make_dmg.sh
+	@echo "DMG ready: $(DMG_PATH)"
