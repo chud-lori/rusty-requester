@@ -87,12 +87,8 @@ jobs:
         run: cargo clippy --all-targets
 
   fmt:
-    name: rustfmt (advisory)
+    name: rustfmt
     runs-on: ubuntu-latest
-    # Advisory only — flag formatting drift without blocking merges.
-    # Flip to required by removing `continue-on-error` once the repo
-    # is fully formatted (`cargo fmt` once and commit).
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

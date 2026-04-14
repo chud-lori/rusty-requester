@@ -26,7 +26,6 @@ use theme::*;
 use uuid::Uuid;
 use widgets::*;
 
-
 struct ApiClient {
     state: AppState,
     selected_folder_path: Vec<String>,
@@ -294,7 +293,11 @@ impl Default for ApiClient {
         let active_tab: Option<OpenTab> = {
             let id = this.state.active_tab_id.clone();
             let by_id = id.and_then(|id| {
-                this.state.open_tabs.iter().find(|t| t.request_id == id).cloned()
+                this.state
+                    .open_tabs
+                    .iter()
+                    .find(|t| t.request_id == id)
+                    .cloned()
             });
             by_id.or_else(|| this.state.open_tabs.first().cloned())
         };
@@ -306,7 +309,6 @@ impl Default for ApiClient {
         this
     }
 }
-
 
 impl ApiClient {
     fn load_state(path: &PathBuf) -> Option<AppState> {
@@ -342,12 +344,7 @@ impl ApiClient {
         let req_id = self.selected_request_id.as_ref()?;
         // Draft path: selected_folder_path is empty → look up in drafts
         if self.selected_folder_path.is_empty() {
-            return self
-                .state
-                .drafts
-                .iter()
-                .find(|r| &r.id == req_id)
-                .cloned();
+            return self.state.drafts.iter().find(|r| &r.id == req_id).cloned();
         }
         let mut folder = self
             .state
@@ -449,12 +446,7 @@ impl ApiClient {
         let Some(env_id) = self.state.active_env_id.clone() else {
             return;
         };
-        let Some(env) = self
-            .state
-            .environments
-            .iter_mut()
-            .find(|e| e.id == env_id)
-        else {
+        let Some(env) = self.state.environments.iter_mut().find(|e| e.id == env_id) else {
             return;
         };
         for c in cookies {
@@ -465,7 +457,9 @@ impl ApiClient {
     }
 
     fn apply_response_extractors(&mut self) {
-        let Some(req) = self.get_current_request() else { return };
+        let Some(req) = self.get_current_request() else {
+            return;
+        };
         if req.extractors.is_empty() {
             return;
         }
@@ -513,12 +507,7 @@ impl ApiClient {
             return;
         }
 
-        if let Some(env) = self
-            .state
-            .environments
-            .iter_mut()
-            .find(|e| e.id == env_id)
-        {
+        if let Some(env) = self.state.environments.iter_mut().find(|e| e.id == env_id) {
             for (var, val) in &writes {
                 match env.variables.iter_mut().find(|kv| kv.key == *var) {
                     Some(existing) => existing.value = val.clone(),
@@ -560,21 +549,26 @@ impl ApiClient {
             })
             .collect();
 
-        let (pass, fail, err) = self.assertion_results.iter().fold((0, 0, 0), |acc, r| {
-            match r {
+        let (pass, fail, err) = self
+            .assertion_results
+            .iter()
+            .fold((0, 0, 0), |acc, r| match r {
                 Some(AssertionResult::Pass) => (acc.0 + 1, acc.1, acc.2),
                 Some(AssertionResult::Fail(_)) => (acc.0, acc.1 + 1, acc.2),
                 Some(AssertionResult::Error(_)) => (acc.0, acc.1, acc.2 + 1),
                 None => acc,
-            }
-        });
+            });
         let total = pass + fail + err;
         if total > 0 {
             self.show_toast(format!(
                 "Assertions: {} passed, {} failed{}",
                 pass,
                 fail,
-                if err > 0 { format!(", {} errored", err) } else { String::new() },
+                if err > 0 {
+                    format!(", {} errored", err)
+                } else {
+                    String::new()
+                },
             ));
         }
     }
@@ -612,7 +606,6 @@ impl ApiClient {
         }
         self.save_state();
     }
-
 
     fn load_request_for_editing(&mut self) {
         if let Some(r) = self.get_current_request() {
@@ -652,7 +645,12 @@ impl ApiClient {
     fn open_request(&mut self, folder_path: Vec<String>, request_id: String) {
         // Any request activation leaves the collection overview mode.
         self.viewing_folder_id = None;
-        if let Some(existing) = self.state.open_tabs.iter().position(|t| t.request_id == request_id) {
+        if let Some(existing) = self
+            .state
+            .open_tabs
+            .iter()
+            .position(|t| t.request_id == request_id)
+        {
             let tab = self.state.open_tabs[existing].clone();
             self.selected_folder_path = tab.folder_path;
             self.selected_request_id = Some(tab.request_id);
@@ -879,8 +877,6 @@ impl ApiClient {
     }
 }
 
-
-
 #[cfg(target_os = "macos")]
 impl ApiClient {
     /// Drain macOS NSMenu events and map each item ID to an action.
@@ -950,7 +946,10 @@ impl ApiClient {
 fn webbrowser_open(url: &str) -> Result<(), std::io::Error> {
     // Use `open` — ships with every macOS install; avoids adding a
     // webbrowser crate just for two menu items.
-    std::process::Command::new("open").arg(url).spawn().map(|_| ())
+    std::process::Command::new("open")
+        .arg(url)
+        .spawn()
+        .map(|_| ())
 }
 
 impl eframe::App for ApiClient {
@@ -1044,11 +1043,8 @@ impl eframe::App for ApiClient {
 
         if self.app_icon.is_none() {
             if let Some(ci) = load_icon_color_image() {
-                self.app_icon = Some(ctx.load_texture(
-                    "app_icon",
-                    ci,
-                    egui::TextureOptions::LINEAR,
-                ));
+                self.app_icon =
+                    Some(ctx.load_texture("app_icon", ci, egui::TextureOptions::LINEAR));
             }
         }
 
@@ -1212,14 +1208,10 @@ impl ApiClient {
     }
 }
 
-
 /// Walk a folder tree and return a clone of the folder with this id
 /// (or any descendant). Used by the overview view to pull current
 /// metadata without holding a long-lived borrow.
-pub(crate) fn find_folder_by_id<'a>(
-    folders: &'a [Folder],
-    id: &str,
-) -> Option<&'a Folder> {
+pub(crate) fn find_folder_by_id<'a>(folders: &'a [Folder], id: &str) -> Option<&'a Folder> {
     for f in folders {
         if f.id == id {
             return Some(f);

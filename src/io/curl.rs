@@ -92,7 +92,11 @@ pub fn parse_curl(input: &str) -> Result<Request, String> {
     let mut auth = Auth::None;
     let mut data_given = false;
 
-    let start = if tokens[0].eq_ignore_ascii_case("curl") { 1 } else { 0 };
+    let start = if tokens[0].eq_ignore_ascii_case("curl") {
+        1
+    } else {
+        0
+    };
     let mut i = start;
     while i < tokens.len() {
         let tok = &tokens[i];
@@ -138,7 +142,10 @@ pub fn parse_curl(input: &str) -> Result<Request, String> {
                         Some((u, p)) => (u.to_string(), p.to_string()),
                         None => (val.clone(), String::new()),
                     };
-                    auth = Auth::Basic { username: u, password: p };
+                    auth = Auth::Basic {
+                        username: u,
+                        password: p,
+                    };
                 }
             }
             "--url" => {
@@ -183,8 +190,8 @@ pub fn parse_curl(input: &str) -> Result<Request, String> {
             "-L" | "--location" | "-k" | "--insecure" | "--compressed" | "-s" | "--silent"
             | "-v" | "--verbose" | "-i" | "--include" | "-f" | "--fail" => {}
             // Flags with one ignored arg
-            "-o" | "--output" | "-m" | "--max-time" | "--connect-timeout" | "--resolve"
-            | "-w" | "--write-out" | "-x" | "--proxy" => {
+            "-o" | "--output" | "-m" | "--max-time" | "--connect-timeout" | "--resolve" | "-w"
+            | "--write-out" | "-x" | "--proxy" => {
                 i += 1;
             }
             s if s.starts_with("--") || (s.starts_with('-') && s.len() > 1) => {
@@ -202,7 +209,11 @@ pub fn parse_curl(input: &str) -> Result<Request, String> {
     let full_url = url.ok_or_else(|| "No URL found".to_string())?;
     let (base_url, query_params) = split_url(&full_url);
 
-    let method = method.unwrap_or(if data_given { HttpMethod::POST } else { HttpMethod::GET });
+    let method = method.unwrap_or(if data_given {
+        HttpMethod::POST
+    } else {
+        HttpMethod::GET
+    });
 
     let mut filtered_headers: Vec<KvRow> = Vec::new();
     for h in headers {
@@ -396,7 +407,10 @@ mod tests {
     #[test]
     fn tokenize_simple() {
         let toks = tokenize("curl -X POST 'https://x.com' -H 'A: B'").unwrap();
-        assert_eq!(toks, vec!["curl", "-X", "POST", "https://x.com", "-H", "A: B"]);
+        assert_eq!(
+            toks,
+            vec!["curl", "-X", "POST", "https://x.com", "-H", "A: B"]
+        );
     }
 
     #[test]

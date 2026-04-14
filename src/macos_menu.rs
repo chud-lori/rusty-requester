@@ -52,12 +52,7 @@ pub fn install() {
     let app_submenu = Submenu::new("Rusty Requester", true);
     app_submenu
         .append_items(&[
-            &MenuItem::with_id(
-                MENU_ABOUT,
-                "\u{200B}About Rusty Requester",
-                true,
-                None,
-            ),
+            &MenuItem::with_id(MENU_ABOUT, "\u{200B}About Rusty Requester", true, None),
             &PredefinedMenuItem::separator(),
             &MenuItem::with_id(
                 MENU_SETTINGS,

@@ -87,9 +87,7 @@ pub fn upsert(jar: &mut Vec<StoredCookie>, cookie: StoredCookie) {
         .expires
         .map(|exp| exp <= now_epoch())
         .unwrap_or(false);
-    jar.retain(|c| {
-        !(c.name == cookie.name && c.domain == cookie.domain && c.path == cookie.path)
-    });
+    jar.retain(|c| !(c.name == cookie.name && c.domain == cookie.domain && c.path == cookie.path));
     if !expired {
         jar.push(cookie);
     }
@@ -200,7 +198,13 @@ fn naive_utc_to_epoch(y: i64, mo: i64, d: i64, h: i64, mi: i64, s: i64) -> i64 {
         match month {
             1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
             4 | 6 | 9 | 11 => 30,
-            2 => if is_leap(year) { 29 } else { 28 },
+            2 => {
+                if is_leap(year) {
+                    29
+                } else {
+                    28
+                }
+            }
             _ => 0,
         }
     };

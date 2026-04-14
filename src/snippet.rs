@@ -115,9 +115,7 @@ fn highlight_line(job: &mut LayoutJob, line: &str, lang: SnippetLang, font: &Fon
                 }
                 let name_start = i;
                 while i < bytes.len()
-                    && (bytes[i].is_ascii_alphanumeric()
-                        || bytes[i] == b'-'
-                        || bytes[i] == b'_')
+                    && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'-' || bytes[i] == b'_')
                 {
                     i += 1;
                 }
@@ -134,8 +132,8 @@ fn highlight_line(job: &mut LayoutJob, line: &str, lang: SnippetLang, font: &Fon
 
         // Number literal.
         if c.is_ascii_digit() {
-            let prev_is_word = i > 0
-                && (bytes[i - 1].is_ascii_alphanumeric() || bytes[i - 1] == b'_');
+            let prev_is_word =
+                i > 0 && (bytes[i - 1].is_ascii_alphanumeric() || bytes[i - 1] == b'_');
             if !prev_is_word {
                 flush_default(job, line, default_run_start, i);
                 let start = i;
@@ -150,13 +148,11 @@ fn highlight_line(job: &mut LayoutJob, line: &str, lang: SnippetLang, font: &Fon
 
         // Language keywords (Python / JS).
         if c.is_ascii_alphabetic() || c == b'_' {
-            let prev_is_word = i > 0
-                && (bytes[i - 1].is_ascii_alphanumeric() || bytes[i - 1] == b'_');
+            let prev_is_word =
+                i > 0 && (bytes[i - 1].is_ascii_alphanumeric() || bytes[i - 1] == b'_');
             if !prev_is_word {
                 let start = i;
-                while i < bytes.len()
-                    && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_')
-                {
+                while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
                     i += 1;
                 }
                 let word = &line[start..i];
@@ -184,7 +180,11 @@ pub fn build_json_layout_job_with_search(text: &str, search: &str) -> LayoutJob 
     let font = FontId::monospace(12.5);
     let mut job = LayoutJob::default();
     let search_lc = search.to_lowercase();
-    let search_opt = if search_lc.is_empty() { None } else { Some(search_lc.as_str()) };
+    let search_opt = if search_lc.is_empty() {
+        None
+    } else {
+        Some(search_lc.as_str())
+    };
 
     for (line_idx, line) in text.split('\n').enumerate() {
         if line_idx > 0 {
@@ -235,12 +235,7 @@ fn apply_search_highlight(job: &mut LayoutJob, _full_text: &str, query: &str) {
     }
 }
 
-fn append_section(
-    job: &mut LayoutJob,
-    piece: &str,
-    base: &TextFormat,
-    bg: Option<Color32>,
-) {
+fn append_section(job: &mut LayoutJob, piece: &str, base: &TextFormat, bg: Option<Color32>) {
     let mut fmt = base.clone();
     if let Some(c) = bg {
         fmt.background = c;
@@ -298,9 +293,7 @@ fn highlight_json_line(job: &mut LayoutJob, line: &str, font: &FontId) {
                 i > 0 && (bytes[i - 1].is_ascii_alphanumeric() || bytes[i - 1] == b'_');
             if !prev_is_word {
                 let start = i;
-                while i < bytes.len()
-                    && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_')
-                {
+                while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
                     i += 1;
                 }
                 let word = &line[start..i];
@@ -351,11 +344,32 @@ fn is_keyword(word: &str, lang: SnippetLang) -> bool {
     match lang {
         SnippetLang::Python => matches!(
             word,
-            "import" | "from" | "as" | "if" | "else" | "return" | "print" | "def" | "None" | "True" | "False"
+            "import"
+                | "from"
+                | "as"
+                | "if"
+                | "else"
+                | "return"
+                | "print"
+                | "def"
+                | "None"
+                | "True"
+                | "False"
         ),
         SnippetLang::JavaScript => matches!(
             word,
-            "const" | "let" | "var" | "function" | "return" | "await" | "async" | "if" | "else" | "true" | "false" | "null"
+            "const"
+                | "let"
+                | "var"
+                | "function"
+                | "return"
+                | "await"
+                | "async"
+                | "if"
+                | "else"
+                | "true"
+                | "false"
+                | "null"
         ),
         _ => false,
     }
@@ -438,7 +452,11 @@ fn python(req: &Request) -> String {
             auth_arg = format!(", auth=({:?}, {:?})", username, password);
         }
     }
-    let cookies_arg = if cookies.is_empty() { "" } else { ", cookies=cookies" };
+    let cookies_arg = if cookies.is_empty() {
+        ""
+    } else {
+        ", cookies=cookies"
+    };
     let method = format!("{}", req.method).to_lowercase();
     if !req.body.is_empty() {
         s.push_str(&format!("payload = {:?}\n\n", req.body));

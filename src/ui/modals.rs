@@ -47,10 +47,7 @@ impl ApiClient {
                         for env in &envs {
                             let selected =
                                 self.selected_env_for_edit.as_deref() == Some(env.id.as_str());
-                            if ui
-                                .selectable_label(selected, &env.name)
-                                .clicked()
-                            {
+                            if ui.selectable_label(selected, &env.name).clicked() {
                                 self.selected_env_for_edit = Some(env.id.clone());
                             }
                         }
@@ -82,11 +79,7 @@ impl ApiClient {
                         if let Some(idx) = env_idx {
                             let mut name = self.state.environments[idx].name.clone();
                             ui.horizontal(|ui| {
-                                ui.label(
-                                    egui::RichText::new("Name")
-                                        .size(11.0)
-                                        .color(C_MUTED),
-                                );
+                                ui.label(egui::RichText::new("Name").size(11.0).color(C_MUTED));
                                 if ui
                                     .add(
                                         egui::TextEdit::singleline(&mut name)
@@ -112,13 +105,14 @@ impl ApiClient {
                             });
                             ui.add_space(8.0);
                             ui.label(
-                                egui::RichText::new("Variables  (use {{name}} in URL/headers/body)")
-                                    .size(11.0)
-                                    .color(C_MUTED),
+                                egui::RichText::new(
+                                    "Variables  (use {{name}} in URL/headers/body)",
+                                )
+                                .size(11.0)
+                                .color(C_MUTED),
                             );
                             ui.add_space(4.0);
-                            let mut vars =
-                                self.state.environments[idx].variables.clone();
+                            let mut vars = self.state.environments[idx].variables.clone();
                             let changed = render_kv_table(ui, "Variables", &mut vars, false);
                             if changed {
                                 self.state.environments[idx].variables = vars;
@@ -140,7 +134,9 @@ impl ApiClient {
                     if ui
                         .add(
                             egui::Button::new(
-                                egui::RichText::new("Done").color(egui::Color32::WHITE).strong(),
+                                egui::RichText::new("Done")
+                                    .color(egui::Color32::WHITE)
+                                    .strong(),
                             )
                             .fill(C_ACCENT)
                             .min_size(egui::vec2(80.0, 28.0)),
@@ -187,7 +183,12 @@ impl ApiClient {
         if !tab.folder_path.is_empty() {
             return; // not actually a draft
         }
-        let Some(draft) = self.state.drafts.iter().find(|d| d.id == tab.request_id).cloned()
+        let Some(draft) = self
+            .state
+            .drafts
+            .iter()
+            .find(|d| d.id == tab.request_id)
+            .cloned()
         else {
             return;
         };
@@ -219,156 +220,164 @@ impl ApiClient {
         let mut create_folder: Option<(Vec<String>, String)> = None;
 
         egui::Window::new(
-            egui::RichText::new("SAVE REQUEST").size(12.0).strong().color(C_MUTED),
+            egui::RichText::new("SAVE REQUEST")
+                .size(12.0)
+                .strong()
+                .color(C_MUTED),
         )
-            .open(&mut open)
-            .collapsible(false)
-            .resizable(false)
-            .default_width(560.0)
-            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
-            .show(ctx, |ui| {
-                ui.set_min_width(540.0);
+        .open(&mut open)
+        .collapsible(false)
+        .resizable(false)
+        .default_width(560.0)
+        .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+        .show(ctx, |ui| {
+            ui.set_min_width(540.0);
 
-                // Name
-                ui.label(egui::RichText::new("Request name").size(11.0).color(C_MUTED));
-                let name_resp = ui.add(
-                    egui::TextEdit::singleline(&mut self.save_draft_name)
-                        .desired_width(f32::INFINITY),
-                );
-                ui.add_space(10.0);
+            // Name
+            ui.label(
+                egui::RichText::new("Request name")
+                    .size(11.0)
+                    .color(C_MUTED),
+            );
+            let name_resp = ui.add(
+                egui::TextEdit::singleline(&mut self.save_draft_name).desired_width(f32::INFINITY),
+            );
+            ui.add_space(10.0);
 
-                // Breadcrumb
-                let breadcrumb = self.save_draft_breadcrumb();
-                ui.label(
-                    egui::RichText::new(format!("Save to  {}", breadcrumb))
-                        .size(12.0)
-                        .color(C_TEXT),
-                );
-                ui.add_space(6.0);
+            // Breadcrumb
+            let breadcrumb = self.save_draft_breadcrumb();
+            ui.label(
+                egui::RichText::new(format!("Save to  {}", breadcrumb))
+                    .size(12.0)
+                    .color(C_TEXT),
+            );
+            ui.add_space(6.0);
 
-                // Search
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.save_draft_search)
-                        .hint_text("Search for collection or folder")
-                        .desired_width(f32::INFINITY),
-                );
-                ui.add_space(6.0);
+            // Search
+            ui.add(
+                egui::TextEdit::singleline(&mut self.save_draft_search)
+                    .hint_text("Search for collection or folder")
+                    .desired_width(f32::INFINITY),
+            );
+            ui.add_space(6.0);
 
-                // Folder tree (scrollable)
-                egui::Frame::none()
-                    .fill(C_PANEL_DARK)
-                    .stroke(egui::Stroke::new(1.0, C_BORDER))
-                    .rounding(egui::Rounding::same(6.0))
-                    .inner_margin(4.0)
-                    .show(ui, |ui| {
-                        ui.set_width(ui.available_width());
-                        egui::ScrollArea::vertical()
-                            .id_salt("save_draft_tree")
-                            .max_height(260.0)
-                            .auto_shrink([false, false])
-                            .show(ui, |ui| {
-                                ui.set_width(ui.available_width());
-                                let folders = self.state.folders.clone();
-                                let query = self.save_draft_search.to_lowercase();
-                                for f in &folders {
-                                    Self::render_save_tree_row(
-                                        ui,
-                                        f,
-                                        &mut vec![],
-                                        &mut self.save_draft_target_path,
-                                        &query,
-                                    );
-                                }
-                            });
-                    });
+            // Folder tree (scrollable)
+            egui::Frame::none()
+                .fill(C_PANEL_DARK)
+                .stroke(egui::Stroke::new(1.0, C_BORDER))
+                .rounding(egui::Rounding::same(6.0))
+                .inner_margin(4.0)
+                .show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    egui::ScrollArea::vertical()
+                        .id_salt("save_draft_tree")
+                        .max_height(260.0)
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
+                            ui.set_width(ui.available_width());
+                            let folders = self.state.folders.clone();
+                            let query = self.save_draft_search.to_lowercase();
+                            for f in &folders {
+                                Self::render_save_tree_row(
+                                    ui,
+                                    f,
+                                    &mut vec![],
+                                    &mut self.save_draft_target_path,
+                                    &query,
+                                );
+                            }
+                        });
+                });
 
-                ui.add_space(8.0);
+            ui.add_space(8.0);
 
-                // New folder — either show the "+ New folder" button or,
-                // if the user clicked it, an inline input with Create/Cancel.
-                let mut cancel_new_folder = false;
-                if let Some(name) = self.save_draft_new_folder_name.as_mut() {
-                    let target_path_snapshot = self.save_draft_target_path.clone();
-                    ui.horizontal(|ui| {
-                        ui.add(
-                            egui::TextEdit::singleline(name)
-                                .hint_text("New folder name")
-                                .desired_width(260.0),
-                        );
-                        let enabled = !name.trim().is_empty();
-                        if ui
-                            .add_enabled(
-                                enabled,
-                                egui::Button::new(
-                                    egui::RichText::new("Create").color(egui::Color32::WHITE),
-                                )
-                                .fill(if enabled { C_ACCENT } else { C_ELEVATED })
-                                .min_size(egui::vec2(72.0, 26.0)),
+            // New folder — either show the "+ New folder" button or,
+            // if the user clicked it, an inline input with Create/Cancel.
+            let mut cancel_new_folder = false;
+            if let Some(name) = self.save_draft_new_folder_name.as_mut() {
+                let target_path_snapshot = self.save_draft_target_path.clone();
+                ui.horizontal(|ui| {
+                    ui.add(
+                        egui::TextEdit::singleline(name)
+                            .hint_text("New folder name")
+                            .desired_width(260.0),
+                    );
+                    let enabled = !name.trim().is_empty();
+                    if ui
+                        .add_enabled(
+                            enabled,
+                            egui::Button::new(
+                                egui::RichText::new("Create").color(egui::Color32::WHITE),
                             )
-                            .clicked()
-                        {
-                            create_folder =
-                                Some((target_path_snapshot.clone(), name.trim().to_string()));
-                        }
-                        if ui.button("Cancel").clicked() {
-                            cancel_new_folder = true;
-                        }
-                    });
-                } else if ui
-                    .add(
-                        egui::Button::new(
-                            egui::RichText::new("+ New folder").size(12.0).color(C_ACCENT),
+                            .fill(if enabled { C_ACCENT } else { C_ELEVATED })
+                            .min_size(egui::vec2(72.0, 26.0)),
                         )
-                        .fill(egui::Color32::TRANSPARENT)
-                        .stroke(egui::Stroke::NONE),
-                    )
-                    .clicked()
-                {
-                    self.save_draft_new_folder_name = Some(String::new());
-                }
-                if cancel_new_folder {
-                    self.save_draft_new_folder_name = None;
-                }
-
-                ui.add_space(8.0);
-                ui.separator();
-                ui.add_space(6.0);
-
-                // Save / Cancel
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        .clicked()
+                    {
+                        create_folder =
+                            Some((target_path_snapshot.clone(), name.trim().to_string()));
+                    }
                     if ui.button("Cancel").clicked() {
-                        do_cancel = true;
+                        cancel_new_folder = true;
                     }
-                    let can_save = !self.save_draft_target_path.is_empty()
-                        && !self.save_draft_name.trim().is_empty();
-                    let save_btn = egui::Button::new(
-                        egui::RichText::new("Save")
-                            .color(egui::Color32::WHITE)
-                            .strong(),
+                });
+            } else if ui
+                .add(
+                    egui::Button::new(
+                        egui::RichText::new("+ New folder")
+                            .size(12.0)
+                            .color(C_ACCENT),
                     )
-                    .fill(if can_save { C_ACCENT } else { C_ELEVATED })
-                    .min_size(egui::vec2(80.0, 28.0));
-                    if ui.add_enabled(can_save, save_btn).clicked() {
-                        do_save = true;
-                    }
-                });
+                    .fill(egui::Color32::TRANSPARENT)
+                    .stroke(egui::Stroke::NONE),
+                )
+                .clicked()
+            {
+                self.save_draft_new_folder_name = Some(String::new());
+            }
+            if cancel_new_folder {
+                self.save_draft_new_folder_name = None;
+            }
 
-                ui.input(|i| {
-                    if i.key_pressed(egui::Key::Escape) {
-                        do_cancel = true;
-                    }
-                });
+            ui.add_space(8.0);
+            ui.separator();
+            ui.add_space(6.0);
 
-                if !name_resp.has_focus()
-                    && self.save_draft_tab_idx.is_some()
-                    && !do_save
-                    && !do_cancel
-                    && self.save_draft_search.is_empty()
-                    && self.save_draft_new_folder_name.is_none()
-                {
-                    name_resp.request_focus();
+            // Save / Cancel
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button("Cancel").clicked() {
+                    do_cancel = true;
+                }
+                let can_save = !self.save_draft_target_path.is_empty()
+                    && !self.save_draft_name.trim().is_empty();
+                let save_btn = egui::Button::new(
+                    egui::RichText::new("Save")
+                        .color(egui::Color32::WHITE)
+                        .strong(),
+                )
+                .fill(if can_save { C_ACCENT } else { C_ELEVATED })
+                .min_size(egui::vec2(80.0, 28.0));
+                if ui.add_enabled(can_save, save_btn).clicked() {
+                    do_save = true;
                 }
             });
+
+            ui.input(|i| {
+                if i.key_pressed(egui::Key::Escape) {
+                    do_cancel = true;
+                }
+            });
+
+            if !name_resp.has_focus()
+                && self.save_draft_tab_idx.is_some()
+                && !do_save
+                && !do_cancel
+                && self.save_draft_search.is_empty()
+                && self.save_draft_new_folder_name.is_none()
+            {
+                name_resp.request_focus();
+            }
+        });
         self.save_draft_open = open;
 
         // Create the new folder outside the UI closure to avoid borrow
@@ -456,7 +465,10 @@ impl ApiClient {
         // Filter: show row if self or any descendant matches the query.
         let matches_self = query.is_empty() || folder.name.to_lowercase().contains(query);
         let matches_descendant = !query.is_empty()
-            && folder.subfolders.iter().any(|f| Self::subtree_has_match(f, query));
+            && folder
+                .subfolders
+                .iter()
+                .any(|f| Self::subtree_has_match(f, query));
         if !matches_self && !matches_descendant {
             return;
         }
@@ -485,14 +497,10 @@ impl ApiClient {
             // Folder icon — painter-drawn (two stacked rounded rects) so
             // we don't depend on unicode glyphs egui's bundled font
             // doesn't ship (e.g. `▸` rendered as a tofu square).
-            let icon_body = egui::Rect::from_min_size(
-                egui::pos2(icon_x, text_y - 4.0),
-                egui::vec2(14.0, 10.0),
-            );
-            let icon_tab = egui::Rect::from_min_size(
-                egui::pos2(icon_x, text_y - 7.0),
-                egui::vec2(6.0, 3.5),
-            );
+            let icon_body =
+                egui::Rect::from_min_size(egui::pos2(icon_x, text_y - 4.0), egui::vec2(14.0, 10.0));
+            let icon_tab =
+                egui::Rect::from_min_size(egui::pos2(icon_x, text_y - 7.0), egui::vec2(6.0, 3.5));
             let icon_color = if is_selected { C_ACCENT } else { C_MUTED };
             ui.painter()
                 .rect_filled(icon_tab, egui::Rounding::same(1.5), icon_color);
@@ -524,7 +532,10 @@ impl ApiClient {
         if folder.name.to_lowercase().contains(query) {
             return true;
         }
-        folder.subfolders.iter().any(|f| Self::subtree_has_match(f, query))
+        folder
+            .subfolders
+            .iter()
+            .any(|f| Self::subtree_has_match(f, query))
     }
 
     /// Mutable lookup of a folder at an arbitrary path (top-level collection
@@ -543,18 +554,24 @@ impl ApiClient {
 
     /// Move the draft referenced by the modal into the selected folder path.
     fn commit_save_draft(&mut self) {
-        let Some(idx) = self.save_draft_tab_idx else { return; };
+        let Some(idx) = self.save_draft_tab_idx else {
+            return;
+        };
         let target_path = self.save_draft_target_path.clone();
         if target_path.is_empty() {
             return;
         }
-        let Some(tab) = self.state.open_tabs.get(idx).cloned() else { return; };
+        let Some(tab) = self.state.open_tabs.get(idx).cloned() else {
+            return;
+        };
         if !tab.folder_path.is_empty() {
             return;
         }
         let draft_id = tab.request_id.clone();
         let draft_pos = self.state.drafts.iter().position(|d| d.id == draft_id);
-        let Some(pos) = draft_pos else { return; };
+        let Some(pos) = draft_pos else {
+            return;
+        };
         let mut req = self.state.drafts.remove(pos);
         req.name = self.save_draft_name.trim().to_string();
 
@@ -693,8 +710,7 @@ impl ApiClient {
                                 // of snapping back to x=0 and colliding
                                 // with the next logical line's gutter.
                                 let gutter_w = 32.0;
-                                let line_count =
-                                    snippet.split('\n').count().max(1);
+                                let line_count = snippet.split('\n').count().max(1);
                                 ui.horizontal_top(|ui| {
                                     // Left — line numbers. One label per
                                     // logical line; if the content wraps
@@ -707,12 +723,11 @@ impl ApiClient {
                                             ui.add_sized(
                                                 [gutter_w, 17.0],
                                                 egui::Label::new(
-                                                    egui::RichText::new(format!(
-                                                        "{:>3}",
-                                                        i
-                                                    ))
-                                                    .color(egui::Color32::from_rgb(100, 105, 115))
-                                                    .font(egui::FontId::monospace(12.5)),
+                                                    egui::RichText::new(format!("{:>3}", i))
+                                                        .color(egui::Color32::from_rgb(
+                                                            100, 105, 115,
+                                                        ))
+                                                        .font(egui::FontId::monospace(12.5)),
                                                 ),
                                             );
                                         }
@@ -856,97 +871,108 @@ impl ApiClient {
         let mut do_cancel = false;
 
         egui::Window::new(
-            egui::RichText::new("SETTINGS").size(12.0).strong().color(C_MUTED),
+            egui::RichText::new("SETTINGS")
+                .size(12.0)
+                .strong()
+                .color(C_MUTED),
         )
-            .open(&mut open)
-            .collapsible(false)
-            .resizable(false)
-            .default_width(440.0)
-            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
-            .show(ctx, |ui| {
-                ui.set_min_width(420.0);
+        .open(&mut open)
+        .collapsible(false)
+        .resizable(false)
+        .default_width(440.0)
+        .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+        .show(ctx, |ui| {
+            ui.set_min_width(420.0);
 
-                // Request timeout
-                ui.label(egui::RichText::new("Request timeout (seconds)").size(11.5).color(C_MUTED));
-                ui.add(
-                    egui::DragValue::new(&mut self.editing_settings.timeout_sec)
-                        .range(0..=3600)
-                        .speed(1.0)
-                        .suffix(" s"),
-                );
-                ui.label(
-                    egui::RichText::new("0 disables the timeout (requests can hang forever).")
-                        .size(10.5)
-                        .color(C_MUTED),
-                );
-                ui.add_space(10.0);
+            // Request timeout
+            ui.label(
+                egui::RichText::new("Request timeout (seconds)")
+                    .size(11.5)
+                    .color(C_MUTED),
+            );
+            ui.add(
+                egui::DragValue::new(&mut self.editing_settings.timeout_sec)
+                    .range(0..=3600)
+                    .speed(1.0)
+                    .suffix(" s"),
+            );
+            ui.label(
+                egui::RichText::new("0 disables the timeout (requests can hang forever).")
+                    .size(10.5)
+                    .color(C_MUTED),
+            );
+            ui.add_space(10.0);
 
-                // Max body size
-                ui.label(egui::RichText::new("Max response body (MB)").size(11.5).color(C_MUTED));
-                ui.add(
-                    egui::DragValue::new(&mut self.editing_settings.max_body_mb)
-                        .range(0..=2048)
-                        .speed(1.0)
-                        .suffix(" MB"),
-                );
-                ui.label(
-                    egui::RichText::new(
-                        "Responses larger than this are truncated with a banner. \
+            // Max body size
+            ui.label(
+                egui::RichText::new("Max response body (MB)")
+                    .size(11.5)
+                    .color(C_MUTED),
+            );
+            ui.add(
+                egui::DragValue::new(&mut self.editing_settings.max_body_mb)
+                    .range(0..=2048)
+                    .speed(1.0)
+                    .suffix(" MB"),
+            );
+            ui.label(
+                egui::RichText::new(
+                    "Responses larger than this are truncated with a banner. \
                          0 disables the cap (huge payloads may OOM the app).",
-                    )
-                    .size(10.5)
-                    .color(C_MUTED),
-                );
-                ui.add_space(10.0);
+                )
+                .size(10.5)
+                .color(C_MUTED),
+            );
+            ui.add_space(10.0);
 
-                // Proxy
-                ui.label(egui::RichText::new("Proxy URL").size(11.5).color(C_MUTED));
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.editing_settings.proxy_url)
-                        .hint_text("http://proxy:8080 (leave empty for direct)")
-                        .desired_width(f32::INFINITY),
-                );
-                ui.add_space(10.0);
+            // Proxy
+            ui.label(egui::RichText::new("Proxy URL").size(11.5).color(C_MUTED));
+            ui.add(
+                egui::TextEdit::singleline(&mut self.editing_settings.proxy_url)
+                    .hint_text("http://proxy:8080 (leave empty for direct)")
+                    .desired_width(f32::INFINITY),
+            );
+            ui.add_space(10.0);
 
-                // Verify TLS
-                ui.checkbox(
-                    &mut self.editing_settings.verify_tls,
-                    "Verify TLS certificates",
-                );
-                ui.label(
-                    egui::RichText::new(
-                        "Unchecked = accept self-signed / expired certs. \
+            // Verify TLS
+            ui.checkbox(
+                &mut self.editing_settings.verify_tls,
+                "Verify TLS certificates",
+            );
+            ui.label(
+                egui::RichText::new(
+                    "Unchecked = accept self-signed / expired certs. \
                          Dangerous on the public internet; useful for internal dev APIs.",
-                    )
-                    .size(10.5)
-                    .color(C_MUTED),
-                );
+                )
+                .size(10.5)
+                .color(C_MUTED),
+            );
 
-                ui.add_space(14.0);
-                ui.separator();
-                ui.add_space(6.0);
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button("Cancel").clicked() {
-                        do_cancel = true;
-                    }
-                    let save_btn = egui::Button::new(
-                        egui::RichText::new("Save")
-                            .color(egui::Color32::WHITE)
-                            .strong(),
-                    )
-                    .fill(C_ACCENT)
-                    .min_size(egui::vec2(80.0, 28.0));
-                    if ui.add(save_btn).clicked() {
-                        do_save = true;
-                    }
-                });
-
-                ui.input(|i| {
-                    if i.key_pressed(egui::Key::Escape) {
-                        do_cancel = true;
-                    }
-                });
+            ui.add_space(14.0);
+            ui.separator();
+            ui.add_space(6.0);
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button("Cancel").clicked() {
+                    do_cancel = true;
+                }
+                let save_btn = egui::Button::new(
+                    egui::RichText::new("Save")
+                        .color(egui::Color32::WHITE)
+                        .strong(),
+                )
+                .fill(C_ACCENT)
+                .min_size(egui::vec2(80.0, 28.0));
+                if ui.add(save_btn).clicked() {
+                    do_save = true;
+                }
             });
+
+            ui.input(|i| {
+                if i.key_pressed(egui::Key::Escape) {
+                    do_cancel = true;
+                }
+            });
+        });
         self.show_settings_modal = open;
 
         if do_save {
@@ -1050,8 +1076,7 @@ impl ApiClient {
                         if ui.button("Open GitHub repo").clicked() {
                             ctx.output_mut(|o| {
                                 o.open_url = Some(egui::output::OpenUrl {
-                                    url: "https://github.com/chud-lori/rusty-requester"
-                                        .to_string(),
+                                    url: "https://github.com/chud-lori/rusty-requester".to_string(),
                                     new_tab: true,
                                 });
                             });
@@ -1109,8 +1134,7 @@ impl ApiClient {
         if action_open_env {
             self.show_env_modal = true;
             if self.selected_env_for_edit.is_none() {
-                self.selected_env_for_edit =
-                    self.state.environments.first().map(|e| e.id.clone());
+                self.selected_env_for_edit = self.state.environments.first().map(|e| e.id.clone());
             }
         }
         if action_show_about {
@@ -1131,110 +1155,102 @@ impl ApiClient {
         }
         let mut open = self.show_about_modal;
         egui::Window::new(
-            egui::RichText::new("ABOUT").size(12.0).strong().color(C_MUTED),
+            egui::RichText::new("ABOUT")
+                .size(12.0)
+                .strong()
+                .color(C_MUTED),
         )
-            .open(&mut open)
-            .collapsible(false)
-            .resizable(false)
-            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
-            .show(ctx, |ui| {
-                ui.set_min_width(360.0);
+        .open(&mut open)
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+        .show(ctx, |ui| {
+            ui.set_min_width(360.0);
 
-                let open_url = |ctx: &egui::Context, url: &str| {
-                    ctx.output_mut(|o| {
-                        o.open_url = Some(egui::output::OpenUrl {
-                            url: url.to_string(),
-                            new_tab: true,
-                        });
+            let open_url = |ctx: &egui::Context, url: &str| {
+                ctx.output_mut(|o| {
+                    o.open_url = Some(egui::output::OpenUrl {
+                        url: url.to_string(),
+                        new_tab: true,
                     });
-                };
-                let link_row =
-                    |ui: &mut egui::Ui, label: &str, url: &str, ctx: &egui::Context| {
-                        if ui
-                            .link(
-                                egui::RichText::new(label)
-                                    .size(12.5)
-                                    .color(C_ACCENT),
-                            )
-                            .on_hover_cursor(egui::CursorIcon::PointingHand)
-                            .clicked()
-                        {
-                            open_url(ctx, url);
-                        }
-                    };
+                });
+            };
+            let link_row = |ui: &mut egui::Ui, label: &str, url: &str, ctx: &egui::Context| {
+                if ui
+                    .link(egui::RichText::new(label).size(12.5).color(C_ACCENT))
+                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                    .clicked()
+                {
+                    open_url(ctx, url);
+                }
+            };
 
-                ui.vertical_centered(|ui| {
-                    ui.add_space(10.0);
-                    if let Some(tex) = &self.app_icon {
-                        ui.add(
-                            egui::Image::from_texture(tex)
-                                .fit_to_exact_size(egui::vec2(80.0, 80.0))
-                                .rounding(egui::Rounding::same(14.0)),
-                        );
-                    }
-                    ui.add_space(10.0);
-                    ui.label(
-                        egui::RichText::new("Rusty Requester")
-                            .size(19.0)
-                            .strong()
-                            .color(C_TEXT),
+            ui.vertical_centered(|ui| {
+                ui.add_space(10.0);
+                if let Some(tex) = &self.app_icon {
+                    ui.add(
+                        egui::Image::from_texture(tex)
+                            .fit_to_exact_size(egui::vec2(80.0, 80.0))
+                            .rounding(egui::Rounding::same(14.0)),
                     );
-                    ui.add_space(8.0);
-                    ui.label(
-                        egui::RichText::new(concat!("Version ", env!("CARGO_PKG_VERSION")))
-                            .size(12.0)
-                            .color(C_TEXT),
-                    );
-                    ui.label(
-                        egui::RichText::new(concat!(
-                            "Build: ",
-                            env!("CARGO_PKG_VERSION"),
-                            " (native)"
-                        ))
-                        .size(11.5)
-                        .color(C_MUTED),
-                    );
-
-                    ui.add_space(12.0);
-                    ui.label(
-                        egui::RichText::new(
-                            "A native, offline, lightweight API client.",
-                        )
+                }
+                ui.add_space(10.0);
+                ui.label(
+                    egui::RichText::new("Rusty Requester")
+                        .size(19.0)
+                        .strong()
+                        .color(C_TEXT),
+                );
+                ui.add_space(8.0);
+                ui.label(
+                    egui::RichText::new(concat!("Version ", env!("CARGO_PKG_VERSION")))
                         .size(12.0)
                         .color(C_TEXT),
-                    );
+                );
+                ui.label(
+                    egui::RichText::new(concat!("Build: ", env!("CARGO_PKG_VERSION"), " (native)"))
+                        .size(11.5)
+                        .color(C_MUTED),
+                );
 
-                    ui.add_space(12.0);
-                    link_row(
-                        ui,
-                        "GitHub Repository",
-                        "https://github.com/chud-lori/rusty-requester",
-                        ctx,
-                    );
-                    ui.add_space(4.0);
-                    link_row(
-                        ui,
-                        "Report an issue",
-                        "https://github.com/chud-lori/rusty-requester/issues",
-                        ctx,
-                    );
-                    ui.add_space(4.0);
-                    link_row(
-                        ui,
-                        "Creator: Lori (@chud-lori)",
-                        "https://github.com/chud-lori",
-                        ctx,
-                    );
+                ui.add_space(12.0);
+                ui.label(
+                    egui::RichText::new("A native, offline, lightweight API client.")
+                        .size(12.0)
+                        .color(C_TEXT),
+                );
 
-                    ui.add_space(14.0);
-                    ui.label(
-                        egui::RichText::new("MIT Licensed · © Lori (@chud-lori)")
-                            .size(11.0)
-                            .color(C_MUTED),
-                    );
-                    ui.add_space(10.0);
-                });
+                ui.add_space(12.0);
+                link_row(
+                    ui,
+                    "GitHub Repository",
+                    "https://github.com/chud-lori/rusty-requester",
+                    ctx,
+                );
+                ui.add_space(4.0);
+                link_row(
+                    ui,
+                    "Report an issue",
+                    "https://github.com/chud-lori/rusty-requester/issues",
+                    ctx,
+                );
+                ui.add_space(4.0);
+                link_row(
+                    ui,
+                    "Creator: Lori (@chud-lori)",
+                    "https://github.com/chud-lori",
+                    ctx,
+                );
+
+                ui.add_space(14.0);
+                ui.label(
+                    egui::RichText::new("MIT Licensed · © Lori (@chud-lori)")
+                        .size(11.0)
+                        .color(C_MUTED),
+                );
+                ui.add_space(10.0);
             });
+        });
         if !open {
             self.show_about_modal = false;
         }
@@ -1312,100 +1328,100 @@ impl ApiClient {
 
         let mut open = true;
         egui::Window::new(
-            egui::RichText::new("COMMAND PALETTE").size(11.0).strong().color(C_MUTED),
+            egui::RichText::new("COMMAND PALETTE")
+                .size(11.0)
+                .strong()
+                .color(C_MUTED),
         )
-            .open(&mut open)
-            .collapsible(false)
-            .resizable(false)
-            .fixed_size(egui::vec2(560.0, 420.0))
-            .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 80.0))
-            .show(ctx, |ui| {
-                let query_resp = ui.add(
-                    egui::TextEdit::singleline(&mut self.palette_query)
-                        .hint_text("Search requests by name, URL, or method…")
-                        .desired_width(f32::INFINITY)
-                        .font(egui::TextStyle::Body),
-                );
-                if self.palette_focus_pending {
-                    self.palette_focus_pending = false;
-                    query_resp.request_focus();
-                }
-                ui.add_space(6.0);
-                ui.label(
-                    egui::RichText::new(format!(
-                        "{} result{}",
-                        matches.len(),
-                        if matches.len() == 1 { "" } else { "s" }
-                    ))
-                    .size(10.5)
-                    .color(C_MUTED),
-                );
-                ui.separator();
+        .open(&mut open)
+        .collapsible(false)
+        .resizable(false)
+        .fixed_size(egui::vec2(560.0, 420.0))
+        .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 80.0))
+        .show(ctx, |ui| {
+            let query_resp = ui.add(
+                egui::TextEdit::singleline(&mut self.palette_query)
+                    .hint_text("Search requests by name, URL, or method…")
+                    .desired_width(f32::INFINITY)
+                    .font(egui::TextStyle::Body),
+            );
+            if self.palette_focus_pending {
+                self.palette_focus_pending = false;
+                query_resp.request_focus();
+            }
+            ui.add_space(6.0);
+            ui.label(
+                egui::RichText::new(format!(
+                    "{} result{}",
+                    matches.len(),
+                    if matches.len() == 1 { "" } else { "s" }
+                ))
+                .size(10.5)
+                .color(C_MUTED),
+            );
+            ui.separator();
 
-                egui::ScrollArea::vertical()
-                    .id_salt("palette_scroll")
-                    .max_height(320.0)
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| {
-                        for (i, m) in matches.iter().enumerate() {
-                            let is_sel = i == self.palette_selected;
-                            let (rect, resp) = ui.allocate_exact_size(
-                                egui::vec2(ui.available_width(), 34.0),
-                                egui::Sense::click(),
+            egui::ScrollArea::vertical()
+                .id_salt("palette_scroll")
+                .max_height(320.0)
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    for (i, m) in matches.iter().enumerate() {
+                        let is_sel = i == self.palette_selected;
+                        let (rect, resp) = ui.allocate_exact_size(
+                            egui::vec2(ui.available_width(), 34.0),
+                            egui::Sense::click(),
+                        );
+                        if ui.is_rect_visible(rect) {
+                            let bg = if is_sel {
+                                C_ACCENT.linear_multiply(0.18)
+                            } else if resp.hovered() {
+                                C_ELEVATED
+                            } else {
+                                egui::Color32::TRANSPARENT
+                            };
+                            ui.painter()
+                                .rect_filled(rect, egui::Rounding::same(5.0), bg);
+                            // Method
+                            let mc = method_color(&m.method);
+                            ui.painter().text(
+                                egui::pos2(rect.left() + 10.0, rect.top() + 10.0),
+                                egui::Align2::LEFT_TOP,
+                                format!("{}", m.method),
+                                egui::FontId::new(10.5, egui::FontFamily::Proportional),
+                                mc,
                             );
-                            if ui.is_rect_visible(rect) {
-                                let bg = if is_sel {
-                                    C_ACCENT.linear_multiply(0.18)
-                                } else if resp.hovered() {
-                                    C_ELEVATED
-                                } else {
-                                    egui::Color32::TRANSPARENT
-                                };
-                                ui.painter()
-                                    .rect_filled(rect, egui::Rounding::same(5.0), bg);
-                                // Method
-                                let mc = method_color(&m.method);
-                                ui.painter().text(
-                                    egui::pos2(rect.left() + 10.0, rect.top() + 10.0),
-                                    egui::Align2::LEFT_TOP,
-                                    format!("{}", m.method),
-                                    egui::FontId::new(10.5, egui::FontFamily::Proportional),
-                                    mc,
-                                );
-                                ui.painter().text(
-                                    egui::pos2(rect.left() + 60.0, rect.top() + 7.0),
-                                    egui::Align2::LEFT_TOP,
-                                    &m.name,
-                                    egui::FontId::new(13.0, egui::FontFamily::Proportional),
-                                    C_TEXT,
-                                );
-                                ui.painter().text(
-                                    egui::pos2(rect.left() + 60.0, rect.top() + 22.0),
-                                    egui::Align2::LEFT_TOP,
-                                    &m.breadcrumb,
-                                    egui::FontId::new(10.5, egui::FontFamily::Proportional),
-                                    C_MUTED,
-                                );
-                            }
-                            let resp = resp
-                                .on_hover_cursor(egui::CursorIcon::PointingHand);
-                            if resp.clicked() {
-                                activate = Some((m.folder_path.clone(), m.request_id.clone()));
-                            }
+                            ui.painter().text(
+                                egui::pos2(rect.left() + 60.0, rect.top() + 7.0),
+                                egui::Align2::LEFT_TOP,
+                                &m.name,
+                                egui::FontId::new(13.0, egui::FontFamily::Proportional),
+                                C_TEXT,
+                            );
+                            ui.painter().text(
+                                egui::pos2(rect.left() + 60.0, rect.top() + 22.0),
+                                egui::Align2::LEFT_TOP,
+                                &m.breadcrumb,
+                                egui::FontId::new(10.5, egui::FontFamily::Proportional),
+                                C_MUTED,
+                            );
                         }
-                    });
+                        let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+                        if resp.clicked() {
+                            activate = Some((m.folder_path.clone(), m.request_id.clone()));
+                        }
+                    }
+                });
 
-                ui.add_space(4.0);
-                ui.horizontal(|ui| {
-                    ui.label(
-                        egui::RichText::new(
-                            "↑ ↓  navigate    Enter  open    Esc  dismiss",
-                        )
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new("↑ ↓  navigate    Enter  open    Esc  dismiss")
                         .size(10.5)
                         .color(C_MUTED),
-                    );
-                });
+                );
             });
+        });
         if !open {
             self.show_command_palette = false;
         }
@@ -1440,7 +1456,6 @@ impl ApiClient {
                     });
             });
     }
-
 }
 
 /// One row in the command palette result list.
@@ -1461,7 +1476,12 @@ struct PaletteEntry {
 fn collect_palette_entries(folders: &[Folder]) -> Vec<PaletteEntry> {
     let mut out = Vec::new();
     for folder in folders {
-        walk_palette(folder, vec![folder.id.clone()], folder.name.clone(), &mut out);
+        walk_palette(
+            folder,
+            vec![folder.id.clone()],
+            folder.name.clone(),
+            &mut out,
+        );
     }
     out
 }
@@ -1473,11 +1493,7 @@ fn walk_palette(
     out: &mut Vec<PaletteEntry>,
 ) {
     for r in &folder.requests {
-        let haystack = format!(
-            "{} {} {} {}",
-            r.name, r.url, r.method, breadcrumb
-        )
-        .to_lowercase();
+        let haystack = format!("{} {} {} {}", r.name, r.url, r.method, breadcrumb).to_lowercase();
         out.push(PaletteEntry {
             folder_path: path.clone(),
             request_id: r.id.clone(),

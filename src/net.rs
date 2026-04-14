@@ -52,7 +52,11 @@ pub fn parse_url_host_path(url: &str) -> (String, String) {
         .next()
         .unwrap_or("/")
         .to_string();
-    let path = if path.is_empty() { "/".to_string() } else { path };
+    let path = if path.is_empty() {
+        "/".to_string()
+    } else {
+        path
+    };
     (host, path)
 }
 
@@ -266,11 +270,7 @@ pub fn execute_request(
                 };
             }
         };
-        let req_line = format!(
-            "{} {} HTTP/1.1\r\n",
-            built.method(),
-            built.url().as_str(),
-        );
+        let req_line = format!("{} {} HTTP/1.1\r\n", built.method(), built.url().as_str(),);
         let request_headers_bytes = req_line.len()
             + built
                 .headers()
@@ -285,7 +285,9 @@ pub fn execute_request(
             .unwrap_or(0);
 
         let t_send = std::time::Instant::now();
-        let prepare_ms = t_send.saturating_duration_since(t_prepare_start).as_millis() as u64;
+        let prepare_ms = t_send
+            .saturating_duration_since(t_prepare_start)
+            .as_millis() as u64;
         match client.execute(built).await {
             Ok(response) => {
                 let t_headers = std::time::Instant::now();
@@ -335,8 +337,7 @@ pub fn execute_request(
                 // Stream body with a size cap so a multi-GB payload
                 // doesn't OOM the app. We read chunks until we hit
                 // `max_body_bytes`, then stop and prepend a banner.
-                let (body, truncated) =
-                    read_body_capped(response, max_body_bytes).await;
+                let (body, truncated) = read_body_capped(response, max_body_bytes).await;
                 let body = if truncated {
                     let cap_mb = max_body_bytes as f64 / (1024.0 * 1024.0);
                     format!(
@@ -348,7 +349,9 @@ pub fn execute_request(
                 };
                 let t_done = std::time::Instant::now();
                 let download_ms = t_done.saturating_duration_since(t_headers).as_millis() as u64;
-                let total_ms = t_done.saturating_duration_since(t_prepare_start).as_millis() as u64;
+                let total_ms = t_done
+                    .saturating_duration_since(t_prepare_start)
+                    .as_millis() as u64;
                 let time = format!("{} ms", total_ms);
                 let response_body_bytes = body.len();
                 let formatted_body = match serde_json::from_str::<serde_json::Value>(&body) {
@@ -398,10 +401,7 @@ pub fn execute_request(
 /// Uses `reqwest::Response::chunk()` so we pull incrementally from the
 /// network and abort early on oversize payloads — no 5 GB allocation
 /// just because a server returned a 5 GB body.
-async fn read_body_capped(
-    mut response: reqwest::Response,
-    max_bytes: usize,
-) -> (String, bool) {
+async fn read_body_capped(mut response: reqwest::Response, max_bytes: usize) -> (String, bool) {
     if max_bytes == 0 {
         let body = response
             .text()

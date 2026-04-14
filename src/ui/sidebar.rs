@@ -3,9 +3,9 @@
 //! toolbar. All methods are `impl ApiClient` so they have direct
 //! access to state.
 
-use crate::widgets::*;
 use crate::model::*;
 use crate::theme::*;
+use crate::widgets::*;
 use crate::ApiClient;
 use eframe::egui;
 use uuid::Uuid;
@@ -248,10 +248,8 @@ impl ApiClient {
                     ui.spacing_mut().item_spacing.x = 4.0;
                     // Hand-drawn magnifying-glass icon — avoids emoji-font
                     // fallback that looks pixelated in egui's default font.
-                    let (icon_rect, _) = ui.allocate_exact_size(
-                        egui::vec2(18.0, 24.0),
-                        egui::Sense::hover(),
-                    );
+                    let (icon_rect, _) =
+                        ui.allocate_exact_size(egui::vec2(18.0, 24.0), egui::Sense::hover());
                     paint_search_icon(ui.painter(), icon_rect.center(), C_MUTED);
 
                     // Always reserve the close-button slot (visible or as
@@ -262,12 +260,10 @@ impl ApiClient {
                     // right on every keystroke.
                     let clear_w = 22.0;
                     let spacing = ui.spacing().item_spacing.x;
-                    let search_w =
-                        (ui.available_width() - clear_w - spacing).max(80.0);
+                    let search_w = (ui.available_width() - clear_w - spacing).max(80.0);
                     let search_resp = ui.add_sized(
                         [search_w, 24.0],
-                        egui::TextEdit::singleline(&mut self.search_query)
-                            .hint_text("Search (⌘K)"),
+                        egui::TextEdit::singleline(&mut self.search_query).hint_text("Search (⌘K)"),
                     );
                     if self.focus_search_next_frame {
                         self.focus_search_next_frame = false;
@@ -276,16 +272,14 @@ impl ApiClient {
                     if self.search_query.is_empty() {
                         // Phantom slot — same footprint as `close_x_button`
                         // so the layout is stable across empty/typed states.
-                        ui.allocate_exact_size(
-                            egui::vec2(20.0, 20.0),
-                            egui::Sense::hover(),
-                        );
+                        ui.allocate_exact_size(egui::vec2(20.0, 20.0), egui::Sense::hover());
                     } else if close_x_button(ui, "Clear search").clicked() {
                         self.search_query.clear();
                     }
                 });
                 if !self.search_query.is_empty() {
-                    let total = count_matches(&self.state.folders, &self.search_query.to_lowercase());
+                    let total =
+                        count_matches(&self.state.folders, &self.search_query.to_lowercase());
                     ui.label(
                         egui::RichText::new(format!("{} match(es)", total))
                             .size(11.0)
@@ -406,9 +400,12 @@ impl ApiClient {
         let mut clear = false;
         ui.horizontal(|ui| {
             ui.label(
-                egui::RichText::new(format!("{} entries (newest first)", self.state.history.len()))
-                    .size(11.0)
-                    .color(C_MUTED),
+                egui::RichText::new(format!(
+                    "{} entries (newest first)",
+                    self.state.history.len()
+                ))
+                .size(11.0)
+                .color(C_MUTED),
             );
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui
@@ -451,8 +448,7 @@ impl ApiClient {
                         // Method as colored text (no pill bg)
                         let method_left = rect.left() + 10.0;
                         let method_y = rect.top() + 17.0;
-                        let method_font =
-                            egui::FontId::new(10.0, egui::FontFamily::Proportional);
+                        let method_font = egui::FontId::new(10.0, egui::FontFamily::Proportional);
                         ui.painter().text(
                             egui::pos2(method_left, method_y),
                             egui::Align2::LEFT_CENTER,
@@ -556,8 +552,7 @@ impl ApiClient {
                 // header) with one keyed on this request's id. Without this
                 // shadow the row would fall back to the folder's flag and
                 // the rename TextEdit would never appear.
-                let is_renaming =
-                    self.renaming_request_id.as_deref() == Some(req.id.as_str());
+                let is_renaming = self.renaming_request_id.as_deref() == Some(req.id.as_str());
 
                 // Compact Postman-style row — also a drag source +
                 // drop target for in-folder reordering. Cross-folder
@@ -585,8 +580,7 @@ impl ApiClient {
                 }
                 // While being dragged, paint a faint accent border so
                 // users see what's moving.
-                if egui::DragAndDrop::has_payload_of_type::<DragPayload>(ui.ctx())
-                    && resp.dragged()
+                if egui::DragAndDrop::has_payload_of_type::<DragPayload>(ui.ctx()) && resp.dragged()
                 {
                     ui.painter().rect_stroke(
                         rect,
@@ -598,8 +592,7 @@ impl ApiClient {
                 // is over us, draw the drop indicator (a thin accent
                 // line above this row) and on release, perform the
                 // reorder.
-                if resp.hovered()
-                    && egui::DragAndDrop::has_payload_of_type::<DragPayload>(ui.ctx())
+                if resp.hovered() && egui::DragAndDrop::has_payload_of_type::<DragPayload>(ui.ctx())
                 {
                     let any_dragged = ui.ctx().input(|i| i.pointer.any_down());
                     if any_dragged {
@@ -612,15 +605,9 @@ impl ApiClient {
                         );
                     }
                 }
-                if let Some(payload) =
-                    resp.dnd_release_payload::<DragPayload>()
-                {
+                if let Some(payload) = resp.dnd_release_payload::<DragPayload>() {
                     if payload.folder_path == path && payload.from_index != i {
-                        self.reorder_request_in_folder(
-                            &path,
-                            payload.from_index,
-                            i,
-                        );
+                        self.reorder_request_in_folder(&path, payload.from_index, i);
                     }
                 }
 
@@ -636,10 +623,8 @@ impl ApiClient {
                         .rect_filled(rect, egui::Rounding::same(5.0), bg);
 
                     if is_selected {
-                        let bar = egui::Rect::from_min_size(
-                            rect.min,
-                            egui::vec2(3.0, rect.height()),
-                        );
+                        let bar =
+                            egui::Rect::from_min_size(rect.min, egui::vec2(3.0, rect.height()));
                         ui.painter()
                             .rect_filled(bar, egui::Rounding::same(2.0), C_ACCENT);
                     }
@@ -914,7 +899,11 @@ impl ApiClient {
                     if ui.button("Add request").clicked() {
                         action_add_request = true;
                     }
-                    if ui.button(format!("Add {}", if depth == 0 { "folder" } else { "subfolder" }))
+                    if ui
+                        .button(format!(
+                            "Add {}",
+                            if depth == 0 { "folder" } else { "subfolder" }
+                        ))
                         .clicked()
                     {
                         add_subfolder = true;

@@ -195,10 +195,14 @@ impl std::fmt::Display for HttpMethod {
 pub enum Auth {
     #[default]
     None,
-    Bearer { token: String },
-    Basic { username: String, password: String },
+    Bearer {
+        token: String,
+    },
+    Basic {
+        username: String,
+        password: String,
+    },
 }
-
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum AuthKind {

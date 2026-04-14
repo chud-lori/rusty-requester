@@ -22,10 +22,7 @@ pub fn evaluate(
     let actual = match assertion.source {
         AssertionSource::Status => {
             // Status text looks like "200 OK" — take the leading code.
-            status
-                .split_whitespace()
-                .next()
-                .map(|s| s.to_string())
+            status.split_whitespace().next().map(|s| s.to_string())
         }
         AssertionSource::Header => {
             if expr.is_empty() {
@@ -54,9 +51,7 @@ pub fn evaluate(
 
     let actual = match actual {
         Some(v) => v,
-        None => {
-            return AssertionResult::Fail(format!("{} not found", source_label(assertion)))
-        }
+        None => return AssertionResult::Fail(format!("{} not found", source_label(assertion))),
     };
     let expected = assertion.expected.trim();
 
@@ -125,13 +120,14 @@ fn compare_numeric(actual: &str, expected: &str, op: fn(f64, f64) -> bool) -> As
 fn regex_match(pattern: &str, input: &str) -> Result<bool, String> {
     let anchor_start = pattern.starts_with('^');
     let anchor_end = pattern.ends_with('$') && !pattern.ends_with("\\$");
-    let pat: &str = &pattern[if anchor_start { 1 } else { 0 }
-        ..pattern.len() - if anchor_end { 1 } else { 0 }];
+    let pat: &str =
+        &pattern[if anchor_start { 1 } else { 0 }..pattern.len() - if anchor_end { 1 } else { 0 }];
     let tokens = tokenize(pat)?;
 
     let input_bytes = input.as_bytes();
     if anchor_start {
-        return Ok(try_match(&tokens, input_bytes, 0).is_some_and(|end| !anchor_end || end == input_bytes.len()));
+        return Ok(try_match(&tokens, input_bytes, 0)
+            .is_some_and(|end| !anchor_end || end == input_bytes.len()));
     }
     for start in 0..=input_bytes.len() {
         if let Some(end) = try_match(&tokens, input_bytes, start) {
@@ -221,7 +217,12 @@ mod tests {
     use super::*;
     use crate::model::{AssertionOp, AssertionSource};
 
-    fn a(source: AssertionSource, expr: &str, op: AssertionOp, expected: &str) -> ResponseAssertion {
+    fn a(
+        source: AssertionSource,
+        expr: &str,
+        op: AssertionOp,
+        expected: &str,
+    ) -> ResponseAssertion {
         ResponseAssertion {
             enabled: true,
             source,
@@ -257,7 +258,12 @@ mod tests {
     fn header_exists() {
         let headers = vec![("Content-Type".to_string(), "application/json".to_string())];
         let r = evaluate(
-            &a(AssertionSource::Header, "content-type", AssertionOp::Exists, ""),
+            &a(
+                AssertionSource::Header,
+                "content-type",
+                AssertionOp::Exists,
+                "",
+            ),
             "200 OK",
             "",
             &headers,
@@ -268,7 +274,12 @@ mod tests {
     #[test]
     fn body_path_equals() {
         let r = evaluate(
-            &a(AssertionSource::Body, "data.token", AssertionOp::Equals, "abc"),
+            &a(
+                AssertionSource::Body,
+                "data.token",
+                AssertionOp::Equals,
+                "abc",
+            ),
             "200 OK",
             r#"{"data":{"token":"abc"}}"#,
             &[],

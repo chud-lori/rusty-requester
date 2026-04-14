@@ -36,8 +36,7 @@ impl ApiClient {
         };
         // In a right-to-left layout, items are laid out right-first,
         // so visually: status · time · size (size ends up leftmost).
-        let total_resp_bytes =
-            self.response_headers_bytes + self.response_body_bytes;
+        let total_resp_bytes = self.response_headers_bytes + self.response_body_bytes;
         if total_resp_bytes > 0 {
             let resp_h = self.response_headers_bytes;
             let resp_b = self.response_body_bytes;
@@ -133,29 +132,24 @@ impl ApiClient {
             // Right side: action icons (Body tab only) + status chips.
             // 6 px right edge padding so nothing sits flush against
             // the panel border.
-            ui.with_layout(
-                egui::Layout::right_to_left(egui::Align::Center),
-                |ui| {
-                    ui.add_space(6.0);
-                    if body_active {
-                        if icon_button(ui, "Save response to file", paint_save_icon)
-                            .clicked()
-                        {
-                            save_clicked = true;
-                        }
-                        ui.add_space(2.0);
-                        if icon_button(ui, "Copy response body", paint_copy_icon).clicked() {
-                            copy_clicked = true;
-                        }
-                        ui.add_space(2.0);
-                        if icon_button(ui, "Search in body", paint_search_icon).clicked() {
-                            toggle_search = true;
-                        }
-                        ui.add_space(12.0);
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.add_space(6.0);
+                if body_active {
+                    if icon_button(ui, "Save response to file", paint_save_icon).clicked() {
+                        save_clicked = true;
                     }
-                    self.render_response_status_chips(ui);
-                },
-            );
+                    ui.add_space(2.0);
+                    if icon_button(ui, "Copy response body", paint_copy_icon).clicked() {
+                        copy_clicked = true;
+                    }
+                    ui.add_space(2.0);
+                    if icon_button(ui, "Search in body", paint_search_icon).clicked() {
+                        toggle_search = true;
+                    }
+                    ui.add_space(12.0);
+                }
+                self.render_response_status_chips(ui);
+            });
         });
 
         if toggle_search {
@@ -322,13 +316,12 @@ impl ApiClient {
                             let parsed: Option<serde_json::Value> =
                                 serde_json::from_str(&self.response_text).ok();
                             let is_json = parsed.is_some();
-                            let effective_view = if !is_json
-                                && !matches!(self.body_view, BodyView::Raw)
-                            {
-                                BodyView::Raw
-                            } else {
-                                self.body_view
-                            };
+                            let effective_view =
+                                if !is_json && !matches!(self.body_view, BodyView::Raw) {
+                                    BodyView::Raw
+                                } else {
+                                    self.body_view
+                                };
 
                             match effective_view {
                                 BodyView::Json => {
@@ -342,14 +335,13 @@ impl ApiClient {
                                     // intercept them; we removed that).
                                     let mut buf: &str = &self.response_text;
                                     let search = self.body_search_query.clone();
-                                    let mut layouter = move |ui: &egui::Ui,
-                                                             s: &str,
-                                                             wrap_width: f32| {
-                                        let mut job =
-                                            build_json_layout_job_with_search(s, &search);
-                                        job.wrap.max_width = wrap_width;
-                                        ui.fonts(|f| f.layout_job(job))
-                                    };
+                                    let mut layouter =
+                                        move |ui: &egui::Ui, s: &str, wrap_width: f32| {
+                                            let mut job =
+                                                build_json_layout_job_with_search(s, &search);
+                                            job.wrap.max_width = wrap_width;
+                                            ui.fonts(|f| f.layout_job(job))
+                                        };
                                     ui.add_sized(
                                         egui::vec2(
                                             ui.available_width(),
@@ -392,8 +384,7 @@ impl ApiClient {
                         ResponseTab::Headers => {
                             if self.response_headers.is_empty() {
                                 ui.label(
-                                    egui::RichText::new("No response headers yet.")
-                                        .color(C_MUTED),
+                                    egui::RichText::new("No response headers yet.").color(C_MUTED),
                                 );
                             } else {
                                 egui::Grid::new("resp_headers_grid")
@@ -418,5 +409,4 @@ impl ApiClient {
             });
         let _ = remaining_height;
     }
-
 }

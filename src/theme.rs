@@ -8,28 +8,28 @@ use eframe::egui;
 // Keep sidebar and central panel on the *same* base so there's no
 // visible seam between them. `C_PANEL_DARK` stays a shade lower for
 // sunken surfaces (response body frame, code editors).
-pub const C_BG: egui::Color32 = egui::Color32::from_rgb(22, 24, 29);        // #16181D app bg
-pub const C_PANEL: egui::Color32 = egui::Color32::from_rgb(22, 24, 29);     // == C_BG, on purpose
+pub const C_BG: egui::Color32 = egui::Color32::from_rgb(22, 24, 29); // #16181D app bg
+pub const C_PANEL: egui::Color32 = egui::Color32::from_rgb(22, 24, 29); // == C_BG, on purpose
 pub const C_PANEL_DARK: egui::Color32 = egui::Color32::from_rgb(15, 16, 20); // #0F1014 sunken
-pub const C_ELEVATED: egui::Color32 = egui::Color32::from_rgb(42, 45, 52);  // #2A2D34 hover / active row
-pub const C_BORDER: egui::Color32 = egui::Color32::from_rgb(52, 55, 63);    // #34373F subtle divider
-pub const C_ACCENT: egui::Color32 = egui::Color32::from_rgb(206, 66, 43);   // #CE422B rust orange — THE accent
-pub const C_PURPLE: egui::Color32 = egui::Color32::from_rgb(186, 120, 80);  // #BA7850 burnt sienna — PATCH
+pub const C_ELEVATED: egui::Color32 = egui::Color32::from_rgb(42, 45, 52); // #2A2D34 hover / active row
+pub const C_BORDER: egui::Color32 = egui::Color32::from_rgb(52, 55, 63); // #34373F subtle divider
+pub const C_ACCENT: egui::Color32 = egui::Color32::from_rgb(206, 66, 43); // #CE422B rust orange — THE accent
+pub const C_PURPLE: egui::Color32 = egui::Color32::from_rgb(186, 120, 80); // #BA7850 burnt sienna — PATCH
 pub const C_GREEN: egui::Color32 = egui::Color32::from_rgb(134, 172, 113); // #86AC71 patina green — GET
 pub const C_ORANGE: egui::Color32 = egui::Color32::from_rgb(245, 158, 11); // #F59E0B amber — POST
-pub const C_PINK: egui::Color32 = egui::Color32::from_rgb(183, 65, 14);    // #B7410E deep rust — PUT
-pub const C_RED: egui::Color32 = egui::Color32::from_rgb(220, 38, 38);     // #DC2626 crimson — DELETE / errors
+pub const C_PINK: egui::Color32 = egui::Color32::from_rgb(183, 65, 14); // #B7410E deep rust — PUT
+pub const C_RED: egui::Color32 = egui::Color32::from_rgb(220, 38, 38); // #DC2626 crimson — DELETE / errors
 pub const C_MUTED: egui::Color32 = egui::Color32::from_rgb(126, 131, 145); // #7E8391 neutral muted text
 pub const C_TEXT: egui::Color32 = egui::Color32::from_rgb(224, 226, 232); // #E0E2E8 neutral light
 
 pub fn method_color(m: &HttpMethod) -> egui::Color32 {
     match m {
-        HttpMethod::GET => C_GREEN,   // patina green — safe read
-        HttpMethod::POST => C_ORANGE, // amber gold — create
-        HttpMethod::PUT => C_PINK,    // deep rust — update
-        HttpMethod::DELETE => C_RED,  // crimson — destructive
+        HttpMethod::GET => C_GREEN,    // patina green — safe read
+        HttpMethod::POST => C_ORANGE,  // amber gold — create
+        HttpMethod::PUT => C_PINK,     // deep rust — update
+        HttpMethod::DELETE => C_RED,   // crimson — destructive
         HttpMethod::PATCH => C_PURPLE, // burnt sienna — partial
-        _ => C_MUTED,                 // warm grey — HEAD / OPTIONS
+        _ => C_MUTED,                  // warm grey — HEAD / OPTIONS
     }
 }
 
@@ -110,11 +110,23 @@ pub fn apply_style(ctx: &egui::Context) {
     style.spacing.scroll.bar_outer_margin = 0.0;
 
     style.text_styles = [
-        (TextStyle::Heading, FontId::new(20.0, FontFamily::Proportional)),
+        (
+            TextStyle::Heading,
+            FontId::new(20.0, FontFamily::Proportional),
+        ),
         (TextStyle::Body, FontId::new(13.5, FontFamily::Proportional)),
-        (TextStyle::Monospace, FontId::new(12.5, FontFamily::Monospace)),
-        (TextStyle::Button, FontId::new(13.0, FontFamily::Proportional)),
-        (TextStyle::Small, FontId::new(11.0, FontFamily::Proportional)),
+        (
+            TextStyle::Monospace,
+            FontId::new(12.5, FontFamily::Monospace),
+        ),
+        (
+            TextStyle::Button,
+            FontId::new(13.0, FontFamily::Proportional),
+        ),
+        (
+            TextStyle::Small,
+            FontId::new(11.0, FontFamily::Proportional),
+        ),
     ]
     .into();
 

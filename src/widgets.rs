@@ -32,23 +32,13 @@ pub fn substitute_kvs(rows: &[KvRow], env: Option<&Environment>) -> Vec<KvRow> {
 
 /// Draw a small magnifying-glass search icon centred on `center`.
 /// The circle has `radius`, handle extends diagonally down-right.
-pub fn paint_search_icon(
-    painter: &egui::Painter,
-    center: egui::Pos2,
-    color: egui::Color32,
-) {
+pub fn paint_search_icon(painter: &egui::Painter, center: egui::Pos2, color: egui::Color32) {
     let stroke = egui::Stroke::new(1.5, color);
     let radius = 4.5;
     painter.circle_stroke(center, radius, stroke);
     // Handle — from lower-right of circle, extending down-right
-    let start = egui::pos2(
-        center.x + radius * 0.70,
-        center.y + radius * 0.70,
-    );
-    let end = egui::pos2(
-        center.x + radius + 2.5,
-        center.y + radius + 2.5,
-    );
+    let start = egui::pos2(center.x + radius * 0.70, center.y + radius * 0.70);
+    let end = egui::pos2(center.x + radius + 2.5, center.y + radius + 2.5);
     painter.line_segment([start, end], stroke);
 }
 
@@ -82,11 +72,8 @@ pub fn close_x_button(ui: &mut egui::Ui, hover_text: &str) -> egui::Response {
     if ui.is_rect_visible(rect) {
         let hovered = resp.hovered();
         if hovered {
-            ui.painter().rect_filled(
-                rect,
-                egui::Rounding::same(4.0),
-                C_RED.linear_multiply(0.35),
-            );
+            ui.painter()
+                .rect_filled(rect, egui::Rounding::same(4.0), C_RED.linear_multiply(0.35));
         }
         let color = if hovered { C_RED } else { C_MUTED };
         paint_x(ui.painter(), rect.center(), 4.0, color, 1.5);
@@ -95,20 +82,21 @@ pub fn close_x_button(ui: &mut egui::Ui, hover_text: &str) -> egui::Response {
         .on_hover_text(hover_text)
 }
 
-pub fn tab_button<T: PartialEq + Copy>(
-    ui: &mut egui::Ui,
-    current: &mut T,
-    value: T,
-    label: &str,
-) {
+pub fn tab_button<T: PartialEq + Copy>(ui: &mut egui::Ui, current: &mut T, value: T, label: &str) {
     let selected = *current == value;
     let (text_color, text) = if selected {
         (
             C_ACCENT,
-            egui::RichText::new(label).color(C_ACCENT).strong().size(13.0),
+            egui::RichText::new(label)
+                .color(C_ACCENT)
+                .strong()
+                .size(13.0),
         )
     } else {
-        (C_MUTED, egui::RichText::new(label).color(C_MUTED).size(13.0))
+        (
+            C_MUTED,
+            egui::RichText::new(label).color(C_MUTED).size(13.0),
+        )
     };
     let _ = text_color;
     let btn = egui::Button::new(text)
@@ -238,10 +226,7 @@ pub fn render_kv_table(
     ui.painter().line_segment(
         [
             egui::pos2(ui.cursor().left(), ui.cursor().top()),
-            egui::pos2(
-                ui.cursor().left() + ui.available_width(),
-                ui.cursor().top(),
-            ),
+            egui::pos2(ui.cursor().left() + ui.available_width(), ui.cursor().top()),
         ],
         egui::Stroke::new(1.0, C_BORDER.linear_multiply(0.6)),
     );
@@ -364,10 +349,8 @@ pub fn render_single_tab(
 ) -> TabAction {
     let tab_height = 32.0;
     let tab_width = 180.0;
-    let (rect, mut resp) = ui.allocate_exact_size(
-        egui::vec2(tab_width, tab_height),
-        egui::Sense::click(),
-    );
+    let (rect, mut resp) =
+        ui.allocate_exact_size(egui::vec2(tab_width, tab_height), egui::Sense::click());
     resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
 
     let mut action = TabAction::None;
@@ -435,11 +418,8 @@ pub fn render_single_tab(
         // and the close button, matching the Postman convention.
         if is_draft {
             let dot_x = rect.right() - 30.0;
-            ui.painter().circle_filled(
-                egui::pos2(dot_x, mid_y),
-                3.5,
-                C_ORANGE,
-            );
+            ui.painter()
+                .circle_filled(egui::pos2(dot_x, mid_y), 3.5, C_ORANGE);
         }
     }
 
@@ -496,11 +476,7 @@ pub fn render_single_tab(
                     .italics(),
             );
         } else {
-            ui.label(
-                egui::RichText::new(&tip_url)
-                    .color(C_MUTED)
-                    .size(11.0),
-            );
+            ui.label(egui::RichText::new(&tip_url).color(C_MUTED).size(11.0));
         }
         if tip_is_draft {
             ui.add_space(4.0);
@@ -654,7 +630,11 @@ pub fn paint_copy_icon(painter: &egui::Painter, center: egui::Pos2, color: egui:
     let front = egui::Rect::from_center_size(center + egui::vec2(1.5, 1.5), size);
     painter.rect_stroke(back, egui::Rounding::same(1.5), stroke);
     // Mask front's intersection with back so it visually sits on top.
-    painter.rect_filled(front, egui::Rounding::same(1.5), painter.ctx().style().visuals.panel_fill);
+    painter.rect_filled(
+        front,
+        egui::Rounding::same(1.5),
+        painter.ctx().style().visuals.panel_fill,
+    );
     painter.rect_stroke(front, egui::Rounding::same(1.5), stroke);
 }
 
@@ -747,26 +727,16 @@ pub fn count_matches(folders: &[Folder], q: &str) -> usize {
 /// border — just colored text with an accent underline when active,
 /// matching Postman's Pretty/Raw/Preview style (less visual weight
 /// than a chunky pill, scans as a tabbed toggle).
-pub fn body_view_pill(
-    ui: &mut egui::Ui,
-    current: &mut BodyView,
-    value: BodyView,
-    label: &str,
-) {
+pub fn body_view_pill(ui: &mut egui::Ui, current: &mut BodyView, value: BodyView, label: &str) {
     let is_active = *current == value;
     let fg = if is_active { C_ACCENT } else { C_MUTED };
     let resp = ui
         .add(
-            egui::Button::new(
-                egui::RichText::new(label)
-                    .size(11.5)
-                    .color(fg)
-                    .strong(),
-            )
-            .fill(egui::Color32::TRANSPARENT)
-            .stroke(egui::Stroke::NONE)
-            .min_size(egui::vec2(42.0, 20.0))
-            .rounding(egui::Rounding::same(3.0)),
+            egui::Button::new(egui::RichText::new(label).size(11.5).color(fg).strong())
+                .fill(egui::Color32::TRANSPARENT)
+                .stroke(egui::Stroke::NONE)
+                .min_size(egui::vec2(42.0, 20.0))
+                .rounding(egui::Rounding::same(3.0)),
         )
         .on_hover_cursor(egui::CursorIcon::PointingHand);
     if is_active {
@@ -827,27 +797,11 @@ fn render_json_tree_inner(
                 map.len(),
                 if map.len() == 1 { "" } else { "s" }
             );
-            json_header_with_menu(
-                ui,
-                id,
-                key,
-                &summary,
-                depth,
-                &current_path,
-                |ui| {
-                    for (k, v) in map {
-                        render_json_tree_inner(
-                            ui,
-                            id.with(k),
-                            k,
-                            v,
-                            filter,
-                            depth + 1,
-                            &current_path,
-                        );
-                    }
-                },
-            );
+            json_header_with_menu(ui, id, key, &summary, depth, &current_path, |ui| {
+                for (k, v) in map {
+                    render_json_tree_inner(ui, id.with(k), k, v, filter, depth + 1, &current_path);
+                }
+            });
         }
         Value::Array(items) => {
             let summary = format!(
@@ -855,28 +809,20 @@ fn render_json_tree_inner(
                 items.len(),
                 if items.len() == 1 { "" } else { "s" }
             );
-            json_header_with_menu(
-                ui,
-                id,
-                key,
-                &summary,
-                depth,
-                &current_path,
-                |ui| {
-                    for (i, v) in items.iter().enumerate() {
-                        let sub_key = format!("[{}]", i);
-                        render_json_tree_inner(
-                            ui,
-                            id.with(i),
-                            &sub_key,
-                            v,
-                            filter,
-                            depth + 1,
-                            &current_path,
-                        );
-                    }
-                },
-            );
+            json_header_with_menu(ui, id, key, &summary, depth, &current_path, |ui| {
+                for (i, v) in items.iter().enumerate() {
+                    let sub_key = format!("[{}]", i);
+                    render_json_tree_inner(
+                        ui,
+                        id.with(i),
+                        &sub_key,
+                        v,
+                        filter,
+                        depth + 1,
+                        &current_path,
+                    );
+                }
+            });
         }
         _ => {
             // Allocate a clickable row so we can attach a right-click
@@ -888,23 +834,22 @@ fn render_json_tree_inner(
             );
             if ui.is_rect_visible(rect) {
                 if resp.hovered() {
-                    ui.painter().rect_filled(
-                        rect,
-                        egui::Rounding::same(3.0),
-                        C_ELEVATED,
-                    );
+                    ui.painter()
+                        .rect_filled(rect, egui::Rounding::same(3.0), C_ELEVATED);
                 }
                 let mut x = rect.left() + 16.0 * depth as f32 + 18.0;
                 let y = rect.center().y;
                 let font = egui::FontId::monospace(12.5);
                 if !key.is_empty() {
                     let key_text = format!("{}:", key);
-                    let key_galley = ui.painter().layout_no_wrap(
-                        key_text.clone(),
-                        font.clone(),
+                    let key_galley =
+                        ui.painter()
+                            .layout_no_wrap(key_text.clone(), font.clone(), C_ACCENT);
+                    ui.painter().galley(
+                        egui::pos2(x, y - key_galley.size().y / 2.0),
+                        key_galley.clone(),
                         C_ACCENT,
                     );
-                    ui.painter().galley(egui::pos2(x, y - key_galley.size().y / 2.0), key_galley.clone(), C_ACCENT);
                     x += key_galley.size().x + 6.0;
                 }
                 let (color, text) = json_leaf_style(value);
@@ -1029,10 +974,7 @@ fn json_header(
 
 fn json_leaf_style(v: &Value) -> (egui::Color32, String) {
     match v {
-        Value::String(s) => (
-            egui::Color32::from_rgb(230, 219, 116),
-            format!("\"{}\"", s),
-        ),
+        Value::String(s) => (egui::Color32::from_rgb(230, 219, 116), format!("\"{}\"", s)),
         Value::Number(n) => (egui::Color32::from_rgb(174, 129, 255), n.to_string()),
         Value::Bool(b) => (egui::Color32::from_rgb(249, 38, 114), b.to_string()),
         Value::Null => (C_MUTED, "null".to_string()),
@@ -1091,11 +1033,7 @@ pub fn render_time_breakdown(
     ui.add_space(6.0);
 
     let scale = total_ms.max(1) as f32;
-    let row = |ui: &mut egui::Ui,
-                label: &str,
-                start_ms: u64,
-                dur_ms: u64,
-                color: egui::Color32| {
+    let row = |ui: &mut egui::Ui, label: &str, start_ms: u64, dur_ms: u64, color: egui::Color32| {
         let row_h = 18.0;
         let bar_total_w: f32 = 140.0;
         ui.horizontal(|ui| {
@@ -1186,25 +1124,20 @@ pub fn render_size_breakdown(
 ) {
     ui.set_min_width(240.0);
     let section = |ui: &mut egui::Ui,
-                    title: &str,
-                    total: usize,
-                    headers: usize,
-                    body: usize,
-                    accent: egui::Color32| {
+                   title: &str,
+                   total: usize,
+                   headers: usize,
+                   body: usize,
+                   accent: egui::Color32| {
         // Section header — colored badge + title + total.
         ui.horizontal(|ui| {
-            let (rect, _) = ui.allocate_exact_size(
-                egui::vec2(18.0, 18.0),
-                egui::Sense::hover(),
+            let (rect, _) = ui.allocate_exact_size(egui::vec2(18.0, 18.0), egui::Sense::hover());
+            ui.painter().rect_filled(
+                rect,
+                egui::Rounding::same(4.0),
+                accent.linear_multiply(0.25),
             );
-            ui.painter()
-                .rect_filled(rect, egui::Rounding::same(4.0), accent.linear_multiply(0.25));
-            ui.label(
-                egui::RichText::new(title)
-                    .strong()
-                    .color(C_TEXT)
-                    .size(13.0),
-            );
+            ui.label(egui::RichText::new(title).strong().color(C_TEXT).size(13.0));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.label(
                     egui::RichText::new(format_bytes(total))
@@ -1276,7 +1209,13 @@ pub fn short_name_from_url(url: &str) -> String {
 pub fn sanitize_filename(name: &str) -> Option<String> {
     let cleaned: String = name
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect();
     let trimmed = cleaned.trim_matches('_').to_string();
     if trimmed.is_empty() {

@@ -31,7 +31,10 @@ pub fn export_string(folders: &[Folder], format: Format) -> Result<String, Strin
 
 pub fn import_from_file(path: &Path) -> Result<Vec<Folder>, String> {
     let content = std::fs::read_to_string(path).map_err(|e| format!("Read error: {}", e))?;
-    import_from_str(&content, path.extension().and_then(|s| s.to_str()).unwrap_or(""))
+    import_from_str(
+        &content,
+        path.extension().and_then(|s| s.to_str()).unwrap_or(""),
+    )
 }
 
 pub fn import_from_str(content: &str, ext_hint: &str) -> Result<Vec<Folder>, String> {
@@ -45,8 +48,8 @@ pub fn import_from_str(content: &str, ext_hint: &str) -> Result<Vec<Folder>, Str
     // JSON: try Postman first (by shape), then our native, then YAML fallback
     if let Ok(value) = serde_json::from_str::<Value>(content) {
         if looks_like_postman(&value) {
-            let pc: PostmanCollection = serde_json::from_value(value)
-                .map_err(|e| format!("Postman parse error: {}", e))?;
+            let pc: PostmanCollection =
+                serde_json::from_value(value).map_err(|e| format!("Postman parse error: {}", e))?;
             return Ok(regen_ids_all(vec![postman_to_folder(&pc)]));
         }
 
@@ -196,10 +199,8 @@ fn parse_postman_url(v: &serde_json::Value) -> (String, Vec<KvRow>) {
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("")
                                 .to_string();
-                            let disabled = q
-                                .get("disabled")
-                                .and_then(|d| d.as_bool())
-                                .unwrap_or(false);
+                            let disabled =
+                                q.get("disabled").and_then(|d| d.as_bool()).unwrap_or(false);
                             Some(KvRow {
                                 enabled: !disabled,
                                 key,
@@ -566,6 +567,8 @@ mod tests {
         }"#;
         let folders = import_from_str(postman, "json").unwrap();
         let req = &folders[0].requests[0];
-        assert!(matches!(&req.auth, Auth::Basic { username, password } if username == "u" && password == "p"));
+        assert!(
+            matches!(&req.auth, Auth::Basic { username, password } if username == "u" && password == "p")
+        );
     }
 }
