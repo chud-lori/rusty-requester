@@ -21,6 +21,14 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      # Defensive: nuke any cached `target/` artifacts before the release
+      # build so the DMG is always built from the tag's source. Without
+      # this, the rust-cache action can occasionally hand us an older
+      # compiled binary whose fingerprint cargo trusts, so the shipped
+      # DMG drifts from what the tag actually contains. Costs ~45s.
+      - name: Ensure clean build
+        run: cargo clean
+
       - name: Build release binary
         run: cargo build --release
 
