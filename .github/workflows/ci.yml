@@ -16,6 +16,14 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Opt into Node 24 for JS-based actions (actions/checkout,
+# Swatinem/rust-cache, dtolnay/rust-toolchain). GitHub is forcing
+# Node 24 in June 2026 and removing Node 20 in September 2026 —
+# opting in now means CI keeps working past those deadlines and
+# surfaces incompatibilities early.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
 jobs:
   test-macos:
     name: Test (macOS)

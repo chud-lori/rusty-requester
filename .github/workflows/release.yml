@@ -10,6 +10,14 @@ on:
 permissions:
   contents: write
 
+# Opt into Node 24 for JS-based actions (actions/checkout,
+# softprops/action-gh-release, Swatinem/rust-cache, etc.). GitHub
+# is forcing this in June 2026 and removing Node 20 in September 2026
+# — opting in now means the workflow keeps working seamlessly past
+# those deadlines and surfaces incompatibilities early.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
 jobs:
   macos:
     name: Build macOS universal .dmg
