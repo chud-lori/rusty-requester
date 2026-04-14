@@ -230,6 +230,7 @@ impl ApiClient {
                                     );
                                 }
                                 if plus_resp
+                                    .on_hover_cursor(egui::CursorIcon::PointingHand)
                                     .on_hover_text("New request (unsaved)")
                                     .clicked()
                                 {
@@ -366,6 +367,7 @@ impl ApiClient {
 
                     let send_click = ui
                         .add_enabled(!self.is_loading, send_btn)
+                        .on_hover_cursor(egui::CursorIcon::PointingHand)
                         .on_hover_text("Send (⌘/Ctrl + Enter)")
                         .clicked();
 
@@ -375,6 +377,7 @@ impl ApiClient {
                                 .fill(C_BORDER)
                                 .min_size(egui::vec2(74.0, 28.0)),
                         )
+                        .on_hover_cursor(egui::CursorIcon::PointingHand)
                         .on_hover_text("Toggle code-snippet panel")
                         .clicked()
                     {

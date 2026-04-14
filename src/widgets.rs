@@ -91,7 +91,8 @@ pub fn close_x_button(ui: &mut egui::Ui, hover_text: &str) -> egui::Response {
         let color = if hovered { C_RED } else { C_MUTED };
         paint_x(ui.painter(), rect.center(), 4.0, color, 1.5);
     }
-    resp.on_hover_text(hover_text)
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_text(hover_text)
 }
 
 pub fn tab_button<T: PartialEq + Copy>(
@@ -115,7 +116,7 @@ pub fn tab_button<T: PartialEq + Copy>(
         .stroke(egui::Stroke::NONE)
         .rounding(egui::Rounding::same(6.0))
         .min_size(egui::vec2(90.0, 30.0));
-    let resp = ui.add(btn);
+    let resp = ui.add(btn).on_hover_cursor(egui::CursorIcon::PointingHand);
     if selected {
         let rect = resp.rect;
         let y = rect.bottom() - 1.0;
@@ -363,10 +364,11 @@ pub fn render_single_tab(
 ) -> TabAction {
     let tab_height = 32.0;
     let tab_width = 180.0;
-    let (rect, resp) = ui.allocate_exact_size(
+    let (rect, mut resp) = ui.allocate_exact_size(
         egui::vec2(tab_width, tab_height),
         egui::Sense::click(),
     );
+    resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
 
     let mut action = TabAction::None;
 
@@ -552,6 +554,24 @@ pub fn paint_folder_chevron(ui: &mut egui::Ui, openness: f32, response: &egui::R
     ));
 }
 
+/// Extension trait that lets any clickable `egui::Response` opt into
+/// the pointing-hand cursor with a single short method call, so we
+/// don't repeat `.on_hover_cursor(CursorIcon::PointingHand)` dozens
+/// of times. Web browsers show the hand cursor on links/buttons by
+/// default; egui doesn't — this just restores that expectation.
+/// Retained (even though most call sites currently inline
+/// `.on_hover_cursor(...)`) so new buttons can opt in with `.hand()`.
+#[allow(dead_code)]
+pub trait HandCursor {
+    fn hand(self) -> Self;
+}
+#[allow(dead_code)]
+impl HandCursor for egui::Response {
+    fn hand(self) -> Self {
+        self.on_hover_cursor(egui::CursorIcon::PointingHand)
+    }
+}
+
 /// Paints a download / save icon — a downward arrow over a tray — at
 /// the given center. Used for "Save response to file".
 pub fn paint_save_icon(painter: &egui::Painter, center: egui::Pos2, color: egui::Color32) {
@@ -649,7 +669,8 @@ pub fn icon_button(
         }
         paint(&ui.painter(), rect.center(), color);
     }
-    resp.on_hover_text(hover_text)
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_text(hover_text)
 }
 
 /// Paints a clean outlined folder silhouette at the given center point.
@@ -728,21 +749,23 @@ pub fn body_view_pill(
     } else {
         egui::Color32::TRANSPARENT
     };
-    let resp = ui.add(
-        egui::Button::new(
-            egui::RichText::new(label)
-                .size(12.0)
-                .color(fg)
-                .strong(),
+    let resp = ui
+        .add(
+            egui::Button::new(
+                egui::RichText::new(label)
+                    .size(12.0)
+                    .color(fg)
+                    .strong(),
+            )
+            .fill(bg)
+            .stroke(egui::Stroke::new(
+                1.0,
+                if is_active { C_ACCENT } else { C_BORDER },
+            ))
+            .min_size(egui::vec2(64.0, 22.0))
+            .rounding(egui::Rounding::same(6.0)),
         )
-        .fill(bg)
-        .stroke(egui::Stroke::new(
-            1.0,
-            if is_active { C_ACCENT } else { C_BORDER },
-        ))
-        .min_size(egui::vec2(64.0, 22.0))
-        .rounding(egui::Rounding::same(6.0)),
-    );
+        .on_hover_cursor(egui::CursorIcon::PointingHand);
     if resp.clicked() {
         *current = value;
     }
