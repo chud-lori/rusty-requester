@@ -66,6 +66,24 @@ impl ApiClient {
                                 .color(C_MUTED),
                         );
                     });
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui
+                            .add(
+                                egui::Button::new(
+                                    egui::RichText::new("⚙").size(14.0).color(C_MUTED),
+                                )
+                                .min_size(egui::vec2(26.0, 24.0))
+                                .fill(egui::Color32::TRANSPARENT)
+                                .stroke(egui::Stroke::NONE),
+                            )
+                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                            .on_hover_text("Settings (timeout, body cap, proxy, TLS)")
+                            .clicked()
+                        {
+                            self.editing_settings = self.state.settings.clone();
+                            self.show_settings_modal = true;
+                        }
+                    });
                 });
                 ui.add_space(6.0);
                 self.render_environment_picker(ui);
@@ -92,7 +110,11 @@ impl ApiClient {
                     .stroke(egui::Stroke::NONE)
                     .rounding(egui::Rounding::same(5.0))
                     .min_size(tab_size);
-                    if ui.add(coll_btn).clicked() {
+                    if ui
+                        .add(coll_btn)
+                        .on_hover_cursor(egui::CursorIcon::PointingHand)
+                        .clicked()
+                    {
                         self.sidebar_view = SidebarView::Collections;
                     }
 
@@ -111,7 +133,11 @@ impl ApiClient {
                     .stroke(egui::Stroke::NONE)
                     .rounding(egui::Rounding::same(5.0))
                     .min_size(tab_size);
-                    if ui.add(hist_btn).clicked() {
+                    if ui
+                        .add(hist_btn)
+                        .on_hover_cursor(egui::CursorIcon::PointingHand)
+                        .clicked()
+                    {
                         self.sidebar_view = SidebarView::History;
                     }
                 });
@@ -134,6 +160,7 @@ impl ApiClient {
                         .rounding(egui::Rounding::same(8.0))
                         .stroke(egui::Stroke::NONE),
                     )
+                    .on_hover_cursor(egui::CursorIcon::PointingHand)
                     .clicked()
                 {
                     self.state.folders.push(Folder {
@@ -349,6 +376,7 @@ impl ApiClient {
                         .fill(egui::Color32::TRANSPARENT)
                         .stroke(egui::Stroke::new(1.0, C_BORDER)),
                 )
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
                 .on_hover_text("Manage environments")
                 .clicked()
             {
@@ -535,6 +563,7 @@ impl ApiClient {
                     egui::vec2(ui.available_width(), row_h),
                     egui::Sense::click(),
                 );
+                let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
 
                 if ui.is_rect_visible(rect) {
                     let bg = if is_selected {
@@ -781,7 +810,9 @@ impl ApiClient {
             );
 
             let plus_id = ui.id().with(("folder_plus", &folder_id));
-            let plus_resp = ui.interact(plus_rect, plus_id, egui::Sense::click());
+            let plus_resp = ui
+                .interact(plus_rect, plus_id, egui::Sense::click())
+                .on_hover_cursor(egui::CursorIcon::PointingHand);
             if plus_resp.hovered() {
                 ui.painter()
                     .rect_filled(plus_rect, egui::Rounding::same(4.0), C_ELEVATED);
@@ -794,7 +825,9 @@ impl ApiClient {
             }
 
             let dots_id = ui.id().with(("folder_dots", &folder_id));
-            let dots_resp = ui.interact(dots_rect, dots_id, egui::Sense::click());
+            let dots_resp = ui
+                .interact(dots_rect, dots_id, egui::Sense::click())
+                .on_hover_cursor(egui::CursorIcon::PointingHand);
             if dots_resp.hovered() {
                 ui.painter()
                     .rect_filled(dots_rect, egui::Rounding::same(4.0), C_ELEVATED);

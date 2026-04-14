@@ -6,7 +6,7 @@
 
 use crate::io::curl;
 use crate::model::*;
-use crate::snippet::{build_snippet_layout_job, render_snippet, SnippetLang};
+use crate::snippet::{build_snippet_layout_job_content_only, render_snippet, SnippetLang};
 use crate::theme::*;
 use crate::widgets::*;
 use crate::ApiClient;
@@ -667,18 +667,7 @@ impl ApiClient {
                             }
                         });
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui
-                            .add(
-                                egui::Button::new(
-                                    egui::RichText::new("Copy")
-                                        .color(egui::Color32::WHITE)
-                                        .strong(),
-                                )
-                                .fill(C_ACCENT)
-                                .min_size(egui::vec2(70.0, 26.0)),
-                            )
-                            .clicked()
-                        {
+                        if icon_button(ui, "Copy snippet", paint_copy_icon).clicked() {
                             copy_clicked = true;
                         }
                     });
@@ -696,22 +685,56 @@ impl ApiClient {
                             .auto_shrink([false, false])
                             .max_height(avail_h)
                             .show(ui, |ui| {
-                                let mut text = snippet.clone();
-                                let lang = self.snippet_lang;
-                                let mut layouter =
-                                    move |ui: &egui::Ui, s: &str, wrap_width: f32| {
-                                        let mut job =
-                                            build_snippet_layout_job(s, lang, wrap_width);
-                                        job.wrap.max_width = wrap_width;
-                                        ui.fonts(|f| f.layout_job(job))
-                                    };
-                                ui.add(
-                                    egui::TextEdit::multiline(&mut text)
-                                        .code_editor()
-                                        .interactive(false)
-                                        .desired_width(f32::INFINITY)
-                                        .layouter(&mut layouter),
-                                );
+                                // Two-column layout so wrapped lines
+                                // stay inside the content column instead
+                                // of snapping back to x=0 and colliding
+                                // with the next logical line's gutter.
+                                let gutter_w = 32.0;
+                                let line_count =
+                                    snippet.split('\n').count().max(1);
+                                ui.horizontal_top(|ui| {
+                                    // Left — line numbers. One label per
+                                    // logical line; if the content wraps
+                                    // to multiple visual rows the gutter
+                                    // will trail shorter than the content,
+                                    // which matches Postman's behavior.
+                                    ui.vertical(|ui| {
+                                        ui.spacing_mut().item_spacing.y = 0.0;
+                                        for i in 1..=line_count {
+                                            ui.add_sized(
+                                                [gutter_w, 17.0],
+                                                egui::Label::new(
+                                                    egui::RichText::new(format!(
+                                                        "{:>3}",
+                                                        i
+                                                    ))
+                                                    .color(egui::Color32::from_rgb(100, 105, 115))
+                                                    .font(egui::FontId::monospace(12.5)),
+                                                ),
+                                            );
+                                        }
+                                    });
+                                    ui.add_space(6.0);
+                                    // Right — content; TextEdit owns its
+                                    // own wrap inside the remaining width.
+                                    let mut text = snippet.clone();
+                                    let lang = self.snippet_lang;
+                                    let mut layouter =
+                                        move |ui: &egui::Ui, s: &str, wrap_width: f32| {
+                                            let mut job =
+                                                build_snippet_layout_job_content_only(s, lang);
+                                            job.wrap.max_width = wrap_width;
+                                            ui.fonts(|f| f.layout_job(job))
+                                        };
+                                    ui.add(
+                                        egui::TextEdit::multiline(&mut text)
+                                            .code_editor()
+                                            .frame(false)
+                                            .interactive(false)
+                                            .desired_width(f32::INFINITY)
+                                            .layouter(&mut layouter),
+                                    );
+                                });
                             });
                     });
             });
@@ -814,6 +837,401 @@ impl ApiClient {
             self.open_request(p, new_id);
             self.show_paste_modal = false;
             self.show_toast("Request imported");
+        }
+    }
+
+    /// App-wide settings modal — request timeout, body size cap, proxy,
+    /// TLS verification. Changes take effect immediately (we rebuild
+    /// the shared `reqwest::Client` on save).
+    pub(crate) fn render_settings_modal(&mut self, ctx: &egui::Context) {
+        if !self.show_settings_modal {
+            return;
+        }
+        let mut open = self.show_settings_modal;
+        let mut do_save = false;
+        let mut do_cancel = false;
+
+        egui::Window::new(
+            egui::RichText::new("SETTINGS").size(12.0).strong().color(C_MUTED),
+        )
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(false)
+            .default_width(440.0)
+            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .show(ctx, |ui| {
+                ui.set_min_width(420.0);
+
+                // Request timeout
+                ui.label(egui::RichText::new("Request timeout (seconds)").size(11.5).color(C_MUTED));
+                ui.add(
+                    egui::DragValue::new(&mut self.editing_settings.timeout_sec)
+                        .range(0..=3600)
+                        .speed(1.0)
+                        .suffix(" s"),
+                );
+                ui.label(
+                    egui::RichText::new("0 disables the timeout (requests can hang forever).")
+                        .size(10.5)
+                        .color(C_MUTED),
+                );
+                ui.add_space(10.0);
+
+                // Max body size
+                ui.label(egui::RichText::new("Max response body (MB)").size(11.5).color(C_MUTED));
+                ui.add(
+                    egui::DragValue::new(&mut self.editing_settings.max_body_mb)
+                        .range(0..=2048)
+                        .speed(1.0)
+                        .suffix(" MB"),
+                );
+                ui.label(
+                    egui::RichText::new(
+                        "Responses larger than this are truncated with a banner. \
+                         0 disables the cap (huge payloads may OOM the app).",
+                    )
+                    .size(10.5)
+                    .color(C_MUTED),
+                );
+                ui.add_space(10.0);
+
+                // Proxy
+                ui.label(egui::RichText::new("Proxy URL").size(11.5).color(C_MUTED));
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.editing_settings.proxy_url)
+                        .hint_text("http://proxy:8080 (leave empty for direct)")
+                        .desired_width(f32::INFINITY),
+                );
+                ui.add_space(10.0);
+
+                // Verify TLS
+                ui.checkbox(
+                    &mut self.editing_settings.verify_tls,
+                    "Verify TLS certificates",
+                );
+                ui.label(
+                    egui::RichText::new(
+                        "Unchecked = accept self-signed / expired certs. \
+                         Dangerous on the public internet; useful for internal dev APIs.",
+                    )
+                    .size(10.5)
+                    .color(C_MUTED),
+                );
+
+                ui.add_space(14.0);
+                ui.separator();
+                ui.add_space(6.0);
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.button("Cancel").clicked() {
+                        do_cancel = true;
+                    }
+                    let save_btn = egui::Button::new(
+                        egui::RichText::new("Save")
+                            .color(egui::Color32::WHITE)
+                            .strong(),
+                    )
+                    .fill(C_ACCENT)
+                    .min_size(egui::vec2(80.0, 28.0));
+                    if ui.add(save_btn).clicked() {
+                        do_save = true;
+                    }
+                });
+
+                ui.input(|i| {
+                    if i.key_pressed(egui::Key::Escape) {
+                        do_cancel = true;
+                    }
+                });
+            });
+        self.show_settings_modal = open;
+
+        if do_save {
+            self.state.settings = self.editing_settings.clone();
+            self.http_client = crate::net::build_client(&self.state.settings);
+            self.save_state();
+            self.show_toast("Settings saved");
+            self.show_settings_modal = false;
+        }
+        if do_cancel || !self.show_settings_modal {
+            self.show_settings_modal = false;
+        }
+    }
+
+    /// In-window menu bar along the top of the window. Cross-platform
+    /// (macOS + Linux) — egui doesn't drive the native macOS NSMenu
+    /// bar, so we render our own strip here. Keeps the same items
+    /// regardless of OS so behavior is consistent.
+    #[cfg(not(target_os = "macos"))]
+    pub(crate) fn render_menu_bar(&mut self, ctx: &egui::Context) {
+        // Actions flow out of the closures via mutable flags so we can
+        // react after the panel closes (avoids borrow conflicts with
+        // `self` inside the menu closures).
+        let mut action_new_request = false;
+        let mut action_new_collection = false;
+        let mut action_import = false;
+        let mut action_paste_curl = false;
+        let mut action_export_json = false;
+        let mut action_export_yaml = false;
+        let mut action_toggle_snippet = false;
+        let mut action_open_settings = false;
+        let mut action_open_env = false;
+        let mut action_show_about = false;
+        let mut action_quit = false;
+
+        egui::TopBottomPanel::top("menu_bar")
+            .frame(
+                egui::Frame::none()
+                    .fill(C_PANEL_DARK)
+                    .inner_margin(egui::Margin::symmetric(4.0, 2.0)),
+            )
+            .show(ctx, |ui| {
+                egui::menu::bar(ui, |ui| {
+                    ui.menu_button("File", |ui| {
+                        if ui.button("New Request").clicked() {
+                            action_new_request = true;
+                            ui.close_menu();
+                        }
+                        if ui.button("New Collection").clicked() {
+                            action_new_collection = true;
+                            ui.close_menu();
+                        }
+                        ui.separator();
+                        if ui.button("Import collection file…").clicked() {
+                            action_import = true;
+                            ui.close_menu();
+                        }
+                        if ui.button("Paste cURL command…").clicked() {
+                            action_paste_curl = true;
+                            ui.close_menu();
+                        }
+                        if ui.button("Export all as JSON…").clicked() {
+                            action_export_json = true;
+                            ui.close_menu();
+                        }
+                        if ui.button("Export all as YAML…").clicked() {
+                            action_export_yaml = true;
+                            ui.close_menu();
+                        }
+                        ui.separator();
+                        if ui.button("Quit").clicked() {
+                            action_quit = true;
+                            ui.close_menu();
+                        }
+                    });
+
+                    ui.menu_button("View", |ui| {
+                        if ui.button("Toggle code snippet panel").clicked() {
+                            action_toggle_snippet = true;
+                            ui.close_menu();
+                        }
+                    });
+
+                    ui.menu_button("Settings", |ui| {
+                        if ui.button("Preferences…").clicked() {
+                            action_open_settings = true;
+                            ui.close_menu();
+                        }
+                        if ui.button("Environments…").clicked() {
+                            action_open_env = true;
+                            ui.close_menu();
+                        }
+                    });
+
+                    ui.menu_button("Help", |ui| {
+                        if ui.button("About Rusty Requester").clicked() {
+                            action_show_about = true;
+                            ui.close_menu();
+                        }
+                        ui.separator();
+                        if ui.button("Open GitHub repo").clicked() {
+                            ctx.output_mut(|o| {
+                                o.open_url = Some(egui::output::OpenUrl {
+                                    url: "https://github.com/chud-lori/rusty-requester"
+                                        .to_string(),
+                                    new_tab: true,
+                                });
+                            });
+                            ui.close_menu();
+                        }
+                        if ui.button("Report an issue").clicked() {
+                            ctx.output_mut(|o| {
+                                o.open_url = Some(egui::output::OpenUrl {
+                                    url: "https://github.com/chud-lori/rusty-requester/issues"
+                                        .to_string(),
+                                    new_tab: true,
+                                });
+                            });
+                            ui.close_menu();
+                        }
+                    });
+                });
+            });
+
+        // Apply actions after the panel closes.
+        if action_new_request {
+            self.new_draft_request();
+        }
+        if action_new_collection {
+            self.state.folders.push(crate::model::Folder {
+                id: uuid::Uuid::new_v4().to_string(),
+                name: format!("Collection {}", self.state.folders.len() + 1),
+                requests: vec![],
+                subfolders: vec![],
+            });
+            self.save_state();
+        }
+        if action_import {
+            self.pending_import = true;
+        }
+        if action_paste_curl {
+            self.show_paste_modal = true;
+            self.paste_curl_text.clear();
+            self.paste_error.clear();
+        }
+        if action_export_json {
+            self.pending_export_json = true;
+        }
+        if action_export_yaml {
+            self.pending_export_yaml = true;
+        }
+        if action_toggle_snippet {
+            self.show_snippet_panel = !self.show_snippet_panel;
+        }
+        if action_open_settings {
+            self.editing_settings = self.state.settings.clone();
+            self.show_settings_modal = true;
+        }
+        if action_open_env {
+            self.show_env_modal = true;
+            if self.selected_env_for_edit.is_none() {
+                self.selected_env_for_edit =
+                    self.state.environments.first().map(|e| e.id.clone());
+            }
+        }
+        if action_show_about {
+            self.show_about_modal = true;
+        }
+        if action_quit {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+    }
+
+    /// About dialog — minimal Postman-style layout: icon, name,
+    /// version lines, one-line tagline, three stacked plain links,
+    /// copyright. Used by both the macOS app/Help menu and the
+    /// in-window Linux menu bar.
+    pub(crate) fn render_about_modal(&mut self, ctx: &egui::Context) {
+        if !self.show_about_modal {
+            return;
+        }
+        let mut open = self.show_about_modal;
+        egui::Window::new(
+            egui::RichText::new("ABOUT").size(12.0).strong().color(C_MUTED),
+        )
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .show(ctx, |ui| {
+                ui.set_min_width(360.0);
+
+                let open_url = |ctx: &egui::Context, url: &str| {
+                    ctx.output_mut(|o| {
+                        o.open_url = Some(egui::output::OpenUrl {
+                            url: url.to_string(),
+                            new_tab: true,
+                        });
+                    });
+                };
+                let link_row =
+                    |ui: &mut egui::Ui, label: &str, url: &str, ctx: &egui::Context| {
+                        if ui
+                            .link(
+                                egui::RichText::new(label)
+                                    .size(12.5)
+                                    .color(C_ACCENT),
+                            )
+                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                            .clicked()
+                        {
+                            open_url(ctx, url);
+                        }
+                    };
+
+                ui.vertical_centered(|ui| {
+                    ui.add_space(10.0);
+                    if let Some(tex) = &self.app_icon {
+                        ui.add(
+                            egui::Image::from_texture(tex)
+                                .fit_to_exact_size(egui::vec2(80.0, 80.0))
+                                .rounding(egui::Rounding::same(14.0)),
+                        );
+                    }
+                    ui.add_space(10.0);
+                    ui.label(
+                        egui::RichText::new("Rusty Requester")
+                            .size(19.0)
+                            .strong()
+                            .color(C_TEXT),
+                    );
+                    ui.add_space(8.0);
+                    ui.label(
+                        egui::RichText::new(concat!("Version ", env!("CARGO_PKG_VERSION")))
+                            .size(12.0)
+                            .color(C_TEXT),
+                    );
+                    ui.label(
+                        egui::RichText::new(concat!(
+                            "Build: ",
+                            env!("CARGO_PKG_VERSION"),
+                            " (native)"
+                        ))
+                        .size(11.5)
+                        .color(C_MUTED),
+                    );
+
+                    ui.add_space(12.0);
+                    ui.label(
+                        egui::RichText::new(
+                            "A native, offline, lightweight API client.",
+                        )
+                        .size(12.0)
+                        .color(C_TEXT),
+                    );
+
+                    ui.add_space(12.0);
+                    link_row(
+                        ui,
+                        "GitHub Repository",
+                        "https://github.com/chud-lori/rusty-requester",
+                        ctx,
+                    );
+                    ui.add_space(4.0);
+                    link_row(
+                        ui,
+                        "Report an issue",
+                        "https://github.com/chud-lori/rusty-requester/issues",
+                        ctx,
+                    );
+                    ui.add_space(4.0);
+                    link_row(
+                        ui,
+                        "Creator: Lori (@chud-lori)",
+                        "https://github.com/chud-lori",
+                        ctx,
+                    );
+
+                    ui.add_space(14.0);
+                    ui.label(
+                        egui::RichText::new("MIT Licensed · © Lori (@chud-lori)")
+                            .size(11.0)
+                            .color(C_MUTED),
+                    );
+                    ui.add_space(10.0);
+                });
+            });
+        if !open {
+            self.show_about_modal = false;
         }
     }
 

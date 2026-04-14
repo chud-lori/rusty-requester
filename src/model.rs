@@ -232,6 +232,53 @@ pub struct AppState {
     /// `request_id` of the tab that was active at save time.
     #[serde(default)]
     pub active_tab_id: Option<String>,
+    /// App-wide settings: timeout, body cap, proxy, TLS verification.
+    /// Exposed via the Settings modal in the sidebar.
+    #[serde(default)]
+    pub settings: AppSettings,
+}
+
+/// User-configurable networking / safety knobs. Defaults are tuned so
+/// first-time users never need to open the Settings modal.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct AppSettings {
+    /// Per-request timeout in seconds. `0` disables the timeout.
+    #[serde(default = "default_timeout_sec")]
+    pub timeout_sec: u64,
+    /// Max response body size in megabytes. Bytes past this are
+    /// discarded and a banner is shown. `0` disables the cap.
+    #[serde(default = "default_max_body_mb")]
+    pub max_body_mb: u64,
+    /// When false, the HTTPS client accepts self-signed / expired
+    /// certificates. Useful for internal dev APIs; dangerous on the
+    /// public internet.
+    #[serde(default = "default_verify_tls")]
+    pub verify_tls: bool,
+    /// HTTP/HTTPS/SOCKS5 proxy URL (e.g. `http://proxy:8080`). Empty
+    /// = direct.
+    #[serde(default)]
+    pub proxy_url: String,
+}
+
+fn default_timeout_sec() -> u64 {
+    60
+}
+fn default_max_body_mb() -> u64 {
+    50
+}
+fn default_verify_tls() -> bool {
+    true
+}
+
+impl Default for AppSettings {
+    fn default() -> Self {
+        Self {
+            timeout_sec: default_timeout_sec(),
+            max_body_mb: default_max_body_mb(),
+            verify_tls: default_verify_tls(),
+            proxy_url: String::new(),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

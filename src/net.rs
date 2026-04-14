@@ -1,11 +1,32 @@
-//! Network layer — HTTP request execution, URL normalization, and
-//! error formatting. Kept free of UI concerns so it can be unit-tested
-//! independently of egui.
+//! Network layer — HTTP request execution, URL normalization, client
+//! construction, and error formatting. Kept free of UI concerns so it
+//! can be unit-tested independently of egui.
 
 use crate::io::curl;
-use crate::model::{Auth, BodyExt, Environment, HttpMethod, Request, ResponseData};
+use crate::model::{AppSettings, Auth, BodyExt, Environment, HttpMethod, Request, ResponseData};
 use crate::widgets::{substitute_kvs, substitute_vars};
 use base64::Engine;
+use std::time::Duration;
+
+/// Build a `reqwest::Client` from the current app settings. Called at
+/// startup and whenever the user tweaks the Settings modal — never per
+/// request.
+pub fn build_client(settings: &AppSettings) -> reqwest::Client {
+    let mut b = reqwest::Client::builder();
+    if settings.timeout_sec > 0 {
+        b = b.timeout(Duration::from_secs(settings.timeout_sec));
+    }
+    if !settings.verify_tls {
+        b = b.danger_accept_invalid_certs(true);
+    }
+    let proxy = settings.proxy_url.trim();
+    if !proxy.is_empty() {
+        if let Ok(p) = reqwest::Proxy::all(proxy) {
+            b = b.proxy(p);
+        }
+    }
+    b.build().unwrap_or_else(|_| reqwest::Client::new())
+}
 
 /// Ensure the URL has a scheme so reqwest can parse it. Defaults to
 /// `http://` — matches curl's historical default and Postman's
@@ -42,11 +63,21 @@ pub fn format_request_error(err: &reqwest::Error) -> String {
     msg
 }
 
-/// Fire a single HTTP request (synchronously; spawns its own tokio
-/// runtime per call) and return a fully-populated `ResponseData` —
-/// body, headers, status, size breakdown, and phase timings. Designed
-/// to run off the UI thread via `poll_promise::Promise::spawn_thread`.
-pub fn execute_request(request: &Request, env: Option<&Environment>) -> ResponseData {
+/// Fire a single HTTP request and return a fully-populated
+/// `ResponseData` — body, headers, status, size breakdown, and phase
+/// timings. Designed to run off the UI thread via
+/// `poll_promise::Promise::spawn_thread`.
+///
+/// The `client` is shared across calls (built once from the current
+/// `AppSettings` — see `build_client`). `max_body_bytes` is the soft
+/// cap after which the body is truncated and a banner is prepended;
+/// `0` disables the cap.
+pub fn execute_request(
+    client: reqwest::Client,
+    request: &Request,
+    env: Option<&Environment>,
+    max_body_bytes: usize,
+) -> ResponseData {
     let rt = tokio::runtime::Runtime::new().unwrap();
     let t_prepare_start = std::time::Instant::now();
 
@@ -68,7 +99,6 @@ pub fn execute_request(request: &Request, env: Option<&Environment>) -> Response
     };
 
     rt.block_on(async {
-        let client = reqwest::Client::new();
         let final_url_base = ensure_url_scheme(&final_url_base);
         let final_url = curl::build_full_url(&final_url_base, &sub_params);
 
@@ -222,10 +252,20 @@ pub fn execute_request(request: &Request, env: Option<&Environment>) -> Response
                     })
                     .collect();
 
-                let body = response
-                    .text()
-                    .await
-                    .unwrap_or_else(|e| format!("Error reading body: {}", e));
+                // Stream body with a size cap so a multi-GB payload
+                // doesn't OOM the app. We read chunks until we hit
+                // `max_body_bytes`, then stop and prepend a banner.
+                let (body, truncated) =
+                    read_body_capped(response, max_body_bytes).await;
+                let body = if truncated {
+                    let cap_mb = max_body_bytes as f64 / (1024.0 * 1024.0);
+                    format!(
+                        "/* Response body truncated at {:.1} MB (see Settings → Max body) */\n{}",
+                        cap_mb, body
+                    )
+                } else {
+                    body
+                };
                 let t_done = std::time::Instant::now();
                 let download_ms = t_done.saturating_duration_since(t_headers).as_millis() as u64;
                 let total_ms = t_done.saturating_duration_since(t_prepare_start).as_millis() as u64;
@@ -267,4 +307,47 @@ pub fn execute_request(request: &Request, env: Option<&Environment>) -> Response
             },
         }
     })
+}
+
+/// Read a response body into a String, stopping as soon as `max_bytes`
+/// is reached. Returns `(body, truncated)`. A cap of `0` disables the
+/// limit and reads the whole response (equivalent to `.text()`).
+///
+/// Uses `reqwest::Response::chunk()` so we pull incrementally from the
+/// network and abort early on oversize payloads — no 5 GB allocation
+/// just because a server returned a 5 GB body.
+async fn read_body_capped(
+    mut response: reqwest::Response,
+    max_bytes: usize,
+) -> (String, bool) {
+    if max_bytes == 0 {
+        let body = response
+            .text()
+            .await
+            .unwrap_or_else(|e| format!("Error reading body: {}", e));
+        return (body, false);
+    }
+    let mut buf: Vec<u8> = Vec::new();
+    let mut truncated = false;
+    loop {
+        match response.chunk().await {
+            Ok(Some(bytes)) => {
+                if buf.len() + bytes.len() > max_bytes {
+                    let remaining = max_bytes.saturating_sub(buf.len());
+                    buf.extend_from_slice(&bytes[..remaining]);
+                    truncated = true;
+                    break;
+                }
+                buf.extend_from_slice(&bytes);
+            }
+            Ok(None) => break,
+            Err(e) => {
+                let tail = format!("\n/* Error reading chunk: {} */", e);
+                buf.extend_from_slice(tail.as_bytes());
+                break;
+            }
+        }
+    }
+    // Lossy — response may stop mid-UTF-8; safer than failing.
+    (String::from_utf8_lossy(&buf).into_owned(), truncated)
 }

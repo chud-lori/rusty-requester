@@ -1,6 +1,8 @@
 mod extract;
 mod icon;
 mod io;
+#[cfg(target_os = "macos")]
+mod macos_menu;
 mod model;
 mod net;
 mod snippet;
@@ -133,6 +135,25 @@ struct ApiClient {
     /// Whether the inline search input is visible (toggled by the 🔍
     /// icon button in the body toolbar).
     body_search_visible: bool,
+
+    /// Long-lived HTTP client built from `state.settings`. Rebuilt on
+    /// app startup and whenever the Settings modal saves. Reused across
+    /// every send so we don't reopen TCP/TLS pools per request.
+    http_client: reqwest::Client,
+
+    /// Settings modal state.
+    show_settings_modal: bool,
+    /// Working copy of settings while the modal is open. Committed to
+    /// `state.settings` on Save.
+    editing_settings: AppSettings,
+    /// About modal (Help → About Rusty Requester).
+    show_about_modal: bool,
+    /// Have we installed the macOS NSMenu yet? We defer the install
+    /// to the first `update()` frame because doing it before
+    /// `eframe::run_native` lets winit overwrite our menu with its
+    /// default Services/Hide/Quit stub.
+    #[cfg(target_os = "macos")]
+    macos_menu_installed: bool,
 }
 
 impl Default for ApiClient {
@@ -155,6 +176,7 @@ impl Default for ApiClient {
             drafts: vec![],
             open_tabs: vec![],
             active_tab_id: None,
+            settings: AppSettings::default(),
         });
 
         let mut this = Self {
@@ -222,7 +244,17 @@ impl Default for ApiClient {
             body_tree_filter: String::new(),
             body_search_query: String::new(),
             body_search_visible: false,
+            http_client: net::build_client(&AppSettings::default()),
+            show_settings_modal: false,
+            editing_settings: AppSettings::default(),
+            show_about_modal: false,
+            #[cfg(target_os = "macos")]
+            macos_menu_installed: false,
         };
+        // Rebuild the HTTP client from the deserialized settings — the
+        // initial one above was a placeholder, because we couldn't read
+        // `state.settings` before `state` was moved into `this`.
+        this.http_client = net::build_client(&this.state.settings);
         // Restore active tab — if state has a saved `active_tab_id`,
         // activate that tab now. Otherwise fall back to the first open tab.
         let active_tab: Option<OpenTab> = {
@@ -350,8 +382,11 @@ impl ApiClient {
             self.response_status = "Sending request...".to_string();
             self.response_time = String::new();
             self.response_headers.clear();
+            let client = self.http_client.clone();
+            let max_body_bytes =
+                (self.state.settings.max_body_mb as usize).saturating_mul(1024 * 1024);
             self.request_promise = Some(Promise::spawn_thread("request", move || {
-                net::execute_request(&request, env.as_ref())
+                net::execute_request(client, &request, env.as_ref(), max_body_bytes)
             }));
         }
     }
@@ -724,8 +759,89 @@ impl ApiClient {
 
 
 
+#[cfg(target_os = "macos")]
+impl ApiClient {
+    /// Drain macOS NSMenu events and map each item ID to an action.
+    fn dispatch_macos_menu_events(&mut self) {
+        use macos_menu as m;
+        for id in m::drain_events() {
+            match id.as_str() {
+                m::MENU_NEW_REQUEST => self.new_draft_request(),
+                m::MENU_NEW_COLLECTION => {
+                    self.state.folders.push(Folder {
+                        id: Uuid::new_v4().to_string(),
+                        name: format!("Collection {}", self.state.folders.len() + 1),
+                        requests: vec![],
+                        subfolders: vec![],
+                    });
+                    self.save_state();
+                }
+                m::MENU_IMPORT => self.pending_import = true,
+                m::MENU_PASTE_CURL => {
+                    self.show_paste_modal = true;
+                    self.paste_curl_text.clear();
+                    self.paste_error.clear();
+                }
+                m::MENU_EXPORT_JSON => self.pending_export_json = true,
+                m::MENU_EXPORT_YAML => self.pending_export_yaml = true,
+                m::MENU_TOGGLE_SNIPPET => self.show_snippet_panel = !self.show_snippet_panel,
+                m::MENU_SEND => self.send_request(),
+                m::MENU_SETTINGS => {
+                    self.editing_settings = self.state.settings.clone();
+                    self.show_settings_modal = true;
+                }
+                m::MENU_ENVIRONMENTS => {
+                    self.show_env_modal = true;
+                    if self.selected_env_for_edit.is_none() {
+                        self.selected_env_for_edit =
+                            self.state.environments.first().map(|e| e.id.clone());
+                    }
+                }
+                m::MENU_ABOUT => {
+                    eprintln!("[menu] MENU_ABOUT fired — opening custom About modal");
+                    self.show_about_modal = true;
+                }
+                m::MENU_GITHUB | m::MENU_REPORT_ISSUE => {
+                    let url = if id == m::MENU_GITHUB {
+                        "https://github.com/chud-lori/rusty-requester"
+                    } else {
+                        "https://github.com/chud-lori/rusty-requester/issues"
+                    };
+                    if let Err(e) = webbrowser_open(url) {
+                        eprintln!("[menu] open url failed: {}", e);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn webbrowser_open(url: &str) -> Result<(), std::io::Error> {
+    // Use `open` — ships with every macOS install; avoids adding a
+    // webbrowser crate just for two menu items.
+    std::process::Command::new("open").arg(url).spawn().map(|_| ())
+}
+
 impl eframe::App for ApiClient {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Install the macOS menu bar on the first frame (after winit
+        // has wired up NSApp). See `macos_menu_installed` doc comment
+        // for why this can't run in `main()`.
+        #[cfg(target_os = "macos")]
+        if !self.macos_menu_installed {
+            self.macos_menu_installed = true;
+            macos_menu::install();
+            eprintln!("[menu] macOS NSMenu installed from first update()");
+        }
+
+        // Dispatch any macOS system-menu selections made since the last
+        // frame. On Linux/Windows this is a no-op — the menu lives in
+        // a `TopBottomPanel` inside the window instead.
+        #[cfg(target_os = "macos")]
+        self.dispatch_macos_menu_events();
+
         // Handle deferred file-dialog actions from the previous frame.
         // These would otherwise block the main thread before the menu
         // popup that triggered them had a chance to close.
@@ -854,12 +970,19 @@ impl eframe::App for ApiClient {
             );
         }
 
+        // On macOS the menu lives in the system menu bar (installed
+        // via `macos_menu::install`). On other platforms we render an
+        // in-window bar across the top.
+        #[cfg(not(target_os = "macos"))]
+        self.render_menu_bar(ctx);
         self.render_sidebar(ctx);
         self.render_snippet_panel(ctx);
         self.render_central(ctx);
         self.render_paste_modal(ctx);
         self.render_env_modal(ctx);
+        self.render_settings_modal(ctx);
         self.render_save_draft_modal(ctx);
+        self.render_about_modal(ctx);
         self.render_toast(ctx);
     }
 }
@@ -966,6 +1089,22 @@ fn main() -> Result<(), eframe::Error> {
     if let Err(e) = set_macos_activation_policy_regular() {
         eprintln!("[icon] activation policy set failed: {}", e);
     }
+
+    // Set NSApp's applicationIconImage BEFORE the menu bar is
+    // installed (and before the first About menu click). NSApp's stock
+    // About panel reads this property at render time; if we delay it
+    // until the first `update()` frame, the initial panel shows the
+    // generic file-bundle icon.
+    #[cfg(target_os = "macos")]
+    if let Err(e) = set_macos_app_icon_image(APP_ICON_BYTES) {
+        eprintln!("[icon] early app-icon set failed: {}", e);
+    }
+
+    // The macOS menu bar is installed from the first `update()` frame,
+    // NOT here — winit's NSApp delegate overwrites any menu we set up
+    // before `eframe::run_native` starts its run loop, which is why
+    // you'd see the default Services/Hide/Quit stub instead of our
+    // custom menu bar.
 
     let mut viewport = egui::ViewportBuilder::default()
         .with_inner_size([1280.0, 820.0])

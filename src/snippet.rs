@@ -13,24 +13,40 @@ const HL_KEYWORD: Color32 = Color32::from_rgb(249, 38, 114); // pink — lang ke
 const HL_COMMENT: Color32 = Color32::from_rgb(117, 113, 94); // grey — shell comments
 const HL_LINENO: Color32 = Color32::from_rgb(100, 105, 115); // dim grey
 
-/// Build a syntax-highlighted `LayoutJob` for a code snippet. Shell-like
-/// languages (cURL, HTTPie) get strings/flags highlighted; Python/JS also
-/// pick up language keywords. The highlighter is intentionally small — no
-/// proper lexer, just enough coloring to read at a glance.
+// `build_snippet_layout_job` (the with-embedded-gutter variant) was
+// replaced by `build_snippet_layout_job_content_only` paired with a
+// separate gutter column. Kept here only if we ever need a single-
+// LayoutJob fallback; marked dead_code to keep the build quiet.
+#[allow(dead_code)]
 pub fn build_snippet_layout_job(text: &str, lang: SnippetLang, _wrap_width: f32) -> LayoutJob {
     let font = FontId::monospace(12.5);
     let mut job = LayoutJob::default();
-
     for (line_idx, line) in text.split('\n').enumerate() {
         if line_idx > 0 {
             append(&mut job, "\n", &font, HL_TEXT);
         }
-        // Line number gutter — fixed 4-char-wide, dim grey.
         let lineno = format!("{:>3}  ", line_idx + 1);
         append(&mut job, &lineno, &font, HL_LINENO);
         highlight_line(&mut job, line, lang, &font);
     }
+    job
+}
 
+/// Same as `build_snippet_layout_job` but without the line-number gutter
+/// embedded into the text. Intended to be paired with a separate gutter
+/// column rendered to the left of the content — that way wrapped visual
+/// rows of a long logical line continue inside the content column
+/// instead of snapping back to the widget's left edge and overlapping
+/// the gutter.
+pub fn build_snippet_layout_job_content_only(text: &str, lang: SnippetLang) -> LayoutJob {
+    let font = FontId::monospace(12.5);
+    let mut job = LayoutJob::default();
+    for (line_idx, line) in text.split('\n').enumerate() {
+        if line_idx > 0 {
+            append(&mut job, "\n", &font, HL_TEXT);
+        }
+        highlight_line(&mut job, line, lang, &font);
+    }
     job
 }
 

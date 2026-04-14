@@ -20,6 +20,10 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc = "0.2"
+# Native NSMenu-backed menu bar — drops a system menu on the top of
+# the screen (the macOS-idiomatic place) instead of rendering one
+# inside the window. Linux keeps the in-window egui menu bar.
+muda = "0.15"
 
 [profile.release]
 opt-level = "z"
