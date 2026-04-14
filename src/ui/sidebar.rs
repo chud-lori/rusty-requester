@@ -924,6 +924,7 @@ impl ApiClient {
                     body_ext: None,
                     auth: Auth::None,
                     extractors: vec![],
+                    assertions: vec![],
                 };
                 let new_id = new_req.id.clone();
                 if let Some(f) = self.get_current_folder_mut() {

@@ -97,18 +97,13 @@ pub fn install() {
     ])
     .unwrap();
 
-    // --- Edit (standard first-responder actions) ------------------------
-    let edit = Submenu::new("Edit", true);
-    edit.append_items(&[
-        &PredefinedMenuItem::undo(None),
-        &PredefinedMenuItem::redo(None),
-        &PredefinedMenuItem::separator(),
-        &PredefinedMenuItem::cut(None),
-        &PredefinedMenuItem::copy(None),
-        &PredefinedMenuItem::paste(None),
-        &PredefinedMenuItem::select_all(None),
-    ])
-    .unwrap();
+    // No Edit submenu on purpose. muda's predefined Cut / Copy /
+    // Paste / Select-All install AppKit's native Cmd+X/C/V/A
+    // shortcuts that route through NSApp's first responder — which
+    // egui's TextEdit isn't, so the events get *consumed* by the
+    // menu and never reach the editor. Without this submenu, egui
+    // handles all text-editing shortcuts itself (and they actually
+    // work).
 
     // --- View ----------------------------------------------------------
     let view = Submenu::new("View", true);
@@ -151,7 +146,7 @@ pub fn install() {
     ])
     .unwrap();
 
-    menu.append_items(&[&app_submenu, &file, &edit, &view, &request, &help])
+    menu.append_items(&[&app_submenu, &file, &view, &request, &help])
         .unwrap();
 
     menu.init_for_nsapp();

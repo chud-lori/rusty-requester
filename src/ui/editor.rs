@@ -848,8 +848,15 @@ impl ApiClient {
     /// Next request can reference it with `{{name}}`.
     fn render_tests_tab(&mut self, ui: &mut egui::Ui) {
         ui.label(
-            egui::RichText::new("Extract values from the response into environment variables.")
-                .size(12.0)
+            egui::RichText::new("EXTRACTORS")
+                .size(10.5)
+                .strong()
+                .color(C_MUTED),
+        );
+        ui.add_space(3.0);
+        ui.label(
+            egui::RichText::new("Pull values from the response into environment variables.")
+                .size(11.5)
                 .color(C_MUTED),
         );
         ui.add_space(2.0);
@@ -857,7 +864,7 @@ impl ApiClient {
             egui::RichText::new(
                 "Body path: dot + bracket syntax, e.g. `data.token` or `items[0].id`.",
             )
-            .size(11.5)
+            .size(11.0)
             .color(C_MUTED),
         );
         ui.add_space(8.0);
@@ -999,6 +1006,224 @@ impl ApiClient {
                 .size(11.5)
                 .color(C_ORANGE),
             );
+        }
+
+        ui.add_space(20.0);
+        ui.separator();
+        ui.add_space(10.0);
+        self.render_assertions_section(ui);
+    }
+
+    /// Pass/fail rules evaluated against the response after each
+    /// send. The outcome is shown as a colored dot in the leftmost
+    /// column of each row (green = pass, red = fail, yellow = error,
+    /// grey = not yet run).
+    fn render_assertions_section(&mut self, ui: &mut egui::Ui) {
+        ui.label(
+            egui::RichText::new("ASSERTIONS")
+                .size(10.5)
+                .strong()
+                .color(C_MUTED),
+        );
+        ui.add_space(3.0);
+        ui.label(
+            egui::RichText::new(
+                "Check the response matches your expectations. Body uses the \
+                 same dot/bracket path as Extractors.",
+            )
+            .size(11.5)
+            .color(C_MUTED),
+        );
+        ui.add_space(8.0);
+
+        // Trailing ghost row.
+        if self
+            .editing_assertions
+            .last()
+            .map(|a| !a.expression.is_empty() || !a.expected.is_empty())
+            .unwrap_or(true)
+        {
+            self.editing_assertions.push(ResponseAssertion {
+                enabled: true,
+                source: AssertionSource::Status,
+                expression: String::new(),
+                op: AssertionOp::Equals,
+                expected: String::new(),
+            });
+        }
+        // Keep results vector in lock-step length with assertions.
+        if self.assertion_results.len() < self.editing_assertions.len() {
+            self.assertion_results.resize(self.editing_assertions.len(), None);
+        } else if self.assertion_results.len() > self.editing_assertions.len() {
+            self.assertion_results.truncate(self.editing_assertions.len());
+        }
+
+        let avail = ui.available_width();
+        let dot_w = 14.0;
+        let cb_w = 22.0;
+        let src_w = 90.0;
+        let expr_w = 160.0;
+        let op_w = 110.0;
+        let del_w = 22.0;
+        let pad = 6.0;
+        let right_margin = 12.0;
+        let usable = avail - right_margin;
+        let exp_w = (usable - dot_w - cb_w - src_w - expr_w - op_w - del_w - pad * 6.0).max(120.0);
+        let row_h = 24.0;
+
+        ui.horizontal(|ui| {
+            ui.add_space(dot_w + cb_w + pad * 2.0);
+            ui.label(egui::RichText::new("SOURCE").size(10.0).color(C_MUTED));
+            ui.add_space(src_w - 36.0);
+            ui.label(egui::RichText::new("EXPRESSION").size(10.0).color(C_MUTED));
+            ui.add_space(expr_w - 60.0);
+            ui.label(egui::RichText::new("OP").size(10.0).color(C_MUTED));
+            ui.add_space(op_w - 6.0);
+            ui.label(egui::RichText::new("EXPECTED").size(10.0).color(C_MUTED));
+        });
+        ui.add_space(2.0);
+        ui.separator();
+        ui.add_space(4.0);
+
+        let mut changed = false;
+        let mut to_remove: Option<usize> = None;
+        let row_count = self.editing_assertions.len();
+        let id_salt = egui::Id::new("assertions_table");
+
+        for (i, asr) in self.editing_assertions.iter_mut().enumerate() {
+            let is_ghost = i == row_count - 1
+                && asr.expression.is_empty()
+                && asr.expected.is_empty();
+            let result = self.assertion_results.get(i).cloned().flatten();
+            ui.horizontal(|ui| {
+                // Result dot
+                let (rect, _) = ui.allocate_exact_size(
+                    egui::vec2(dot_w, row_h),
+                    egui::Sense::hover(),
+                );
+                if !is_ghost && asr.enabled {
+                    let color = match &result {
+                        Some(AssertionResult::Pass) => egui::Color32::from_rgb(130, 200, 120),
+                        Some(AssertionResult::Fail(_)) => C_RED,
+                        Some(AssertionResult::Error(_)) => C_ORANGE,
+                        None => C_BORDER,
+                    };
+                    ui.painter().circle_filled(rect.center(), 4.0, color);
+                    if let Some(r) = &result {
+                        let tip = match r {
+                            AssertionResult::Pass => "Passed".to_string(),
+                            AssertionResult::Fail(why) => format!("Failed — {}", why),
+                            AssertionResult::Error(why) => format!("Error — {}", why),
+                        };
+                        ui.interact(rect, id_salt.with((i, "dot")), egui::Sense::hover())
+                            .on_hover_text(tip);
+                    }
+                }
+
+                ui.add_space(pad);
+                if is_ghost {
+                    ui.add_space(cb_w);
+                } else if ui.add(egui::Checkbox::new(&mut asr.enabled, "")).changed() {
+                    changed = true;
+                }
+                ui.add_space(pad);
+
+                let color = if asr.enabled { C_TEXT } else { C_MUTED };
+
+                // Source picker
+                egui::ComboBox::from_id_salt(id_salt.with((i, "src")))
+                    .selected_text(asr.source.label())
+                    .width(src_w)
+                    .show_ui(ui, |ui| {
+                        for s in [
+                            AssertionSource::Status,
+                            AssertionSource::Header,
+                            AssertionSource::Body,
+                        ] {
+                            if ui.selectable_label(asr.source == s, s.label()).clicked() && asr.source != s {
+                                asr.source = s;
+                                changed = true;
+                            }
+                        }
+                    });
+                ui.add_space(pad);
+
+                let expr_enabled = !matches!(asr.source, AssertionSource::Status);
+                let expr_hint = match asr.source {
+                    AssertionSource::Body => "data.token",
+                    AssertionSource::Header => "X-Request-Id",
+                    AssertionSource::Status => "—",
+                };
+                if ui
+                    .add_sized(
+                        [expr_w, row_h],
+                        egui::TextEdit::singleline(&mut asr.expression)
+                            .id(id_salt.with((i, "expr")))
+                            .hint_text(if expr_enabled && is_ghost { expr_hint } else { "" })
+                            .interactive(expr_enabled)
+                            .text_color(color),
+                    )
+                    .changed()
+                {
+                    changed = true;
+                }
+                ui.add_space(pad);
+
+                // Operator picker
+                egui::ComboBox::from_id_salt(id_salt.with((i, "op")))
+                    .selected_text(asr.op.label())
+                    .width(op_w)
+                    .show_ui(ui, |ui| {
+                        for op in [
+                            AssertionOp::Equals,
+                            AssertionOp::NotEquals,
+                            AssertionOp::Contains,
+                            AssertionOp::Matches,
+                            AssertionOp::Exists,
+                            AssertionOp::GreaterThan,
+                            AssertionOp::LessThan,
+                        ] {
+                            if ui.selectable_label(asr.op == op, op.label()).clicked() && asr.op != op {
+                                asr.op = op;
+                                changed = true;
+                            }
+                        }
+                    });
+                ui.add_space(pad);
+
+                let expected_enabled = asr.op.takes_expected();
+                if ui
+                    .add_sized(
+                        [exp_w, row_h],
+                        egui::TextEdit::singleline(&mut asr.expected)
+                            .id(id_salt.with((i, "expected")))
+                            .hint_text(if expected_enabled && is_ghost { "expected value" } else { "" })
+                            .interactive(expected_enabled)
+                            .text_color(color),
+                    )
+                    .changed()
+                {
+                    changed = true;
+                }
+
+                ui.add_space(pad);
+                if is_ghost {
+                    ui.add_space(del_w);
+                } else if close_x_button(ui, "Remove assertion").clicked() {
+                    to_remove = Some(i);
+                }
+            });
+            ui.add_space(2.0);
+        }
+
+        if let Some(i) = to_remove {
+            self.editing_assertions.remove(i);
+            self.assertion_results.remove(i);
+            changed = true;
+        }
+        if changed {
+            let asrt = self.editing_assertions.clone();
+            self.update_current_request(|r| r.assertions = asrt);
         }
     }
 

@@ -1,3 +1,4 @@
+mod assertion;
 mod extract;
 mod icon;
 mod io;
@@ -56,6 +57,12 @@ struct ApiClient {
     editing_body_ext: Option<BodyExt>,
     editing_auth: Auth,
     editing_extractors: Vec<ResponseExtractor>,
+    editing_assertions: Vec<ResponseAssertion>,
+    /// Transient per-send outcomes — populated by
+    /// `apply_response_assertions`, indexed parallel to
+    /// `editing_assertions`. `None` means "not yet run" (e.g. before
+    /// the first send or after an assertion was added).
+    assertion_results: Vec<Option<AssertionResult>>,
     editing_request_id_for_history: Option<String>,
 
     storage_path: PathBuf,
@@ -207,6 +214,8 @@ impl Default for ApiClient {
             editing_body_ext: None,
             editing_auth: Auth::None,
             editing_extractors: vec![],
+            editing_assertions: vec![],
+            assertion_results: vec![],
             editing_request_id_for_history: None,
             storage_path,
             request_promise: None,
@@ -359,6 +368,7 @@ impl ApiClient {
         let body_ext = self.editing_body_ext.clone();
         let auth = self.editing_auth.clone();
         let extractors = self.editing_extractors.clone();
+        let assertions = self.editing_assertions.clone();
         self.update_current_request(|req| {
             req.name = name;
             req.method = method;
@@ -370,6 +380,7 @@ impl ApiClient {
             req.body_ext = body_ext;
             req.auth = auth;
             req.extractors = extractors;
+            req.assertions = assertions;
         });
     }
 
@@ -472,6 +483,49 @@ impl ApiClient {
         self.show_toast(msg);
     }
 
+    /// Run each enabled assertion against the latest response and
+    /// store the outcome in `assertion_results` (parallel to
+    /// `editing_assertions`). A toast summarizes the pass/fail count
+    /// — the Tests tab shows per-row badges for details.
+    fn apply_response_assertions(&mut self) {
+        if self.editing_assertions.is_empty() {
+            self.assertion_results.clear();
+            return;
+        }
+        let status = self.response_status.clone();
+        let body = self.response_text.clone();
+        let headers = self.response_headers.clone();
+
+        self.assertion_results = self
+            .editing_assertions
+            .iter()
+            .map(|a| {
+                if !a.enabled {
+                    return None;
+                }
+                Some(assertion::evaluate(a, &status, &body, &headers))
+            })
+            .collect();
+
+        let (pass, fail, err) = self.assertion_results.iter().fold((0, 0, 0), |acc, r| {
+            match r {
+                Some(AssertionResult::Pass) => (acc.0 + 1, acc.1, acc.2),
+                Some(AssertionResult::Fail(_)) => (acc.0, acc.1 + 1, acc.2),
+                Some(AssertionResult::Error(_)) => (acc.0, acc.1, acc.2 + 1),
+                None => acc,
+            }
+        });
+        let total = pass + fail + err;
+        if total > 0 {
+            self.show_toast(format!(
+                "Assertions: {} passed, {} failed{}",
+                pass,
+                fail,
+                if err > 0 { format!(", {} errored", err) } else { String::new() },
+            ));
+        }
+    }
+
     fn push_history_entry(&mut self) {
         let Some(req) = self.get_current_request() else {
             return;
@@ -519,6 +573,8 @@ impl ApiClient {
             self.editing_body_ext = r.body_ext;
             self.editing_auth = r.auth;
             self.editing_extractors = r.extractors;
+            self.editing_assertions = r.assertions;
+            self.assertion_results = vec![None; self.editing_assertions.len()];
             self.editing_request_id_for_history = Some(r.id);
             // Capture method for history entry too
             let _ = r.method;
@@ -947,6 +1003,7 @@ impl eframe::App for ApiClient {
                 self.request_promise = None;
                 self.push_history_entry();
                 self.apply_response_extractors();
+                self.apply_response_assertions();
             } else {
                 ctx.request_repaint();
             }

@@ -596,6 +596,7 @@ impl ApiClient {
             body_ext: None,
             auth: Auth::None,
             extractors: vec![],
+            assertions: vec![],
         };
         let id = draft.id.clone();
         self.state.drafts.push(draft);
