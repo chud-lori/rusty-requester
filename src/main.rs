@@ -84,6 +84,14 @@ struct ApiClient {
     /// doesn't fire reliably in this setup because the first click mutates
     /// state that re-drives the sidebar layout.
     last_request_click: Option<(String, f64)>,
+
+    /// Pending file-dialog actions — executed at the top of the next
+    /// `update()` frame rather than immediately inside the menu closure,
+    /// so the popup has a chance to close visibly before `rfd` blocks the
+    /// main thread on the OS file picker.
+    pending_import: bool,
+    pending_export_json: bool,
+    pending_export_yaml: bool,
 }
 
 impl Default for ApiClient {
@@ -148,6 +156,9 @@ impl Default for ApiClient {
             rename_request_text: String::new(),
             request_rename_focus_pending: false,
             last_request_click: None,
+            pending_import: false,
+            pending_export_json: false,
+            pending_export_yaml: false,
         }
     }
 }
@@ -657,6 +668,22 @@ impl ApiClient {
 
 impl eframe::App for ApiClient {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Handle deferred file-dialog actions from the previous frame.
+        // These would otherwise block the main thread before the menu
+        // popup that triggered them had a chance to close.
+        if self.pending_import {
+            self.pending_import = false;
+            self.do_import_file();
+        }
+        if self.pending_export_json {
+            self.pending_export_json = false;
+            self.do_export_all(io::Format::Json);
+        }
+        if self.pending_export_yaml {
+            self.pending_export_yaml = false;
+            self.do_export_all(io::Format::Yaml);
+        }
+
         let (cmd_enter, cmd_k, f2) = ctx.input(|i| {
             (
                 i.modifiers.command && i.key_pressed(egui::Key::Enter),
@@ -887,8 +914,12 @@ impl ApiClient {
                     );
                 });
 
+                // Defer file-dialog actions to the next frame so the menu
+                // popup has a chance to close visibly before `rfd` blocks
+                // the main thread. The blocking dialog otherwise freezes
+                // the menu in its "open" state on screen.
                 if action_import_file {
-                    self.do_import_file();
+                    self.pending_import = true;
                 }
                 if action_paste_curl {
                     self.show_paste_modal = true;
@@ -896,10 +927,10 @@ impl ApiClient {
                     self.paste_error.clear();
                 }
                 if action_export_json {
-                    self.do_export_all(io::Format::Json);
+                    self.pending_export_json = true;
                 }
                 if action_export_yaml {
-                    self.do_export_all(io::Format::Yaml);
+                    self.pending_export_yaml = true;
                 }
 
                 ui.add_space(10.0);
@@ -1319,7 +1350,12 @@ impl ApiClient {
     }
 
     fn render_tabs_bar(&mut self, ui: &mut egui::Ui) {
-        // Always-rendered top bar (height stays constant even when empty)
+        // Skip the tabs bar entirely when nothing is open — this removes the
+        // dark strip above the empty state that otherwise looks like wasted
+        // space.
+        if self.open_tabs.is_empty() {
+            return;
+        }
         let bar_height = 38.0;
         egui::Frame::none()
             .fill(C_PANEL_DARK)
@@ -2368,8 +2404,10 @@ impl ApiClient {
                 let is_renaming =
                     self.renaming_request_id.as_deref() == Some(req.id.as_str());
 
+                // Compact Postman-style row
+                let row_h = 26.0;
                 let (rect, resp) = ui.allocate_exact_size(
-                    egui::vec2(ui.available_width(), 34.0),
+                    egui::vec2(ui.available_width(), row_h),
                     egui::Sense::click(),
                 );
 
@@ -2382,7 +2420,7 @@ impl ApiClient {
                         egui::Color32::TRANSPARENT
                     };
                     ui.painter()
-                        .rect_filled(rect, egui::Rounding::same(7.0), bg);
+                        .rect_filled(rect, egui::Rounding::same(5.0), bg);
 
                     if is_selected {
                         let bar = egui::Rect::from_min_size(
@@ -2393,32 +2431,31 @@ impl ApiClient {
                             .rect_filled(bar, egui::Rounding::same(2.0), C_ACCENT);
                     }
 
-                    // Method pill — solid color + high-contrast text
-                    let pill_w = 52.0;
-                    let pill_h = 20.0;
-                    let pill_left = rect.left() + 10.0;
+                    // Smaller, denser method pill
+                    let pill_w = 40.0;
+                    let pill_h = 16.0;
+                    let pill_left = rect.left() + 8.0;
                     let pill_top = rect.center().y - pill_h / 2.0;
                     let pill_rect = egui::Rect::from_min_size(
                         egui::pos2(pill_left, pill_top),
                         egui::vec2(pill_w, pill_h),
                     );
                     ui.painter()
-                        .rect_filled(pill_rect, egui::Rounding::same(4.0), mc);
+                        .rect_filled(pill_rect, egui::Rounding::same(3.0), mc);
                     ui.painter().text(
                         pill_rect.center(),
                         egui::Align2::CENTER_CENTER,
                         format!("{}", req.method),
-                        egui::FontId::new(10.0, egui::FontFamily::Proportional),
+                        egui::FontId::new(9.0, egui::FontFamily::Proportional),
                         pill_text_color(mc),
                     );
 
-                    // Request name (skip painting if currently renaming inline)
                     if !is_renaming {
                         let name_color = C_TEXT;
-                        let name_x = pill_rect.right() + 10.0;
+                        let name_x = pill_rect.right() + 8.0;
                         let name_pos = egui::pos2(name_x, rect.center().y);
-                        let font = egui::FontId::new(13.0, egui::FontFamily::Proportional);
-                        let max_w = rect.right() - name_x - 8.0;
+                        let font = egui::FontId::new(12.5, egui::FontFamily::Proportional);
+                        let max_w = rect.right() - name_x - 6.0;
                         let display_name = elide(&req.name, max_w, &font, ui);
                         ui.painter().text(
                             name_pos,
@@ -2432,10 +2469,11 @@ impl ApiClient {
 
                 // Inline rename TextEdit overlay (clearly visible against the row)
                 if is_renaming {
-                    let pill_right = rect.left() + 10.0 + 52.0;
+                    // Match the compact pill geometry: 8 + 40 = 48 px offset
+                    let pill_right = rect.left() + 8.0 + 40.0;
                     let edit_rect = egui::Rect::from_min_max(
-                        egui::pos2(pill_right + 6.0, rect.top() + 5.0),
-                        egui::pos2(rect.right() - 6.0, rect.bottom() - 5.0),
+                        egui::pos2(pill_right + 4.0, rect.top() + 3.0),
+                        egui::pos2(rect.right() - 4.0, rect.bottom() - 3.0),
                     );
                     // Visible background + accent border so the input is obvious.
                     ui.painter()
@@ -2518,7 +2556,7 @@ impl ApiClient {
                     });
                 }
 
-                ui.add_space(2.0);
+                ui.add_space(1.0);
             }
 
             if let Some(dup_id) = to_duplicate {
