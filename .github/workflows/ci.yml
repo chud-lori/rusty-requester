@@ -1,0 +1,94 @@
+name: CI
+
+# Runs on every push and PR (not just tag pushes). Catches broken
+# tests, broken builds on Linux, and clippy warnings before they reach
+# main / before a release tag is cut.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Skip in-flight runs when a newer commit lands on the same branch /
+# PR — we only need the latest result.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-macos:
+    name: Test (macOS)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo test
+        run: cargo test --all-targets
+      - name: cargo build --release
+        run: cargo build --release
+      - name: --version smoke test
+        run: ./target/release/rusty-requester --version
+
+  test-linux:
+    name: Test (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config libssl-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev \
+            libwayland-dev libx11-dev libxi-dev libxcursor-dev \
+            libxrandr-dev libxinerama-dev libgl1-mesa-dev \
+            libgtk-3-dev
+      - name: cargo test
+        run: cargo test --all-targets
+      - name: cargo build --release
+        run: cargo build --release
+      - name: --version smoke test
+        run: ./target/release/rusty-requester --version
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config libssl-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev \
+            libwayland-dev libx11-dev libxi-dev libxcursor-dev \
+            libxrandr-dev libxinerama-dev libgl1-mesa-dev \
+            libgtk-3-dev
+      # Clippy with our project's existing lint config. We don't fail
+      # on warnings (yet — too many minor stylistic ones); just print
+      # them so reviewers see the diff.
+      - name: cargo clippy
+        run: cargo clippy --all-targets
+
+  fmt:
+    name: rustfmt (advisory)
+    runs-on: ubuntu-latest
+    # Advisory only — flag formatting drift without blocking merges.
+    # Flip to required by removing `continue-on-error` once the repo
+    # is fully formatted (`cargo fmt` once and commit).
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check

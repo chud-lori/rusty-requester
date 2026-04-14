@@ -37,9 +37,22 @@ jobs:
 
       - name: Smoke-test universal binary
         run: |
+          set -e
           BIN=target/bundle/RustyRequester.app/Contents/MacOS/RustyRequester
           file "$BIN"
-          "$BIN" --version
+          OUT=$("$BIN" --version)
+          echo "binary reports: $OUT"
+          # Cross-check: when triggered by a tag push (`v0.5.1`), the
+          # binary's printed version must match. Catches the "cached
+          # rust-cache served the old binary" failure mode that would
+          # otherwise ship a stale DMG under a new tag.
+          if [[ "${GITHUB_REF:-}" == refs/tags/v* ]]; then
+            EXPECTED="${GITHUB_REF##refs/tags/v}"
+            if [[ "$OUT" != *"$EXPECTED"* ]]; then
+              echo "::error::binary version '$OUT' does not contain tag version '$EXPECTED'"
+              exit 1
+            fi
+          fi
 
       - name: Show DMG info
         run: |
@@ -99,9 +112,18 @@ jobs:
 
       - name: Smoke-test binary
         run: |
+          set -e
           BIN=target/x86_64-unknown-linux-gnu/release/rusty-requester
           file "$BIN"
-          "$BIN" --version
+          OUT=$("$BIN" --version)
+          echo "binary reports: $OUT"
+          if [[ "${GITHUB_REF:-}" == refs/tags/v* ]]; then
+            EXPECTED="${GITHUB_REF##refs/tags/v}"
+            if [[ "$OUT" != *"$EXPECTED"* ]]; then
+              echo "::error::binary version '$OUT' does not contain tag version '$EXPECTED'"
+              exit 1
+            fi
+          fi
 
       - name: Show tarball info
         run: |

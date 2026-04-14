@@ -1012,19 +1012,23 @@ impl eframe::App for ApiClient {
         // modal to pick a destination collection. Saved requests are
         // auto-persisted to disk on every edit so this shortcut is a no-op
         // for them (other than a confirmation toast).
-        if cmd_s && self.selected_request_id.is_some() {
-            if self.selected_folder_path.is_empty() {
-                let draft_id = self.selected_request_id.clone().unwrap();
-                if let Some(idx) = self
-                    .state
-                    .open_tabs
-                    .iter()
-                    .position(|t| t.is_draft() && t.request_id == draft_id)
-                {
-                    self.begin_save_draft(idx);
+        if cmd_s {
+            // Replaces the old `is_some()` + `unwrap()` pattern with a
+            // proper let-Some so the id is pulled once and we skip
+            // both branches cleanly when nothing is selected.
+            if let Some(req_id) = self.selected_request_id.clone() {
+                if self.selected_folder_path.is_empty() {
+                    if let Some(idx) = self
+                        .state
+                        .open_tabs
+                        .iter()
+                        .position(|t| t.is_draft() && t.request_id == req_id)
+                    {
+                        self.begin_save_draft(idx);
+                    }
+                } else {
+                    self.show_toast("Saved");
                 }
-            } else {
-                self.show_toast("Saved");
             }
         }
         // F2 — rename the active request (VS Code / Finder convention)
