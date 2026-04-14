@@ -6,7 +6,7 @@
 
 use crate::io::curl;
 use crate::model::*;
-use crate::snippet::{build_snippet_layout_job, render_snippet, SnippetLang};
+use crate::snippet::{build_snippet_layout_job_content_only, render_snippet, SnippetLang};
 use crate::theme::*;
 use crate::widgets::*;
 use crate::ApiClient;
@@ -696,22 +696,56 @@ impl ApiClient {
                             .auto_shrink([false, false])
                             .max_height(avail_h)
                             .show(ui, |ui| {
-                                let mut text = snippet.clone();
-                                let lang = self.snippet_lang;
-                                let mut layouter =
-                                    move |ui: &egui::Ui, s: &str, wrap_width: f32| {
-                                        let mut job =
-                                            build_snippet_layout_job(s, lang, wrap_width);
-                                        job.wrap.max_width = wrap_width;
-                                        ui.fonts(|f| f.layout_job(job))
-                                    };
-                                ui.add(
-                                    egui::TextEdit::multiline(&mut text)
-                                        .code_editor()
-                                        .interactive(false)
-                                        .desired_width(f32::INFINITY)
-                                        .layouter(&mut layouter),
-                                );
+                                // Two-column layout so wrapped lines
+                                // stay inside the content column instead
+                                // of snapping back to x=0 and colliding
+                                // with the next logical line's gutter.
+                                let gutter_w = 32.0;
+                                let line_count =
+                                    snippet.split('\n').count().max(1);
+                                ui.horizontal_top(|ui| {
+                                    // Left — line numbers. One label per
+                                    // logical line; if the content wraps
+                                    // to multiple visual rows the gutter
+                                    // will trail shorter than the content,
+                                    // which matches Postman's behavior.
+                                    ui.vertical(|ui| {
+                                        ui.spacing_mut().item_spacing.y = 0.0;
+                                        for i in 1..=line_count {
+                                            ui.add_sized(
+                                                [gutter_w, 17.0],
+                                                egui::Label::new(
+                                                    egui::RichText::new(format!(
+                                                        "{:>3}",
+                                                        i
+                                                    ))
+                                                    .color(egui::Color32::from_rgb(100, 105, 115))
+                                                    .font(egui::FontId::monospace(12.5)),
+                                                ),
+                                            );
+                                        }
+                                    });
+                                    ui.add_space(6.0);
+                                    // Right — content; TextEdit owns its
+                                    // own wrap inside the remaining width.
+                                    let mut text = snippet.clone();
+                                    let lang = self.snippet_lang;
+                                    let mut layouter =
+                                        move |ui: &egui::Ui, s: &str, wrap_width: f32| {
+                                            let mut job =
+                                                build_snippet_layout_job_content_only(s, lang);
+                                            job.wrap.max_width = wrap_width;
+                                            ui.fonts(|f| f.layout_job(job))
+                                        };
+                                    ui.add(
+                                        egui::TextEdit::multiline(&mut text)
+                                            .code_editor()
+                                            .frame(false)
+                                            .interactive(false)
+                                            .desired_width(f32::INFINITY)
+                                            .layouter(&mut layouter),
+                                    );
+                                });
                             });
                     });
             });
