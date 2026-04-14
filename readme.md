@@ -62,24 +62,55 @@ Postman is a ~500 MB Electron app that phones home and wants you to log in. Rust
 
 ---
 
-## 📥 Download (macOS)
+## 📥 Install (macOS)
 
-Grab the latest `.dmg` from the
-[**Releases page**](https://github.com/chud-lori/rusty-requester/releases/latest)
-(look for `RustyRequester.dmg`).
+### One-line install (recommended)
 
-### Install
+```bash
+curl -fsSL https://raw.githubusercontent.com/chud-lori/rusty-requester/main/install.sh | bash
+```
 
-1. Open **`RustyRequester.dmg`**
-2. Drag **`RustyRequester.app`** to the **`Applications`** folder shortcut
-3. Eject the disk image
-4. Launch the app from Spotlight, Launchpad, or `/Applications`
+The script pulls the latest `RustyRequester.dmg` from GitHub Releases,
+copies the app into `/Applications` (falls back to `~/Applications` if
+the system folder isn't writable), and strips the Gatekeeper quarantine
+attribute so the first launch "just works."
+
+Install a specific version:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/chud-lori/rusty-requester/main/install.sh | VERSION=v0.2.0 bash
+```
+
+Leave the quarantine attribute intact (you'll do the "right-click → Open"
+dance yourself on first launch):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/chud-lori/rusty-requester/main/install.sh | SKIP_QUARANTINE_STRIP=1 bash
+```
+
+After it finishes, launch from Spotlight, Launchpad, or:
+
+```bash
+open /Applications/RustyRequester.app
+```
+
+### Manual install (the old way)
+
+1. Grab `RustyRequester.dmg` from the
+   [Releases page](https://github.com/chud-lori/rusty-requester/releases/latest)
+2. Open the `.dmg`, drag **`RustyRequester.app`** onto the
+   **`Applications`** shortcut, eject the disk image
+3. Launch from Spotlight / Launchpad / `/Applications`
 
 ### First launch — Gatekeeper
 
-Because the app isn't notarised by Apple (no paid developer account), macOS
-will refuse to open it on the first launch with *"can't be opened because
-Apple cannot check it for malicious software"*. Workaround:
+The app isn't notarised by Apple (no paid developer account), so macOS
+will refuse to open it on the first launch with *"can't be opened
+because Apple cannot check it for malicious software"* — **unless you
+installed with the one-liner above**, which auto-strips the quarantine
+flag.
+
+If you used the manual install, work around it once:
 
 - **Right-click** the app → **Open** → confirm in the dialog, **OR**
 - **System Settings → Privacy & Security**, scroll down, and click
