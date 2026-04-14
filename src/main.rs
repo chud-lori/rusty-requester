@@ -1,3 +1,4 @@
+mod assertion;
 mod extract;
 mod icon;
 mod io;
@@ -56,6 +57,12 @@ struct ApiClient {
     editing_body_ext: Option<BodyExt>,
     editing_auth: Auth,
     editing_extractors: Vec<ResponseExtractor>,
+    editing_assertions: Vec<ResponseAssertion>,
+    /// Transient per-send outcomes — populated by
+    /// `apply_response_assertions`, indexed parallel to
+    /// `editing_assertions`. `None` means "not yet run" (e.g. before
+    /// the first send or after an assertion was added).
+    assertion_results: Vec<Option<AssertionResult>>,
     editing_request_id_for_history: Option<String>,
 
     storage_path: PathBuf,
@@ -148,6 +155,14 @@ struct ApiClient {
     editing_settings: AppSettings,
     /// About modal (Help → About Rusty Requester).
     show_about_modal: bool,
+    /// When `Some`, the central panel shows a collection/folder
+    /// overview ("homepage") for that folder ID instead of the
+    /// active request editor. Set by the folder `⋯` menu →
+    /// "Open overview". Cleared when the user picks any request.
+    viewing_folder_id: Option<String>,
+    /// Working copy of the folder description while the overview
+    /// is open — written back to `Folder.description` on blur.
+    editing_folder_desc: String,
     /// Have we installed the macOS NSMenu yet? We defer the install
     /// to the first `update()` frame because doing it before
     /// `eframe::run_native` lets winit overwrite our menu with its
@@ -169,6 +184,7 @@ impl Default for ApiClient {
                 name: "My Requests".to_string(),
                 requests: vec![],
                 subfolders: vec![],
+                description: String::new(),
             }],
             environments: vec![],
             active_env_id: None,
@@ -207,6 +223,8 @@ impl Default for ApiClient {
             editing_body_ext: None,
             editing_auth: Auth::None,
             editing_extractors: vec![],
+            editing_assertions: vec![],
+            assertion_results: vec![],
             editing_request_id_for_history: None,
             storage_path,
             request_promise: None,
@@ -248,6 +266,8 @@ impl Default for ApiClient {
             show_settings_modal: false,
             editing_settings: AppSettings::default(),
             show_about_modal: false,
+            viewing_folder_id: None,
+            editing_folder_desc: String::new(),
             #[cfg(target_os = "macos")]
             macos_menu_installed: false,
         };
@@ -359,6 +379,7 @@ impl ApiClient {
         let body_ext = self.editing_body_ext.clone();
         let auth = self.editing_auth.clone();
         let extractors = self.editing_extractors.clone();
+        let assertions = self.editing_assertions.clone();
         self.update_current_request(|req| {
             req.name = name;
             req.method = method;
@@ -370,6 +391,7 @@ impl ApiClient {
             req.body_ext = body_ext;
             req.auth = auth;
             req.extractors = extractors;
+            req.assertions = assertions;
         });
     }
 
@@ -472,6 +494,49 @@ impl ApiClient {
         self.show_toast(msg);
     }
 
+    /// Run each enabled assertion against the latest response and
+    /// store the outcome in `assertion_results` (parallel to
+    /// `editing_assertions`). A toast summarizes the pass/fail count
+    /// — the Tests tab shows per-row badges for details.
+    fn apply_response_assertions(&mut self) {
+        if self.editing_assertions.is_empty() {
+            self.assertion_results.clear();
+            return;
+        }
+        let status = self.response_status.clone();
+        let body = self.response_text.clone();
+        let headers = self.response_headers.clone();
+
+        self.assertion_results = self
+            .editing_assertions
+            .iter()
+            .map(|a| {
+                if !a.enabled {
+                    return None;
+                }
+                Some(assertion::evaluate(a, &status, &body, &headers))
+            })
+            .collect();
+
+        let (pass, fail, err) = self.assertion_results.iter().fold((0, 0, 0), |acc, r| {
+            match r {
+                Some(AssertionResult::Pass) => (acc.0 + 1, acc.1, acc.2),
+                Some(AssertionResult::Fail(_)) => (acc.0, acc.1 + 1, acc.2),
+                Some(AssertionResult::Error(_)) => (acc.0, acc.1, acc.2 + 1),
+                None => acc,
+            }
+        });
+        let total = pass + fail + err;
+        if total > 0 {
+            self.show_toast(format!(
+                "Assertions: {} passed, {} failed{}",
+                pass,
+                fail,
+                if err > 0 { format!(", {} errored", err) } else { String::new() },
+            ));
+        }
+    }
+
     fn push_history_entry(&mut self) {
         let Some(req) = self.get_current_request() else {
             return;
@@ -519,6 +584,8 @@ impl ApiClient {
             self.editing_body_ext = r.body_ext;
             self.editing_auth = r.auth;
             self.editing_extractors = r.extractors;
+            self.editing_assertions = r.assertions;
+            self.assertion_results = vec![None; self.editing_assertions.len()];
             self.editing_request_id_for_history = Some(r.id);
             // Capture method for history entry too
             let _ = r.method;
@@ -529,7 +596,20 @@ impl ApiClient {
         self.toast = Some((msg.into(), 2.5));
     }
 
+    /// Activate collection-overview mode for `folder_id`. Shows the
+    /// folder's homepage (title / stats / description) in the central
+    /// panel instead of the request editor. Clears any selected
+    /// request so the editor doesn't fight for space.
+    pub(crate) fn open_folder_overview(&mut self, folder_id: &str) {
+        let desc = find_folder_desc(&self.state.folders, folder_id).unwrap_or_default();
+        self.viewing_folder_id = Some(folder_id.to_string());
+        self.editing_folder_desc = desc;
+        self.selected_request_id = None;
+    }
+
     fn open_request(&mut self, folder_path: Vec<String>, request_id: String) {
+        // Any request activation leaves the collection overview mode.
+        self.viewing_folder_id = None;
         if let Some(existing) = self.state.open_tabs.iter().position(|t| t.request_id == request_id) {
             let tab = self.state.open_tabs[existing].clone();
             self.selected_folder_path = tab.folder_path;
@@ -773,6 +853,7 @@ impl ApiClient {
                         name: format!("Collection {}", self.state.folders.len() + 1),
                         requests: vec![],
                         subfolders: vec![],
+                        description: String::new(),
                     });
                     self.save_state();
                 }
@@ -947,6 +1028,7 @@ impl eframe::App for ApiClient {
                 self.request_promise = None;
                 self.push_history_entry();
                 self.apply_response_extractors();
+                self.apply_response_assertions();
             } else {
                 ctx.request_repaint();
             }
@@ -1034,6 +1116,7 @@ impl ApiClient {
             Folder {
                 id: Uuid::new_v4().to_string(),
                 name: src.name.clone(),
+                description: src.description.clone(),
                 requests: src
                     .requests
                     .iter()
@@ -1065,6 +1148,45 @@ impl ApiClient {
     }
 }
 
+
+/// Walk a folder tree and return a clone of the folder with this id
+/// (or any descendant). Used by the overview view to pull current
+/// metadata without holding a long-lived borrow.
+pub(crate) fn find_folder_by_id<'a>(
+    folders: &'a [Folder],
+    id: &str,
+) -> Option<&'a Folder> {
+    for f in folders {
+        if f.id == id {
+            return Some(f);
+        }
+        if let Some(got) = find_folder_by_id(&f.subfolders, id) {
+            return Some(got);
+        }
+    }
+    None
+}
+
+/// Mutable counterpart of `find_folder_by_id` — used when saving the
+/// description from the overview back into the tree.
+pub(crate) fn find_folder_by_id_mut<'a>(
+    folders: &'a mut [Folder],
+    id: &str,
+) -> Option<&'a mut Folder> {
+    for f in folders {
+        if f.id == id {
+            return Some(f);
+        }
+        if let Some(got) = find_folder_by_id_mut(&mut f.subfolders, id) {
+            return Some(got);
+        }
+    }
+    None
+}
+
+fn find_folder_desc(folders: &[Folder], id: &str) -> Option<String> {
+    find_folder_by_id(folders, id).map(|f| f.description.clone())
+}
 
 fn main() -> Result<(), eframe::Error> {
     // Cheap `--version` / `-V` flag so anyone (user or `install.sh`)

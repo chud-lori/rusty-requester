@@ -26,6 +26,17 @@ impl ApiClient {
             ui.painter()
                 .rect_filled(ui.max_rect(), egui::Rounding::ZERO, C_BG);
             self.render_tabs_bar(ui);
+
+            // Collection overview — activated via sidebar folder's
+            // `⋯` menu or right-click → "Open overview". Shows folder
+            // title / stats / editable description instead of the
+            // request editor. Dismissed automatically when the user
+            // opens any request (see `open_request`).
+            if self.viewing_folder_id.is_some() {
+                self.render_collection_overview(ui);
+                return;
+            }
+
             if self.selected_request_id.is_none() {
                 ui.centered_and_justified(|ui| {
                     ui.vertical_centered(|ui| {
@@ -524,21 +535,35 @@ impl ApiClient {
         let mut prettify = false;
         let mut minify = false;
         ui.horizontal(|ui| {
-            if ui
-                .small_button(egui::RichText::new("Prettify JSON").size(11.0))
-                .on_hover_text("Format body as pretty JSON")
-                .clicked()
-            {
-                prettify = true;
-            }
-            if ui
-                .small_button(egui::RichText::new("Minify").size(11.0))
-                .on_hover_text("Collapse JSON to one line")
-                .clicked()
-            {
-                minify = true;
-            }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                // Postman-style subtle action links on the right, not
+                // tacked-on buttons.
+                if ui
+                    .link(
+                        egui::RichText::new("Beautify")
+                            .size(11.5)
+                            .color(C_ACCENT),
+                    )
+                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                    .on_hover_text("Pretty-print JSON")
+                    .clicked()
+                {
+                    prettify = true;
+                }
+                ui.add_space(8.0);
+                if ui
+                    .link(
+                        egui::RichText::new("Minify")
+                            .size(11.5)
+                            .color(C_MUTED),
+                    )
+                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                    .on_hover_text("Collapse JSON to one line")
+                    .clicked()
+                {
+                    minify = true;
+                }
+                ui.add_space(12.0);
                 let size_label = if self.editing_body.is_empty() {
                     "empty".to_string()
                 } else {
@@ -548,6 +573,11 @@ impl ApiClient {
                     egui::RichText::new(size_label)
                         .size(11.0)
                         .color(C_MUTED),
+                )
+                .on_hover_text(
+                    "Size in UTF-8 bytes — exactly what goes on the wire.\n\
+                     ASCII chars are 1 byte each; accented / non-Latin chars \
+                     can be 2-4 bytes.",
                 );
             });
         });
@@ -580,16 +610,46 @@ impl ApiClient {
             }
         }
         ui.add_space(4.0);
-        if ui
-            .add_sized(
-                [ui.available_width(), ui.available_height() - 4.0],
-                egui::TextEdit::multiline(&mut self.editing_body)
-                    .code_editor()
-                    .hint_text("Request body (JSON, text, ...)")
-                    .font(egui::TextStyle::Monospace),
-            )
-            .changed()
-        {
+        // Two-column layout: left gutter shows one line number per
+        // logical line of the body; right column is the editor itself.
+        // Matches the snippet-panel pattern so wrapped long lines in
+        // the body stay inside the editor column instead of colliding
+        // with the gutter.
+        let avail_h = (ui.available_height() - 4.0).max(80.0);
+        let line_count = self.editing_body.split('\n').count().max(1);
+        let mut body_changed = false;
+        ui.horizontal_top(|ui| {
+            let gutter_w = 34.0;
+            ui.vertical(|ui| {
+                ui.spacing_mut().item_spacing.y = 0.0;
+                ui.set_width(gutter_w);
+                for i in 1..=line_count {
+                    ui.add_sized(
+                        [gutter_w, 17.0],
+                        egui::Label::new(
+                            egui::RichText::new(format!("{:>3}", i))
+                                .color(egui::Color32::from_rgb(100, 105, 115))
+                                .font(egui::FontId::monospace(12.5)),
+                        ),
+                    );
+                }
+            });
+            ui.add_space(4.0);
+            if ui
+                .add_sized(
+                    [ui.available_width(), avail_h],
+                    egui::TextEdit::multiline(&mut self.editing_body)
+                        .code_editor()
+                        .frame(false)
+                        .hint_text("Request body (JSON, text, ...)")
+                        .font(egui::TextStyle::Monospace),
+                )
+                .changed()
+            {
+                body_changed = true;
+            }
+        });
+        if body_changed {
             let body = self.editing_body.clone();
             self.update_current_request(|r| r.body = body);
         }
@@ -848,8 +908,15 @@ impl ApiClient {
     /// Next request can reference it with `{{name}}`.
     fn render_tests_tab(&mut self, ui: &mut egui::Ui) {
         ui.label(
-            egui::RichText::new("Extract values from the response into environment variables.")
-                .size(12.0)
+            egui::RichText::new("EXTRACTORS")
+                .size(10.5)
+                .strong()
+                .color(C_MUTED),
+        );
+        ui.add_space(3.0);
+        ui.label(
+            egui::RichText::new("Pull values from the response into environment variables.")
+                .size(11.5)
                 .color(C_MUTED),
         );
         ui.add_space(2.0);
@@ -857,7 +924,7 @@ impl ApiClient {
             egui::RichText::new(
                 "Body path: dot + bracket syntax, e.g. `data.token` or `items[0].id`.",
             )
-            .size(11.5)
+            .size(11.0)
             .color(C_MUTED),
         );
         ui.add_space(8.0);
@@ -1000,8 +1067,420 @@ impl ApiClient {
                 .color(C_ORANGE),
             );
         }
+
+        ui.add_space(20.0);
+        ui.separator();
+        ui.add_space(10.0);
+        self.render_assertions_section(ui);
     }
 
+    /// Pass/fail rules evaluated against the response after each
+    /// send. The outcome is shown as a colored dot in the leftmost
+    /// column of each row (green = pass, red = fail, yellow = error,
+    /// grey = not yet run).
+    fn render_assertions_section(&mut self, ui: &mut egui::Ui) {
+        ui.label(
+            egui::RichText::new("ASSERTIONS")
+                .size(10.5)
+                .strong()
+                .color(C_MUTED),
+        );
+        ui.add_space(3.0);
+        ui.label(
+            egui::RichText::new(
+                "Check the response matches your expectations. Body uses the \
+                 same dot/bracket path as Extractors.",
+            )
+            .size(11.5)
+            .color(C_MUTED),
+        );
+        ui.add_space(8.0);
+
+        // Trailing ghost row.
+        if self
+            .editing_assertions
+            .last()
+            .map(|a| !a.expression.is_empty() || !a.expected.is_empty())
+            .unwrap_or(true)
+        {
+            self.editing_assertions.push(ResponseAssertion {
+                enabled: true,
+                source: AssertionSource::Status,
+                expression: String::new(),
+                op: AssertionOp::Equals,
+                expected: String::new(),
+            });
+        }
+        // Keep results vector in lock-step length with assertions.
+        if self.assertion_results.len() < self.editing_assertions.len() {
+            self.assertion_results.resize(self.editing_assertions.len(), None);
+        } else if self.assertion_results.len() > self.editing_assertions.len() {
+            self.assertion_results.truncate(self.editing_assertions.len());
+        }
+
+        let avail = ui.available_width();
+        let dot_w = 14.0;
+        let cb_w = 22.0;
+        let src_w = 90.0;
+        let expr_w = 160.0;
+        let op_w = 110.0;
+        let del_w = 22.0;
+        let pad = 6.0;
+        let right_margin = 12.0;
+        let usable = avail - right_margin;
+        let exp_w = (usable - dot_w - cb_w - src_w - expr_w - op_w - del_w - pad * 6.0).max(120.0);
+        let row_h = 24.0;
+
+        ui.horizontal(|ui| {
+            ui.add_space(dot_w + cb_w + pad * 2.0);
+            ui.label(egui::RichText::new("SOURCE").size(10.0).color(C_MUTED));
+            ui.add_space(src_w - 36.0);
+            ui.label(egui::RichText::new("EXPRESSION").size(10.0).color(C_MUTED));
+            ui.add_space(expr_w - 60.0);
+            ui.label(egui::RichText::new("OP").size(10.0).color(C_MUTED));
+            ui.add_space(op_w - 6.0);
+            ui.label(egui::RichText::new("EXPECTED").size(10.0).color(C_MUTED));
+        });
+        ui.add_space(2.0);
+        ui.separator();
+        ui.add_space(4.0);
+
+        let mut changed = false;
+        let mut to_remove: Option<usize> = None;
+        let row_count = self.editing_assertions.len();
+        let id_salt = egui::Id::new("assertions_table");
+
+        for (i, asr) in self.editing_assertions.iter_mut().enumerate() {
+            let is_ghost = i == row_count - 1
+                && asr.expression.is_empty()
+                && asr.expected.is_empty();
+            let result = self.assertion_results.get(i).cloned().flatten();
+            ui.horizontal(|ui| {
+                // Result dot
+                let (rect, _) = ui.allocate_exact_size(
+                    egui::vec2(dot_w, row_h),
+                    egui::Sense::hover(),
+                );
+                if !is_ghost && asr.enabled {
+                    let color = match &result {
+                        Some(AssertionResult::Pass) => egui::Color32::from_rgb(130, 200, 120),
+                        Some(AssertionResult::Fail(_)) => C_RED,
+                        Some(AssertionResult::Error(_)) => C_ORANGE,
+                        None => C_BORDER,
+                    };
+                    ui.painter().circle_filled(rect.center(), 4.0, color);
+                    if let Some(r) = &result {
+                        let tip = match r {
+                            AssertionResult::Pass => "Passed".to_string(),
+                            AssertionResult::Fail(why) => format!("Failed — {}", why),
+                            AssertionResult::Error(why) => format!("Error — {}", why),
+                        };
+                        ui.interact(rect, id_salt.with((i, "dot")), egui::Sense::hover())
+                            .on_hover_text(tip);
+                    }
+                }
+
+                ui.add_space(pad);
+                if is_ghost {
+                    ui.add_space(cb_w);
+                } else if ui.add(egui::Checkbox::new(&mut asr.enabled, "")).changed() {
+                    changed = true;
+                }
+                ui.add_space(pad);
+
+                let color = if asr.enabled { C_TEXT } else { C_MUTED };
+
+                // Source picker
+                egui::ComboBox::from_id_salt(id_salt.with((i, "src")))
+                    .selected_text(asr.source.label())
+                    .width(src_w)
+                    .show_ui(ui, |ui| {
+                        for s in [
+                            AssertionSource::Status,
+                            AssertionSource::Header,
+                            AssertionSource::Body,
+                        ] {
+                            if ui.selectable_label(asr.source == s, s.label()).clicked() && asr.source != s {
+                                asr.source = s;
+                                changed = true;
+                            }
+                        }
+                    });
+                ui.add_space(pad);
+
+                let expr_enabled = !matches!(asr.source, AssertionSource::Status);
+                let expr_hint = match asr.source {
+                    AssertionSource::Body => "data.token",
+                    AssertionSource::Header => "X-Request-Id",
+                    AssertionSource::Status => "—",
+                };
+                if ui
+                    .add_sized(
+                        [expr_w, row_h],
+                        egui::TextEdit::singleline(&mut asr.expression)
+                            .id(id_salt.with((i, "expr")))
+                            .hint_text(if expr_enabled && is_ghost { expr_hint } else { "" })
+                            .interactive(expr_enabled)
+                            .text_color(color),
+                    )
+                    .changed()
+                {
+                    changed = true;
+                }
+                ui.add_space(pad);
+
+                // Operator picker
+                egui::ComboBox::from_id_salt(id_salt.with((i, "op")))
+                    .selected_text(asr.op.label())
+                    .width(op_w)
+                    .show_ui(ui, |ui| {
+                        for op in [
+                            AssertionOp::Equals,
+                            AssertionOp::NotEquals,
+                            AssertionOp::Contains,
+                            AssertionOp::Matches,
+                            AssertionOp::Exists,
+                            AssertionOp::GreaterThan,
+                            AssertionOp::LessThan,
+                        ] {
+                            if ui.selectable_label(asr.op == op, op.label()).clicked() && asr.op != op {
+                                asr.op = op;
+                                changed = true;
+                            }
+                        }
+                    });
+                ui.add_space(pad);
+
+                let expected_enabled = asr.op.takes_expected();
+                if ui
+                    .add_sized(
+                        [exp_w, row_h],
+                        egui::TextEdit::singleline(&mut asr.expected)
+                            .id(id_salt.with((i, "expected")))
+                            .hint_text(if expected_enabled && is_ghost { "expected value" } else { "" })
+                            .interactive(expected_enabled)
+                            .text_color(color),
+                    )
+                    .changed()
+                {
+                    changed = true;
+                }
+
+                ui.add_space(pad);
+                if is_ghost {
+                    ui.add_space(del_w);
+                } else if close_x_button(ui, "Remove assertion").clicked() {
+                    to_remove = Some(i);
+                }
+            });
+            ui.add_space(2.0);
+        }
+
+        if let Some(i) = to_remove {
+            self.editing_assertions.remove(i);
+            self.assertion_results.remove(i);
+            changed = true;
+        }
+        if changed {
+            let asrt = self.editing_assertions.clone();
+            self.update_current_request(|r| r.assertions = asrt);
+        }
+    }
+
+    /// Collection/folder "homepage": big title, quick stats, editable
+    /// description, and a list of contained requests. Persists
+    /// description changes back into the folder tree on every edit.
+    fn render_collection_overview(&mut self, ui: &mut egui::Ui) {
+        let folder_id = match &self.viewing_folder_id {
+            Some(id) => id.clone(),
+            None => return,
+        };
+        // Snapshot what we need; don't hold a borrow across the
+        // whole render closure (we also want to write the description
+        // back on change).
+        let Some(folder_snapshot) =
+            crate::find_folder_by_id(&self.state.folders, &folder_id).cloned()
+        else {
+            // Folder was deleted while we were viewing it — just
+            // leave overview mode.
+            self.viewing_folder_id = None;
+            return;
+        };
+        let (req_count, sub_count) = count_requests_and_folders(&folder_snapshot);
+
+        egui::Frame::none()
+            .inner_margin(egui::Margin {
+                left: 32.0,
+                right: 32.0,
+                top: 26.0,
+                bottom: 10.0,
+            })
+            .show(ui, |ui| {
+                egui::ScrollArea::vertical()
+                    .id_salt(("overview_scroll", folder_snapshot.id.clone()))
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        // Title
+                        ui.label(
+                            egui::RichText::new(&folder_snapshot.name)
+                                .size(26.0)
+                                .strong()
+                                .color(C_TEXT),
+                        );
+                        ui.add_space(6.0);
+
+                        // Stats line — "N requests · M subfolders"
+                        let stats = format!(
+                            "{} request{} · {} subfolder{}",
+                            req_count,
+                            if req_count == 1 { "" } else { "s" },
+                            sub_count,
+                            if sub_count == 1 { "" } else { "s" },
+                        );
+                        ui.label(
+                            egui::RichText::new(stats).size(12.5).color(C_MUTED),
+                        );
+                        ui.add_space(16.0);
+
+                        // Description — editable multiline field. Auto-
+                        // saves on every change; no "Save" button.
+                        ui.label(
+                            egui::RichText::new("DESCRIPTION")
+                                .size(10.5)
+                                .strong()
+                                .color(C_MUTED),
+                        );
+                        ui.add_space(4.0);
+                        let desc_resp = ui.add(
+                            egui::TextEdit::multiline(&mut self.editing_folder_desc)
+                                .hint_text(
+                                    "Write a description for this collection. \
+                                     Explain what it's for, any auth quirks, \
+                                     env setup, etc.",
+                                )
+                                .desired_rows(4)
+                                .desired_width(f32::INFINITY),
+                        );
+                        if desc_resp.changed() {
+                            let new_desc = self.editing_folder_desc.clone();
+                            if let Some(folder) =
+                                crate::find_folder_by_id_mut(&mut self.state.folders, &folder_id)
+                            {
+                                folder.description = new_desc;
+                            }
+                            self.save_state();
+                        }
+                        ui.add_space(20.0);
+
+                        // Request list — click to jump into that request.
+                        if !folder_snapshot.requests.is_empty() {
+                            ui.label(
+                                egui::RichText::new("REQUESTS")
+                                    .size(10.5)
+                                    .strong()
+                                    .color(C_MUTED),
+                            );
+                            ui.add_space(6.0);
+                            let path = folder_path_from_root(
+                                &self.state.folders,
+                                &folder_id,
+                            )
+                            .unwrap_or_default();
+                            for req in &folder_snapshot.requests {
+                                let mc = method_color(&req.method);
+                                let (rect, resp) = ui.allocate_exact_size(
+                                    egui::vec2(ui.available_width(), 28.0),
+                                    egui::Sense::click(),
+                                );
+                                if ui.is_rect_visible(rect) {
+                                    if resp.hovered() {
+                                        ui.painter().rect_filled(
+                                            rect,
+                                            egui::Rounding::same(5.0),
+                                            C_ELEVATED,
+                                        );
+                                    }
+                                    ui.painter().text(
+                                        egui::pos2(rect.left() + 8.0, rect.center().y),
+                                        egui::Align2::LEFT_CENTER,
+                                        format!("{}", req.method),
+                                        egui::FontId::new(
+                                            10.5,
+                                            egui::FontFamily::Proportional,
+                                        ),
+                                        mc,
+                                    );
+                                    ui.painter().text(
+                                        egui::pos2(rect.left() + 60.0, rect.center().y),
+                                        egui::Align2::LEFT_CENTER,
+                                        &req.name,
+                                        egui::FontId::new(
+                                            12.5,
+                                            egui::FontFamily::Proportional,
+                                        ),
+                                        C_TEXT,
+                                    );
+                                }
+                                let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+                                if resp.clicked() {
+                                    self.open_request(path.clone(), req.id.clone());
+                                }
+                            }
+                        } else {
+                            ui.label(
+                                egui::RichText::new(
+                                    "This collection has no requests yet. \
+                                     Right-click it in the sidebar to add one.",
+                                )
+                                .size(12.0)
+                                .color(C_MUTED)
+                                .italics(),
+                            );
+                        }
+                    });
+            });
+    }
+
+}
+
+/// Count requests and subfolders recursively.
+fn count_requests_and_folders(folder: &Folder) -> (usize, usize) {
+    let mut reqs = folder.requests.len();
+    let mut subs = folder.subfolders.len();
+    for sub in &folder.subfolders {
+        let (r, s) = count_requests_and_folders(sub);
+        reqs += r;
+        subs += s;
+    }
+    (reqs, subs)
+}
+
+/// Find the path of IDs from the top-level collections array down to
+/// the folder with the given id. Returns `None` if not found.
+fn folder_path_from_root(folders: &[Folder], target: &str) -> Option<Vec<String>> {
+    fn dfs(
+        folders: &[Folder],
+        target: &str,
+        path: &mut Vec<String>,
+    ) -> bool {
+        for f in folders {
+            path.push(f.id.clone());
+            if f.id == target {
+                return true;
+            }
+            if dfs(&f.subfolders, target, path) {
+                return true;
+            }
+            path.pop();
+        }
+        false
+    }
+    let mut path = Vec::new();
+    if dfs(folders, target, &mut path) {
+        Some(path)
+    } else {
+        None
+    }
 }
 
 /// Attempt to decode a token as a JWT. Returns the pretty-printed

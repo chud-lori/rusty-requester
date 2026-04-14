@@ -24,6 +24,13 @@ pub struct Request {
     /// request can reference them via `{{var}}`.
     #[serde(default)]
     pub extractors: Vec<ResponseExtractor>,
+    /// Post-response assertions — rules that check the response
+    /// against expected values (status, header presence, JSON path
+    /// equality, substring / regex match). Evaluated alongside the
+    /// extractors after each send; results shown inline in the
+    /// Tests tab.
+    #[serde(default)]
+    pub assertions: Vec<ResponseAssertion>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -54,6 +61,81 @@ impl ExtractorSource {
             ExtractorSource::Status => "Status",
         }
     }
+}
+
+/// A single pass/fail check run against the response. Evaluated after
+/// each send; the outcome is transient (not persisted) and shown as a
+/// dot next to the assertion row in the Tests tab.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct ResponseAssertion {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    pub source: AssertionSource,
+    /// Per-source:
+    ///   - `Body` — dot/bracket JSON path (same syntax as extractors)
+    ///   - `Header` — header name
+    ///   - `Status` — ignored
+    #[serde(default)]
+    pub expression: String,
+    pub op: AssertionOp,
+    #[serde(default)]
+    pub expected: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AssertionSource {
+    Status,
+    Header,
+    Body,
+}
+
+impl AssertionSource {
+    pub fn label(&self) -> &'static str {
+        match self {
+            AssertionSource::Status => "Status",
+            AssertionSource::Header => "Header",
+            AssertionSource::Body => "Body",
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AssertionOp {
+    Equals,
+    NotEquals,
+    Contains,
+    Matches,
+    Exists,
+    GreaterThan,
+    LessThan,
+}
+
+impl AssertionOp {
+    pub fn label(&self) -> &'static str {
+        match self {
+            AssertionOp::Equals => "equals",
+            AssertionOp::NotEquals => "≠",
+            AssertionOp::Contains => "contains",
+            AssertionOp::Matches => "matches /re/",
+            AssertionOp::Exists => "exists",
+            AssertionOp::GreaterThan => ">",
+            AssertionOp::LessThan => "<",
+        }
+    }
+    /// Whether the `expected` value is meaningful for this operator.
+    /// `Exists` is a presence check with no right-hand side.
+    pub fn takes_expected(&self) -> bool {
+        !matches!(self, AssertionOp::Exists)
+    }
+}
+
+/// Transient outcome of running one assertion. Not persisted — the
+/// Tests tab recomputes it after each response.
+#[derive(Clone, Debug, PartialEq)]
+pub enum AssertionResult {
+    Pass,
+    Fail(String),  // human-readable reason, e.g. "got 500, expected 200"
+    Error(String), // regex parse failure / path not found / etc.
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -210,6 +292,10 @@ pub struct Folder {
     pub requests: Vec<Request>,
     #[serde(default)]
     pub subfolders: Vec<Folder>,
+    /// Free-text description shown on the collection/folder overview
+    /// page. Multiline; can be empty.
+    #[serde(default)]
+    pub description: String,
 }
 
 #[derive(Serialize, Deserialize, Default)]

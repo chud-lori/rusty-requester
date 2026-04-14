@@ -91,6 +91,19 @@ impl ApiClient {
         });
 
         ui.add_space(4.0);
+        // One unified toolbar row — Body / Headers tabs on the left,
+        // then the body-view pills (JSON / Tree / Raw) inline with
+        // them when Body is active, and the save / copy / search
+        // icons pushed to the far right. Matches Postman's second
+        // toolbar strip where format + action icons sit on the same
+        // line as the section tabs.
+        let mut copy_clicked = false;
+        let mut toggle_search = false;
+        let mut save_clicked = false;
+        let is_json_body = !self.response_text.is_empty()
+            && serde_json::from_str::<serde_json::Value>(&self.response_text).is_ok();
+        let body_active = matches!(self.response_tab, ResponseTab::Body);
+
         ui.horizontal(|ui| {
             let body_label = "Body".to_string();
             let headers_label = if self.response_headers.is_empty() {
@@ -105,7 +118,100 @@ impl ApiClient {
                 ResponseTab::Headers,
                 &headers_label,
             );
+
+            if body_active {
+                ui.add_space(18.0);
+                let mut view = self.body_view;
+                body_view_pill(ui, &mut view, BodyView::Json, "JSON");
+                body_view_pill(ui, &mut view, BodyView::Tree, "Tree");
+                body_view_pill(ui, &mut view, BodyView::Raw, "Raw");
+                self.body_view = view;
+                if matches!(self.body_view, BodyView::Tree) && is_json_body {
+                    ui.add_space(8.0);
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.body_tree_filter)
+                            .hint_text("Filter keys / values")
+                            .desired_width(160.0),
+                    );
+                }
+            }
+
+            if body_active {
+                ui.with_layout(
+                    egui::Layout::right_to_left(egui::Align::Center),
+                    |ui| {
+                        if icon_button(ui, "Save response to file", paint_save_icon)
+                            .clicked()
+                        {
+                            save_clicked = true;
+                        }
+                        ui.add_space(2.0);
+                        if icon_button(ui, "Copy response body", paint_copy_icon).clicked() {
+                            copy_clicked = true;
+                        }
+                        ui.add_space(2.0);
+                        if icon_button(ui, "Search in body", paint_search_icon).clicked() {
+                            toggle_search = true;
+                        }
+                    },
+                );
+            }
         });
+
+        if toggle_search {
+            self.body_search_visible = !self.body_search_visible;
+            if !self.body_search_visible {
+                self.body_search_query.clear();
+            }
+        }
+        if copy_clicked {
+            ui.ctx()
+                .output_mut(|o| o.copied_text = self.response_text.clone());
+            self.show_toast("Copied response body");
+        }
+        if save_clicked {
+            let ext = match self
+                .response_headers
+                .iter()
+                .find(|(k, _)| k.eq_ignore_ascii_case("content-type"))
+                .map(|(_, v)| v.to_ascii_lowercase())
+                .as_deref()
+            {
+                Some(v) if v.contains("json") => "json",
+                Some(v) if v.contains("xml") => "xml",
+                Some(v) if v.contains("html") => "html",
+                Some(v) if v.contains("csv") => "csv",
+                _ => "txt",
+            };
+            if let Some(path) = rfd::FileDialog::new()
+                .set_file_name(format!("response.{}", ext))
+                .save_file()
+            {
+                match std::fs::write(&path, &self.response_text) {
+                    Ok(()) => self.show_toast(format!(
+                        "Saved to {}",
+                        path.file_name().and_then(|n| n.to_str()).unwrap_or("file")
+                    )),
+                    Err(e) => self.show_toast(format!("Save failed: {}", e)),
+                }
+            }
+        }
+        if body_active && self.body_search_visible {
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.body_search_query)
+                        .hint_text("Find in body…")
+                        .desired_width(ui.available_width() - 40.0),
+                );
+                if icon_button(ui, "Close search", |p, c, col| paint_x(p, c, 5.0, col, 1.5))
+                    .clicked()
+                {
+                    self.body_search_visible = false;
+                    self.body_search_query.clear();
+                }
+            });
+        }
         ui.add_space(4.0);
 
         // Fill all remaining vertical space.
@@ -201,135 +307,21 @@ impl ApiClient {
             .rounding(10.0)
             .stroke(egui::Stroke::new(1.0, C_BORDER))
             .show(ui, |ui| {
-                // Force Frame to fill the full response panel rather than
-                // auto-sizing to content (which leaves right/bottom gaps).
-                let margin = 24.0; // 12.0 × 2
+                let margin = 24.0;
                 ui.set_width(full_w - margin);
                 ui.set_min_height(full_h - margin);
+
+                // Toolbar lives in the row above (inline with Body /
+                // Headers tabs); this Frame just hosts the scrollable
+                // content.
                 egui::ScrollArea::vertical()
                     .id_salt("response_scroll")
-                    .max_height(remaining_height)
                     .auto_shrink([false, false])
                     .show(ui, |ui| match self.response_tab {
                         ResponseTab::Body => {
-                            // Three view modes (like Postman's body toolbar):
-                            //   • JSON — syntax-highlighted pretty code
-                            //   • Tree — collapsible tree view
-                            //   • Raw  — verbatim text
-                            // JSON/Tree fall back to Raw when the body isn't
-                            // valid JSON.
                             let parsed: Option<serde_json::Value> =
                                 serde_json::from_str(&self.response_text).ok();
                             let is_json = parsed.is_some();
-                            let mut copy_clicked = false;
-                            let mut toggle_search = false;
-                            let mut save_clicked = false;
-                            ui.horizontal(|ui| {
-                                let mut view = self.body_view;
-                                body_view_pill(ui, &mut view, BodyView::Json, "JSON");
-                                body_view_pill(ui, &mut view, BodyView::Tree, "Tree");
-                                body_view_pill(ui, &mut view, BodyView::Raw, "Raw");
-                                self.body_view = view;
-                                if matches!(self.body_view, BodyView::Tree) && is_json {
-                                    ui.add_space(8.0);
-                                    ui.add(
-                                        egui::TextEdit::singleline(&mut self.body_tree_filter)
-                                            .hint_text("Filter keys / values")
-                                            .desired_width(200.0),
-                                    );
-                                }
-                                // Right-side icon buttons — save + copy + search.
-                                ui.with_layout(
-                                    egui::Layout::right_to_left(egui::Align::Center),
-                                    |ui| {
-                                        if icon_button(
-                                            ui,
-                                            "Save response to file",
-                                            paint_save_icon,
-                                        )
-                                        .clicked()
-                                        {
-                                            save_clicked = true;
-                                        }
-                                        ui.add_space(2.0);
-                                        if icon_button(ui, "Copy response body", paint_copy_icon)
-                                            .clicked()
-                                        {
-                                            copy_clicked = true;
-                                        }
-                                        ui.add_space(2.0);
-                                        if icon_button(ui, "Search in body", paint_search_icon)
-                                            .clicked()
-                                        {
-                                            toggle_search = true;
-                                        }
-                                    },
-                                );
-                            });
-                            if toggle_search {
-                                self.body_search_visible = !self.body_search_visible;
-                                if !self.body_search_visible {
-                                    self.body_search_query.clear();
-                                }
-                            }
-                            if copy_clicked {
-                                ui.ctx()
-                                    .output_mut(|o| o.copied_text = self.response_text.clone());
-                                self.show_toast("Copied response body");
-                            }
-                            if save_clicked {
-                                // Pick an extension from Content-Type so
-                                // the default filename feels natural.
-                                let ext = match self
-                                    .response_headers
-                                    .iter()
-                                    .find(|(k, _)| k.eq_ignore_ascii_case("content-type"))
-                                    .map(|(_, v)| v.to_ascii_lowercase())
-                                    .as_deref()
-                                {
-                                    Some(v) if v.contains("json") => "json",
-                                    Some(v) if v.contains("xml") => "xml",
-                                    Some(v) if v.contains("html") => "html",
-                                    Some(v) if v.contains("csv") => "csv",
-                                    _ => "txt",
-                                };
-                                if let Some(path) = rfd::FileDialog::new()
-                                    .set_file_name(format!("response.{}", ext))
-                                    .save_file()
-                                {
-                                    match std::fs::write(&path, &self.response_text) {
-                                        Ok(()) => self.show_toast(format!(
-                                            "Saved to {}",
-                                            path.file_name()
-                                                .and_then(|n| n.to_str())
-                                                .unwrap_or("file")
-                                        )),
-                                        Err(e) => {
-                                            self.show_toast(format!("Save failed: {}", e))
-                                        }
-                                    }
-                                }
-                            }
-                            if self.body_search_visible {
-                                ui.add_space(4.0);
-                                ui.horizontal(|ui| {
-                                    ui.add(
-                                        egui::TextEdit::singleline(&mut self.body_search_query)
-                                            .hint_text("Find in body…")
-                                            .desired_width(ui.available_width() - 40.0),
-                                    );
-                                    if icon_button(ui, "Close search", |p, c, col| {
-                                        paint_x(p, c, 5.0, col, 1.5)
-                                    })
-                                    .clicked()
-                                    {
-                                        self.body_search_visible = false;
-                                        self.body_search_query.clear();
-                                    }
-                                });
-                            }
-                            ui.add_space(6.0);
-
                             let effective_view = if !is_json
                                 && !matches!(self.body_view, BodyView::Raw)
                             {
@@ -338,18 +330,16 @@ impl ApiClient {
                                 self.body_view
                             };
 
-                            // Make the editor background extend to the
-                            // outer response panel — no inner border, so
-                            // short payloads don't look like a small
-                            // floating card with empty space below.
                             match effective_view {
                                 BodyView::Json => {
-                                    // `&mut &str` gives egui a read-only
-                                    // buffer — the user can click, position
-                                    // the caret, select text, scroll and
-                                    // copy (⌘C) just like in Postman, but
-                                    // edits are dropped because the buffer
-                                    // can't be mutated.
+                                    // `&mut &str` keeps the buffer
+                                    // read-only while still letting the
+                                    // user click to position the caret,
+                                    // drag to select, and ⌘A / ⌘C as
+                                    // expected — egui's TextEdit
+                                    // handles those shortcuts itself
+                                    // (the macOS Edit menu used to
+                                    // intercept them; we removed that).
                                     let mut buf: &str = &self.response_text;
                                     let search = self.body_search_query.clone();
                                     let mut layouter = move |ui: &egui::Ui,
@@ -363,7 +353,7 @@ impl ApiClient {
                                     ui.add_sized(
                                         egui::vec2(
                                             ui.available_width(),
-                                            ui.available_height(),
+                                            ui.available_height().max(120.0),
                                         ),
                                         egui::TextEdit::multiline(&mut buf)
                                             .frame(false)
@@ -389,7 +379,7 @@ impl ApiClient {
                                     ui.add_sized(
                                         egui::vec2(
                                             ui.available_width(),
-                                            ui.available_height(),
+                                            ui.available_height().max(120.0),
                                         ),
                                         egui::TextEdit::multiline(&mut self.response_text.as_str())
                                             .frame(false)
@@ -426,6 +416,7 @@ impl ApiClient {
                         }
                     });
             });
+        let _ = remaining_height;
     }
 
 }
