@@ -667,18 +667,7 @@ impl ApiClient {
                             }
                         });
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui
-                            .add(
-                                egui::Button::new(
-                                    egui::RichText::new("Copy")
-                                        .color(egui::Color32::WHITE)
-                                        .strong(),
-                                )
-                                .fill(C_ACCENT)
-                                .min_size(egui::vec2(70.0, 26.0)),
-                            )
-                            .clicked()
-                        {
+                        if icon_button(ui, "Copy snippet", paint_copy_icon).clicked() {
                             copy_clicked = true;
                         }
                     });
