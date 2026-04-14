@@ -548,6 +548,35 @@ pub fn paint_folder_chevron(ui: &mut egui::Ui, openness: f32, response: &egui::R
     ));
 }
 
+/// Paints a thin plus icon (two crossed lines) at the given center.
+pub fn paint_plus_icon(painter: &egui::Painter, center: egui::Pos2, color: egui::Color32) {
+    let stroke = egui::Stroke::new(1.4, color);
+    let half = 5.0;
+    painter.line_segment(
+        [
+            egui::pos2(center.x - half, center.y),
+            egui::pos2(center.x + half, center.y),
+        ],
+        stroke,
+    );
+    painter.line_segment(
+        [
+            egui::pos2(center.x, center.y - half),
+            egui::pos2(center.x, center.y + half),
+        ],
+        stroke,
+    );
+}
+
+/// Paints a horizontal three-dots (overflow-menu) icon at the given center.
+pub fn paint_dots_icon(painter: &egui::Painter, center: egui::Pos2, color: egui::Color32) {
+    let r = 1.5;
+    let gap = 4.0;
+    for dx in &[-gap, 0.0, gap] {
+        painter.circle_filled(egui::pos2(center.x + dx, center.y), r, color);
+    }
+}
+
 /// Paints a "copy" icon — two overlapping rounded rects — at the given
 /// center point. Font-free.
 pub fn paint_copy_icon(painter: &egui::Painter, center: egui::Pos2, color: egui::Color32) {
@@ -996,6 +1025,7 @@ pub fn short_name_from_url(url: &str) -> String {
     stripped[..cutoff].trim_end_matches('/').to_string()
 }
 
+#[allow(dead_code)]
 pub fn sanitize_filename(name: &str) -> Option<String> {
     let cleaned: String = name
         .chars()

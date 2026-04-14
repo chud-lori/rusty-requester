@@ -678,6 +678,11 @@ impl ApiClient {
         }
     }
 
+    // Per-folder export was removed from the UI (the overflow menu was
+    // pared down to Add request / Add folder / Rename / Duplicate /
+    // Delete), but the machinery stays wired in case we re-expose it
+    // (e.g. from the top-level Export menu with a folder picker).
+    #[allow(dead_code)]
     fn do_export_folder(&mut self, folder_id: &str, format: io::Format) {
         fn find<'a>(folders: &'a [Folder], id: &str) -> Option<&'a Folder> {
             for f in folders {
@@ -894,6 +899,45 @@ impl ApiClient {
         if go(&mut self.state.folders, folder_id) {
             self.save_state();
             self.prune_stale_tabs();
+        }
+    }
+
+    /// Recursively deep-clones a folder (with fresh UUIDs for the folder,
+    /// every request, and every nested subfolder) and inserts the copy
+    /// next to the original. Naming convention mirrors the per-request
+    /// duplicate — appends " (copy)" to the name.
+    pub(crate) fn duplicate_folder(&mut self, folder_id: &str) {
+        fn clone_deep(src: &Folder) -> Folder {
+            Folder {
+                id: Uuid::new_v4().to_string(),
+                name: src.name.clone(),
+                requests: src
+                    .requests
+                    .iter()
+                    .map(|r| Request {
+                        id: Uuid::new_v4().to_string(),
+                        ..r.clone()
+                    })
+                    .collect(),
+                subfolders: src.subfolders.iter().map(clone_deep).collect(),
+            }
+        }
+        fn go(folders: &mut Vec<Folder>, id: &str) -> bool {
+            if let Some(pos) = folders.iter().position(|f| f.id == id) {
+                let mut dup = clone_deep(&folders[pos]);
+                dup.name = format!("{} (copy)", dup.name);
+                folders.insert(pos + 1, dup);
+                return true;
+            }
+            for f in folders {
+                if go(&mut f.subfolders, id) {
+                    return true;
+                }
+            }
+            false
+        }
+        if go(&mut self.state.folders, folder_id) {
+            self.save_state();
         }
     }
 }

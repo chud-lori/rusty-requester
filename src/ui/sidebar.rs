@@ -6,7 +6,7 @@
 use crate::widgets::*;
 use crate::model::*;
 use crate::theme::*;
-use crate::{io, ApiClient};
+use crate::ApiClient;
 use eframe::egui;
 use uuid::Uuid;
 
@@ -278,22 +278,30 @@ impl ApiClient {
     }
 
     fn render_environment_picker(&mut self, ui: &mut egui::Ui) {
+        // Small uppercase section header, then the picker + gear on a row
+        // of its own — much easier to scan than the cramped inline label.
+        ui.label(
+            egui::RichText::new("ENVIRONMENT")
+                .size(10.5)
+                .strong()
+                .color(C_MUTED),
+        );
+        ui.add_space(3.0);
         ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("Env").size(11.0).color(C_MUTED));
             let active_name = self
                 .state
                 .active_env_id
                 .as_ref()
                 .and_then(|id| self.state.environments.iter().find(|e| &e.id == id))
                 .map(|e| e.name.clone())
-                .unwrap_or_else(|| "No env".to_string());
+                .unwrap_or_else(|| "No environment".to_string());
             egui::ComboBox::from_id_salt("env_picker")
-                .selected_text(active_name)
-                .width(ui.available_width() - 70.0)
+                .selected_text(egui::RichText::new(active_name).size(12.5).color(C_TEXT))
+                .width(ui.available_width() - 40.0)
                 .show_ui(ui, |ui| {
                     let mut new_id: Option<Option<String>> = None;
                     if ui
-                        .selectable_label(self.state.active_env_id.is_none(), "No env")
+                        .selectable_label(self.state.active_env_id.is_none(), "No environment")
                         .clicked()
                     {
                         new_id = Some(None);
@@ -311,8 +319,10 @@ impl ApiClient {
                 });
             if ui
                 .add(
-                    egui::Button::new(egui::RichText::new("⚙").size(13.0))
-                        .min_size(egui::vec2(28.0, 24.0)),
+                    egui::Button::new(egui::RichText::new("⚙").size(13.0).color(C_MUTED))
+                        .min_size(egui::vec2(28.0, 26.0))
+                        .fill(egui::Color32::TRANSPARENT)
+                        .stroke(egui::Stroke::new(1.0, C_BORDER)),
                 )
                 .on_hover_text("Manage environments")
                 .clicked()
@@ -453,9 +463,11 @@ impl ApiClient {
         let name_prefix = if is_collection || is_renaming {
             String::new()
         } else {
-            // Leading space lets the folder icon we'll paint sit in front
-            // of the header text without overlapping.
-            "   ".to_string()
+            // Reserve ~20px for the painter-drawn folder icon. Three
+            // space chars were too narrow at 13pt, so the first letter
+            // of the name overlapped the icon (see `paint_folder_icon`
+            // call below — its center sits at rect.left() + 24).
+            "      ".to_string()
         };
         let mut header = egui::CollapsingHeader::new(
             egui::RichText::new(format!("{}{}", name_prefix, header_text))
@@ -679,15 +691,15 @@ impl ApiClient {
             }
         });
 
-        // For nested folders, paint a small folder glyph in the 3-space
-        // gap we reserved at the front of the header label. Collections
+        // For nested folders, paint a small folder glyph in the leading
+        // space we reserved at the front of the header label. The icon
+        // goes right after the chevron (~16px wide) and the 6-char
+        // prefix keeps the name from overlapping it. Collections
         // (depth == 0) intentionally get no folder icon so it's obvious
         // which rows are top-level.
         if !is_collection && !is_renaming {
             let rect = header_response.header_response.rect;
-            // Chevron sits at ~rect.left() + 8; reserve ~12px for it then
-            // a small gap before the folder glyph.
-            let icon_center = egui::pos2(rect.left() + 24.0, rect.center().y);
+            let icon_center = egui::pos2(rect.left() + 22.0, rect.center().y);
             paint_folder_icon(&ui.painter_at(rect), icon_center, C_MUTED);
         }
 
@@ -720,15 +732,97 @@ impl ApiClient {
             let noun = if depth == 0 { "collection" } else { "folder" };
             let mut start_rename = false;
             let mut delete_folder = false;
-            let mut export_json = false;
-            let mut export_yaml = false;
+            let mut duplicate_folder = false;
             let mut add_subfolder = false;
+
+            // Inline `+` (add request) and `...` (overflow menu) on the
+            // right edge of the header — the toolbar pattern from Postman.
+            let header_rect = header_response.header_response.rect;
+            let btn_size = egui::vec2(22.0, 22.0);
+            let plus_rect = egui::Rect::from_min_size(
+                egui::pos2(
+                    header_rect.right() - btn_size.x - 4.0,
+                    header_rect.center().y - btn_size.y / 2.0,
+                ),
+                btn_size,
+            );
+            let dots_rect = egui::Rect::from_min_size(
+                egui::pos2(plus_rect.left() - btn_size.x - 2.0, plus_rect.top()),
+                btn_size,
+            );
+
+            let plus_id = ui.id().with(("folder_plus", &folder_id));
+            let plus_resp = ui.interact(plus_rect, plus_id, egui::Sense::click());
+            if plus_resp.hovered() {
+                ui.painter()
+                    .rect_filled(plus_rect, egui::Rounding::same(4.0), C_ELEVATED);
+            }
+            let plus_color = if plus_resp.hovered() { C_TEXT } else { C_MUTED };
+            paint_plus_icon(ui.painter(), plus_rect.center(), plus_color);
+            plus_resp.clone().on_hover_text("Add request");
+            if plus_resp.clicked() {
+                action_add_request = true;
+            }
+
+            let dots_id = ui.id().with(("folder_dots", &folder_id));
+            let dots_resp = ui.interact(dots_rect, dots_id, egui::Sense::click());
+            if dots_resp.hovered() {
+                ui.painter()
+                    .rect_filled(dots_rect, egui::Rounding::same(4.0), C_ELEVATED);
+            }
+            let dots_color = if dots_resp.hovered() { C_TEXT } else { C_MUTED };
+            paint_dots_icon(ui.painter(), dots_rect.center(), dots_color);
+            dots_resp.clone().on_hover_text("More options");
+
+            let popup_id = ui.id().with(("folder_menu", &folder_id));
+            if dots_resp.clicked() {
+                ui.memory_mut(|m| m.toggle_popup(popup_id));
+            }
+            egui::popup::popup_below_widget(
+                ui,
+                popup_id,
+                &dots_resp,
+                egui::PopupCloseBehavior::CloseOnClick,
+                |ui| {
+                    ui.set_min_width(180.0);
+                    if ui.button("Add request").clicked() {
+                        action_add_request = true;
+                    }
+                    if ui.button(format!("Add {}", if depth == 0 { "folder" } else { "subfolder" }))
+                        .clicked()
+                    {
+                        add_subfolder = true;
+                    }
+                    ui.separator();
+                    if ui.button("Rename").clicked() {
+                        start_rename = true;
+                    }
+                    if ui.button("Duplicate").clicked() {
+                        duplicate_folder = true;
+                    }
+                    ui.separator();
+                    if ui
+                        .button(egui::RichText::new(format!("Delete {}", noun)).color(C_RED))
+                        .clicked()
+                    {
+                        delete_folder = true;
+                    }
+                },
+            );
+
+            // Keep the right-click context menu in sync (same 5 items).
             header_response.header_response.context_menu(|ui| {
                 if ui.button("Add request").clicked() {
                     action_add_request = true;
                     ui.close_menu();
                 }
-                if ui.button("Add subfolder").clicked() {
+                if ui
+                    .button(format!(
+                        "Add {}",
+                        if depth == 0 { "folder" } else { "subfolder" }
+                    ))
+                    .clicked()
+                {
                     add_subfolder = true;
                     ui.close_menu();
                 }
@@ -737,17 +831,15 @@ impl ApiClient {
                     start_rename = true;
                     ui.close_menu();
                 }
-                ui.separator();
-                if ui.button("Export as JSON...").clicked() {
-                    export_json = true;
-                    ui.close_menu();
-                }
-                if ui.button("Export as YAML...").clicked() {
-                    export_yaml = true;
+                if ui.button("Duplicate").clicked() {
+                    duplicate_folder = true;
                     ui.close_menu();
                 }
                 ui.separator();
-                if ui.button(format!("Delete {}", noun)).clicked() {
+                if ui
+                    .button(egui::RichText::new(format!("Delete {}", noun)).color(C_RED))
+                    .clicked()
+                {
                     delete_folder = true;
                     ui.close_menu();
                 }
@@ -795,11 +887,8 @@ impl ApiClient {
                 }
                 self.save_state();
             }
-            if export_json {
-                self.do_export_folder(&folder_id, io::Format::Json);
-            }
-            if export_yaml {
-                self.do_export_folder(&folder_id, io::Format::Yaml);
+            if duplicate_folder {
+                self.duplicate_folder(&folder_id);
             }
             if delete_folder {
                 self.delete_folder(&folder_id);
