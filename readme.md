@@ -19,32 +19,42 @@ Vibe-coded because I got tired of Postman's bloat and cloud sync I never wanted,
 
 ### Request building
 - 🔧 Full HTTP methods: `GET`, `POST`, `PUT`, `DELETE`, `PATCH`, `HEAD`, `OPTIONS`
-- 📝 Tabbed editor: **Params · Headers · Cookies · Body · Auth**
-- 🔗 Query-param builder with live "final URL" preview
+- 📝 Tabbed editor: **Params · Headers · Cookies · Body · Auth · Tests**
+- 🔗 Query-param builder with live "final URL" preview and auto-growing "ghost" row (type and a new empty row appears below)
 - 🍪 Cookies list (merged into a `Cookie` header on send)
 - 🔐 Auth presets: **No Auth · Bearer Token · Basic Auth**
 - 📦 **Body modes**: Raw / `x-www-form-urlencoded` / `multipart/form-data` / **GraphQL** (query + variables, sent as `application/json`)
 - ✨ **Prettify / Minify** JSON body (one-click)
 - 🌱 **Environment variables** — define key/value vars per environment, reference them anywhere with `{{varname}}`. Switch active env from the sidebar.
 - 📜 **Request history** — every send is logged (method, URL, status, time, response preview); browse the last 200 from the sidebar's History tab.
+- 🔗 **Post-response extractors (Tests tab)** — JSONPath-style rules that pull a value from the response (`data.token`, `items[0].id`, `$.x`, or a header name) and write it into the active environment, so the next request can `{{token}}` it.
 
 ### Responses
-- 📊 Status code, response time, and **all response headers** displayed
-- 🎨 Auto-pretty-printed JSON responses
-- 📋 One-click copy of the full response
-- Body / Headers tabs
+- 📊 Status pill + response time + size rendered inline like Postman (`200 OK · 54 ms · 434 B`)
+- 🛈 **Size hover tooltip** — breakdown of response headers/body and request headers/body bytes
+- 🛈 **Time hover tooltip** — gantt-style phase breakdown: Prepare · Waiting (TTFB) · Download
+- 🧩 **Body view modes**: **JSON** (syntax-highlighted code editor with line numbers), **Tree** (collapsible JSON tree with filter), **Raw** (verbatim)
+- 🔍 **Find in body** — toolbar search icon highlights all matches inline
+- 📋 **Copy response body** — toolbar icon copies the raw body to clipboard
+- 📑 Separate **Body / Headers** tabs; rust-orange accent on header keys
+- ⏳ Rust-orange **loading spinner** while the request is in flight
+- 🎨 Auto-pretty-printed JSON responses; click into the view to position caret, select, ⌘C
 
 ### cURL interop
 - 📋 **Copy as cURL** — current request → clipboard as a `curl` command
 - 📥 **Paste from cURL** — paste any `curl` command and it becomes a request (method, URL, headers, body, auth, cookies, params — all parsed)
+- 💻 **Code snippet panel** — side panel generating `cURL` / Python `requests` / JavaScript `fetch` / HTTPie, with syntax-highlighted code + line numbers
 
 ### Collections
 - 📚 **Collections & subfolders** — organize requests in nested folders
+- ➕ **Inline `+` button** on every folder header — adds a request in one click
+- ⋯ **Overflow menu** on every folder header — Add request · Add folder · Rename · Duplicate · Delete
+- 🪆 **Duplicate** folders recursively (keeps structure, fresh UUIDs) or individual requests
+- 💾 **Save draft to any folder** — the save-draft modal shows a full folder tree with search + "New folder"
 - 🔎 **Search** across request names, URLs, methods, and folder names (⌘K to focus)
-- 📤 **Export** a single collection or all collections as **JSON** or **YAML**
+- 📤 **Export** all collections as **JSON** or **YAML**
 - 📥 **Import** JSON, YAML, or **Postman Collection v2.1** files
-- 📋 **Duplicate** a request via right-click
-- ✏️ Rename via right-click
+- ✏️ Rename via double-click or right-click
 
 ---
 
@@ -276,17 +286,17 @@ Back it up, version-control it, or hand it to a teammate. It's just JSON.
 
 ## 🎨 UI conventions
 
-### HTTP method pills
+### HTTP method colors
 
-Each request row / tab shows a compact colored pill with the method,
-matching the rust-forge palette:
+The method name next to each request is rendered as colored text (no
+filled pill background — matches Postman's current look):
 
 - 🟢 **GET** — patina green (`#86AC71`)
 - 🟠 **POST** — amber gold (`#F59E0B`)
 - 🟧 **PUT** — deep rust (`#B7410E`)
 - 🔴 **DELETE** — crimson (`#DC2626`)
 - 🟤 **PATCH** — burnt sienna (`#BA7850`)
-- ⚪ **HEAD / OPTIONS** — warm muted (`#8A735F`)
+- ⚪ **HEAD / OPTIONS** — warm muted (`#7E8391`)
 
 The primary UI accent (selected tab, Send button, focus ring) is the brand
 **rust orange** `#CE422B`.
@@ -297,10 +307,15 @@ The primary UI accent (selected tab, Send button, focus ring) is the brand
 - 🟠 `3xx` — orange
 - 🔴 `4xx` / `5xx` — red
 
-### Icons
+### Collection vs folder
 
-- 📚 Collection (top-level)
-- 📁 Folder (nested)
+Nested folders render with a small painter-drawn folder glyph (outlined
+silhouette); top-level collections intentionally omit the glyph so users
+can tell the two apart at a glance. The same font-safe approach is used
+for the collapse chevron (painter triangle), search / copy / plus /
+overflow-menu icons, and all UI tooling — no unicode glyphs, so nothing
+renders as a "tofu" square on systems where egui's bundled font lacks
+the character.
 
 ---
 
@@ -318,20 +333,33 @@ Source layout:
 
 ```
 src/
-  main.rs       # ApiClient state + UI rendering + main()
-  model.rs      # Data types (Request, KvRow, Auth, HttpMethod, Folder, ...)
-  theme.rs      # Rust-forge color constants + global egui style
-  widgets.rs    # Reusable widgets (kv_table, tab pill, paint_x, ...)
-  snippet.rs    # Code-snippet generators (cURL, Python, JS, HTTPie)
-  icon.rs      # App icon loading (texture + window icon)
-  curl.rs       # cURL tokenizer / parser / builder       (unit-tested)
-  io.rs         # JSON / YAML export + Postman v2.1 import (unit-tested)
+  main.rs              # ApiClient struct + core state methods + fn main
+  app.rs via main.rs   # (ApiClient state currently lives in main.rs)
+  model.rs             # Data types (Request, KvRow, Auth, HttpMethod, Folder, ResponseExtractor, ...)
+  theme.rs             # Rust-forge color constants + global egui style
+  widgets.rs           # Reusable widgets (kv_table, body view pills, icon painters, tooltips, ...)
+  net.rs               # execute_request, URL scheme, error formatting (pure, unit-testable)
+  snippet.rs           # Code-snippet generators + syntax highlighters (cURL/JSON/Python/JS)
+  extract.rs           # Post-response JSONPath-style extractor evaluator (unit-tested)
+  icon.rs              # App icon loading (texture + window icon + macOS dock)
+  io/
+    mod.rs             # JSON / YAML export + Postman v2.1 import (unit-tested)
+    curl.rs            # cURL tokenizer / parser / builder         (unit-tested)
+  ui/
+    mod.rs             # submodule wiring
+    sidebar.rs         # left panel: collections tree, env picker, history, folder icons
+    editor.rs          # central panel: tabs bar, URL bar, request-editor tabs (incl. Tests)
+    response.rs        # response info bar, body toolbar (JSON/Tree/Raw), search, tooltips
+    modals.rs          # env mgr, save-draft folder picker, cURL paste, snippet panel, toast
 
 assets/
-  icon.png      # 512×512 generated by scripts/generate_icon.py
+  icon.png             # 512×512 generated by scripts/generate_icon.py
 
 scripts/
+  deploy.sh            # one-arg release script (version bump + tag + push)
+  make_dmg.sh          # DMG packager invoked by `make dmg`
   generate_icon.py
+install.sh             # macOS one-line installer (downloads + unpacks the DMG)
 ```
 
 ---
@@ -351,18 +379,39 @@ A push of a `v*` git tag triggers
 
 ### Cutting a release
 
-```bash
-# 1. Bump the version in Cargo.toml + Makefile (VERSION := ...)
-$EDITOR Cargo.toml Makefile
+There's a one-arg deploy script that handles the bump + tag + push flow
+with preflight checks (clean tree, on `main`, tag doesn't already exist):
 
-# 2. Commit + tag
+```bash
+./scripts/deploy.sh v0.2.0
+```
+
+What it does:
+
+1. Validates the tag format (`vX.Y.Z`).
+2. Bumps `[package] version` in `Cargo.toml` and `VERSION :=` in
+   `Makefile`.
+3. Runs `cargo build --release` (to refresh `Cargo.lock`) and
+   `cargo test`.
+4. Shows the diff and asks for confirmation.
+5. Commits `"Release vX.Y.Z"`, creates an annotated tag, pushes `main`
+   and the tag.
+
+Pushing the tag triggers the release workflow above.
+
+<details>
+<summary>Manual flow (if you don't use the script)</summary>
+
+```bash
+$EDITOR Cargo.toml Makefile        # bump [package].version and VERSION
+cargo build --release              # refresh Cargo.lock
+cargo test
 git commit -am "Release v0.2.0"
 git tag v0.2.0
 git push origin main --tags
-
-# 3. Watch GitHub Actions build + publish the release
-#    (or run the workflow manually from the Actions tab)
 ```
+
+</details>
 
 ### Building a DMG locally (no GitHub needed)
 
@@ -382,8 +431,8 @@ Applications and you're done.
 
 - [x] cURL import (paste in URL bar) / export (right-side code panel: cURL, Python, JS, HTTPie)
 - [x] Postman Collection v2.1 import
-- [x] JSON / YAML export & import (per-collection or all)
-- [x] Query parameter builder (table layout with enable/disable + description)
+- [x] JSON / YAML export & import (all collections)
+- [x] Query parameter builder (table layout with enable/disable + description + auto-ghost row)
 - [x] Cookies tab
 - [x] Bearer / Basic auth presets
 - [x] Response headers viewer (separate Body / Headers tabs)
@@ -395,17 +444,28 @@ Applications and you're done.
 - [x] **Request history** — last 200 sends with preview, accessible from sidebar
 - [x] Postman-style request tabs (open multiple requests, switch with one click)
 - [x] Inline rename via double-click
+- [x] **Post-response extractors (Tests tab)** — dot/bracket JSONPath → env variables for chaining
+- [x] **Response JSON views** — syntax-highlighted code (line numbers) + collapsible Tree + Raw + find-in-body search + copy-body button
+- [x] **Response info tooltips** — size breakdown (request/response headers+body bytes) and time breakdown (Prepare / Waiting / Download)
+- [x] Loading spinner + "builder error" → readable error chain
+- [x] Inline folder `+` / `⋯` toolbar (add request, add folder, rename, duplicate, delete)
+- [x] Duplicate folder (recursive, fresh UUIDs)
+- [x] Save-draft modal with full folder tree + inline "New folder"
+- [x] macOS one-line installer (`install.sh`)
 
 **In progress / planned:**
 
 - [ ] **WebSocket testing** — needs a separate connection lifecycle and message-log UI;
       the plan is to add a `RequestKind::WebSocket` mode using `tokio-tungstenite` with a
       send box + scrolling message log per request.
-- [ ] **Request chaining / pre-request scripts** — needs an embedded scripting engine.
-      The lightweight first step is *post-response extractors*: simple JSONPath / regex
-      rules that capture a value from a response into an environment variable, so the
-      next request can `{{token}}` it. Full JS-style scripts (with Rhai or Boa) are
-      a stretch goal.
+- [ ] **Pre-request scripts** — full JS-style scripts via Rhai or Boa; the lightweight
+      post-response extractors are already in (see Shipped above).
+- [ ] **Request timeout + body size cap** — add a configurable `Client::timeout` and a
+      50 MB body cap with truncation banner, to prevent hung endpoints / OOM on huge
+      responses.
+- [ ] **Client / runtime reuse** — currently each send spins a fresh
+      `tokio::runtime::Runtime` + `reqwest::Client`; pooling these would reduce
+      per-request overhead.
 
 ---
 
