@@ -307,6 +307,7 @@ fn postman_to_request(name: &str, r: &PostmanRequest) -> Request {
         body,
         body_ext: None,
         auth: final_auth,
+        extractors: Vec::new(),
     }
 }
 
@@ -424,6 +425,7 @@ mod tests {
                 body: String::new(),
                 body_ext: None,
                 auth: Auth::None,
+                extractors: vec![],
             }],
             subfolders: vec![],
         }];

@@ -19,6 +19,41 @@ pub struct Request {
     pub body_ext: Option<BodyExt>,
     #[serde(default)]
     pub auth: Auth,
+    /// Post-response extractors — rules that pull values out of the
+    /// response and write them into the active environment, so the next
+    /// request can reference them via `{{var}}`.
+    #[serde(default)]
+    pub extractors: Vec<ResponseExtractor>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct ResponseExtractor {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Env var name to write the extracted value into.
+    pub variable: String,
+    pub source: ExtractorSource,
+    /// Expression interpreted per-source: for Body it's a dot-/bracket-
+    /// path into the JSON body (e.g. `data.token`, `items[0].id`); for
+    /// Header it's the header name; for Status it's ignored.
+    pub expression: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub enum ExtractorSource {
+    Body,
+    Header,
+    Status,
+}
+
+impl ExtractorSource {
+    pub fn label(&self) -> &'static str {
+        match self {
+            ExtractorSource::Body => "Body",
+            ExtractorSource::Header => "Header",
+            ExtractorSource::Status => "Status",
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -186,6 +221,17 @@ pub struct AppState {
     pub active_env_id: Option<String>,
     #[serde(default)]
     pub history: Vec<HistoryEntry>,
+    /// Unsaved requests — created via the "+" button, live here until the
+    /// user explicitly saves them to a folder or closes the tab.
+    #[serde(default)]
+    pub drafts: Vec<Request>,
+    /// Persisted open tabs — restored on next launch so the workspace
+    /// survives quit/relaunch like Postman.
+    #[serde(default)]
+    pub open_tabs: Vec<OpenTab>,
+    /// `request_id` of the tab that was active at save time.
+    #[serde(default)]
+    pub active_tab_id: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -209,10 +255,20 @@ pub struct HistoryEntry {
     pub response_preview: String,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct OpenTab {
+    /// Empty vec = the tab points at an entry in `AppState.drafts` (a
+    /// not-yet-saved "Untitled" request). Non-empty = path into
+    /// `AppState.folders` to locate the request.
+    #[serde(default)]
     pub folder_path: Vec<String>,
     pub request_id: String,
+}
+
+impl OpenTab {
+    pub fn is_draft(&self) -> bool {
+        self.folder_path.is_empty()
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -222,12 +278,26 @@ pub enum RequestTab {
     Cookies,
     Body,
     Auth,
+    Tests,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ResponseTab {
     Body,
     Headers,
+}
+
+/// Display mode for the Response → Body tab.
+///   • `Json` — pretty-printed with syntax highlighting + line numbers
+///     (default, matches Postman's JSON viewer).
+///   • `Tree` — collapsible tree with keys/leaves; useful for big/deep
+///     payloads.
+///   • `Raw` — verbatim text, no formatting.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum BodyView {
+    Json,
+    Tree,
+    Raw,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -241,4 +311,19 @@ pub struct ResponseData {
     pub status: String,
     pub time: String,
     pub headers: Vec<(String, String)>,
+    /// Serialized byte size of the response headers (key: value CRLFs).
+    pub response_headers_bytes: usize,
+    /// Byte size of the *raw* response body (pre-pretty-print).
+    pub response_body_bytes: usize,
+    /// Serialized byte size of the outgoing request line + headers.
+    pub request_headers_bytes: usize,
+    /// Byte size of the outgoing request body.
+    pub request_body_bytes: usize,
+    /// Phase timings in milliseconds. We only measure what reqwest's
+    /// high-level API exposes; finer phases (DNS/TCP/TLS) are rolled
+    /// into TTFB since the underlying connector hides them.
+    pub prepare_ms: u64,
+    pub waiting_ms: u64,
+    pub download_ms: u64,
+    pub total_ms: u64,
 }

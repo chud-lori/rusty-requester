@@ -234,6 +234,7 @@ pub fn parse_curl(input: &str) -> Result<Request, String> {
         body,
         body_ext: None,
         auth,
+        extractors: Vec::new(),
     })
 }
 
@@ -437,6 +438,7 @@ mod tests {
             body: "{}".into(),
             body_ext: None,
             auth: Auth::None,
+            extractors: vec![],
         };
         let s = to_curl(&r);
         assert!(s.contains("curl"));

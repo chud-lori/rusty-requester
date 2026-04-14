@@ -1,3 +1,4 @@
+mod extract;
 mod icon;
 mod io;
 mod model;
@@ -15,7 +16,9 @@ use icon::{
 };
 use model::*;
 use poll_promise::Promise;
-use snippet::{render_snippet, SnippetLang};
+use snippet::{
+    build_json_layout_job_with_search, build_snippet_layout_job, render_snippet, SnippetLang,
+};
 use std::fs;
 use std::path::PathBuf;
 use theme::*;
@@ -34,6 +37,14 @@ struct ApiClient {
     response_status: String,
     response_time: String,
     response_headers: Vec<(String, String)>,
+    response_headers_bytes: usize,
+    response_body_bytes: usize,
+    request_headers_bytes: usize,
+    request_body_bytes: usize,
+    response_prepare_ms: u64,
+    response_waiting_ms: u64,
+    response_download_ms: u64,
+    response_total_ms: u64,
     is_loading: bool,
 
     editing_url: String,
@@ -45,6 +56,7 @@ struct ApiClient {
     editing_cookies: Vec<KvRow>,
     editing_body_ext: Option<BodyExt>,
     editing_auth: Auth,
+    editing_extractors: Vec<ResponseExtractor>,
     editing_request_id_for_history: Option<String>,
 
     storage_path: PathBuf,
@@ -74,8 +86,6 @@ struct ApiClient {
     app_icon: Option<egui::TextureHandle>,
     macos_icon_set: bool,
 
-    open_tabs: Vec<OpenTab>,
-
     renaming_request_id: Option<String>,
     rename_request_text: String,
     request_rename_focus_pending: bool,
@@ -92,6 +102,40 @@ struct ApiClient {
     pending_import: bool,
     pending_export_json: bool,
     pending_export_yaml: bool,
+
+    /// Open "save draft" modal state.
+    save_draft_open: bool,
+    /// Tab index of the draft currently being saved (valid while modal is open).
+    save_draft_tab_idx: Option<usize>,
+    /// Path of folder IDs from root → destination folder. Empty = nothing
+    /// selected yet. Supports nested subfolders, not just top-level collections.
+    save_draft_target_path: Vec<String>,
+    /// User-editable name for the request being saved.
+    save_draft_name: String,
+    /// Free-text filter over the folder tree inside the save-draft modal.
+    save_draft_search: String,
+    /// When Some, the "New folder" inline input is showing; the string holds
+    /// the in-progress name. The new folder is created as a child of the
+    /// currently-selected folder (or at root if no folder is selected).
+    save_draft_new_folder_name: Option<String>,
+
+    /// Drag-resizable vertical split between the request-editor section
+    /// (top) and the response section (bottom). Units: logical pixels of
+    /// the request-editor section. Clamped at render time.
+    request_split_px: f32,
+
+    /// Response Body display mode — Raw (verbatim text) or Pretty
+    /// (JSON rendered as a collapsible tree).
+    body_view: BodyView,
+    /// Substring filter applied to the JSON tree view — matches keys
+    /// or leaf values. Empty = show everything.
+    body_tree_filter: String,
+    /// Search query for the JSON body view — highlights matches inline
+    /// rather than filtering out non-matches.
+    body_search_query: String,
+    /// Whether the inline search input is visible (toggled by the 🔍
+    /// icon button in the body toolbar).
+    body_search_visible: bool,
 }
 
 impl Default for ApiClient {
@@ -111,9 +155,12 @@ impl Default for ApiClient {
             environments: vec![],
             active_env_id: None,
             history: vec![],
+            drafts: vec![],
+            open_tabs: vec![],
+            active_tab_id: None,
         });
 
-        Self {
+        let mut this = Self {
             state,
             selected_folder_path: vec![],
             selected_request_id: None,
@@ -121,6 +168,14 @@ impl Default for ApiClient {
             response_text: String::new(),
             response_status: String::new(),
             response_time: String::new(),
+            response_headers_bytes: 0,
+            response_body_bytes: 0,
+            request_headers_bytes: 0,
+            request_body_bytes: 0,
+            response_prepare_ms: 0,
+            response_waiting_ms: 0,
+            response_download_ms: 0,
+            response_total_ms: 0,
             response_headers: vec![],
             is_loading: false,
             editing_url: String::new(),
@@ -132,6 +187,7 @@ impl Default for ApiClient {
             editing_cookies: vec![],
             editing_body_ext: None,
             editing_auth: Auth::None,
+            editing_extractors: vec![],
             editing_request_id_for_history: None,
             storage_path,
             request_promise: None,
@@ -151,7 +207,6 @@ impl Default for ApiClient {
             focus_search_next_frame: false,
             app_icon: None,
             macos_icon_set: false,
-            open_tabs: vec![],
             renaming_request_id: None,
             rename_request_text: String::new(),
             request_rename_focus_pending: false,
@@ -159,7 +214,33 @@ impl Default for ApiClient {
             pending_import: false,
             pending_export_json: false,
             pending_export_yaml: false,
+            save_draft_open: false,
+            save_draft_tab_idx: None,
+            save_draft_target_path: Vec::new(),
+            save_draft_name: String::new(),
+            save_draft_search: String::new(),
+            save_draft_new_folder_name: None,
+            request_split_px: 320.0,
+            body_view: BodyView::Json,
+            body_tree_filter: String::new(),
+            body_search_query: String::new(),
+            body_search_visible: false,
+        };
+        // Restore active tab — if state has a saved `active_tab_id`,
+        // activate that tab now. Otherwise fall back to the first open tab.
+        let active_tab: Option<OpenTab> = {
+            let id = this.state.active_tab_id.clone();
+            let by_id = id.and_then(|id| {
+                this.state.open_tabs.iter().find(|t| t.request_id == id).cloned()
+            });
+            by_id.or_else(|| this.state.open_tabs.first().cloned())
+        };
+        if let Some(tab) = active_tab {
+            this.selected_folder_path = tab.folder_path;
+            this.selected_request_id = Some(tab.request_id);
+            this.load_request_for_editing();
         }
+        this
     }
 }
 
@@ -170,7 +251,10 @@ impl ApiClient {
         serde_json::from_str(&data).ok()
     }
 
-    fn save_state(&self) {
+    fn save_state(&mut self) {
+        // Sync the active-tab id into state so the workspace restores to
+        // this tab on next launch.
+        self.state.active_tab_id = self.selected_request_id.clone();
         if let Some(parent) = self.storage_path.parent() {
             let _ = fs::create_dir_all(parent);
         }
@@ -193,8 +277,14 @@ impl ApiClient {
 
     fn get_current_request(&self) -> Option<Request> {
         let req_id = self.selected_request_id.as_ref()?;
+        // Draft path: selected_folder_path is empty → look up in drafts
         if self.selected_folder_path.is_empty() {
-            return None;
+            return self
+                .state
+                .drafts
+                .iter()
+                .find(|r| &r.id == req_id)
+                .cloned();
         }
         let mut folder = self
             .state
@@ -212,6 +302,14 @@ impl ApiClient {
         F: FnOnce(&mut Request),
     {
         if let Some(req_id) = self.selected_request_id.clone() {
+            // Draft case: update the draft in state.drafts.
+            if self.selected_folder_path.is_empty() {
+                if let Some(r) = self.state.drafts.iter_mut().find(|r| r.id == req_id) {
+                    updater(r);
+                    self.save_state();
+                }
+                return;
+            }
             if let Some(folder) = self.get_current_folder_mut() {
                 if let Some(request) = folder.requests.iter_mut().find(|r| r.id == req_id) {
                     updater(request);
@@ -231,6 +329,7 @@ impl ApiClient {
         let cookies = self.editing_cookies.clone();
         let body_ext = self.editing_body_ext.clone();
         let auth = self.editing_auth.clone();
+        let extractors = self.editing_extractors.clone();
         self.update_current_request(|req| {
             req.name = name;
             req.method = method;
@@ -241,6 +340,7 @@ impl ApiClient {
             req.cookies = cookies;
             req.body_ext = body_ext;
             req.auth = auth;
+            req.extractors = extractors;
         });
     }
 
@@ -262,6 +362,82 @@ impl ApiClient {
     fn active_environment(&self) -> Option<&Environment> {
         let id = self.state.active_env_id.as_ref()?;
         self.state.environments.iter().find(|e| &e.id == id)
+    }
+
+    /// Run the current request's extractors against the just-received
+    /// response and write each result into the active environment. A
+    /// toast summarizes how many values were captured so the user has
+    /// feedback that chaining actually happened.
+    fn apply_response_extractors(&mut self) {
+        let Some(req) = self.get_current_request() else { return };
+        if req.extractors.is_empty() {
+            return;
+        }
+        let Some(env_id) = self.state.active_env_id.clone() else {
+            return;
+        };
+
+        let body = self.response_text.clone();
+        let headers = self.response_headers.clone();
+        let status = self.response_status.clone();
+
+        let mut writes: Vec<(String, String)> = Vec::new();
+        let mut missed: Vec<String> = Vec::new();
+        for ex in &req.extractors {
+            if !ex.enabled {
+                continue;
+            }
+            let var = ex.variable.trim();
+            if var.is_empty() {
+                continue;
+            }
+            let value = match ex.source {
+                ExtractorSource::Body => extract::eval_body_path(&body, ex.expression.trim()),
+                ExtractorSource::Header => headers
+                    .iter()
+                    .find(|(k, _)| k.eq_ignore_ascii_case(ex.expression.trim()))
+                    .map(|(_, v)| v.clone()),
+                // Leading `HTTP/1.1 ` is stripped in response_status already;
+                // we still just write whatever is there verbatim.
+                ExtractorSource::Status => Some(
+                    status
+                        .split_whitespace()
+                        .next()
+                        .unwrap_or(&status)
+                        .to_string(),
+                ),
+            };
+            match value {
+                Some(v) => writes.push((var.to_string(), v)),
+                None => missed.push(var.to_string()),
+            }
+        }
+
+        if writes.is_empty() && missed.is_empty() {
+            return;
+        }
+
+        if let Some(env) = self
+            .state
+            .environments
+            .iter_mut()
+            .find(|e| e.id == env_id)
+        {
+            for (var, val) in &writes {
+                match env.variables.iter_mut().find(|kv| kv.key == *var) {
+                    Some(existing) => existing.value = val.clone(),
+                    None => env.variables.push(KvRow::new(var, val)),
+                }
+            }
+        }
+        self.save_state();
+
+        let msg = match (writes.len(), missed.len()) {
+            (n, 0) if n > 0 => format!("Extracted {} value(s)", n),
+            (0, m) if m > 0 => format!("Extractor missed: {}", missed.join(", ")),
+            (n, m) => format!("Extracted {}, missed {}", n, m),
+        };
+        self.show_toast(msg);
     }
 
     fn push_history_entry(&mut self) {
@@ -300,6 +476,7 @@ impl ApiClient {
 
     fn execute_request(request: &Request, env: Option<&Environment>) -> ResponseData {
         let rt = tokio::runtime::Runtime::new().unwrap();
+        let t_prepare_start = std::time::Instant::now();
 
         // Apply environment substitution to all string fields up-front.
         let final_url_base = substitute_vars(&request.url, env);
@@ -320,6 +497,11 @@ impl ApiClient {
 
         rt.block_on(async {
             let client = reqwest::Client::new();
+            // reqwest requires an absolute URL; a missing scheme surfaces
+            // as the opaque "builder error". Match Postman behavior and
+            // auto-prepend https:// so the user's `api.example.com/foo`
+            // just works.
+            let final_url_base = ensure_url_scheme(&final_url_base);
             let final_url = curl::build_full_url(&final_url_base, &sub_params);
 
             let mut req_builder = match request.method {
@@ -401,16 +583,74 @@ impl ApiClient {
                 }
             }
 
-            let start = std::time::Instant::now();
-            match req_builder.send().await {
+            // Build (but don't consume) the request so we can size the
+            // outgoing headers + body before firing it. reqwest adds a
+            // couple of default headers (Host, Accept, etc.) that also
+            // count toward request size.
+            let built = match req_builder.build() {
+                Ok(r) => r,
+                Err(e) => {
+                    return ResponseData {
+                        body: format!("Error: {}", e),
+                        status: "Failed".to_string(),
+                        time: "0ms".to_string(),
+                        headers: vec![],
+                        response_headers_bytes: 0,
+                        response_body_bytes: 0,
+                        request_headers_bytes: 0,
+                        request_body_bytes: 0,
+                        prepare_ms: 0,
+                        waiting_ms: 0,
+                        download_ms: 0,
+                        total_ms: 0,
+                    };
+                }
+            };
+            let req_line = format!(
+                "{} {} HTTP/1.1\r\n",
+                built.method(),
+                built
+                    .url()
+                    .as_str(),
+            );
+            let request_headers_bytes = req_line.len()
+                + built
+                    .headers()
+                    .iter()
+                    .map(|(k, v)| k.as_str().len() + 2 + v.as_bytes().len() + 2)
+                    .sum::<usize>()
+                + 2; // trailing CRLF between headers and body
+            let request_body_bytes = built
+                .body()
+                .and_then(|b| b.as_bytes())
+                .map(|b| b.len())
+                .unwrap_or(0);
+
+            let t_send = std::time::Instant::now();
+            let prepare_ms = t_send.saturating_duration_since(t_prepare_start).as_millis() as u64;
+            match client.execute(built).await {
                 Ok(response) => {
-                    let elapsed = start.elapsed();
+                    let t_headers = std::time::Instant::now();
+                    let waiting_ms = t_headers.saturating_duration_since(t_send).as_millis() as u64;
                     let status = format!(
                         "{} {}",
                         response.status().as_u16(),
                         response.status().canonical_reason().unwrap_or("")
                     );
-                    let time = format!("{}ms", elapsed.as_millis());
+
+                    // Status line + headers + trailing CRLF.
+                    let status_line = format!(
+                        "HTTP/1.1 {} {}\r\n",
+                        response.status().as_u16(),
+                        response.status().canonical_reason().unwrap_or(""),
+                    );
+                    let response_headers_bytes = status_line.len()
+                        + response
+                            .headers()
+                            .iter()
+                            .map(|(k, v)| k.as_str().len() + 2 + v.as_bytes().len() + 2)
+                            .sum::<usize>()
+                        + 2;
 
                     let headers: Vec<(String, String)> = response
                         .headers()
@@ -427,6 +667,11 @@ impl ApiClient {
                         .text()
                         .await
                         .unwrap_or_else(|e| format!("Error reading body: {}", e));
+                    let t_done = std::time::Instant::now();
+                    let download_ms = t_done.saturating_duration_since(t_headers).as_millis() as u64;
+                    let total_ms = t_done.saturating_duration_since(t_prepare_start).as_millis() as u64;
+                    let time = format!("{} ms", total_ms);
+                    let response_body_bytes = body.len();
                     let formatted_body =
                         match serde_json::from_str::<serde_json::Value>(&body) {
                             Ok(v) => serde_json::to_string_pretty(&v).unwrap_or(body),
@@ -438,13 +683,29 @@ impl ApiClient {
                         status,
                         time,
                         headers,
+                        response_headers_bytes,
+                        response_body_bytes,
+                        request_headers_bytes,
+                        request_body_bytes,
+                        prepare_ms,
+                        waiting_ms,
+                        download_ms,
+                        total_ms,
                     }
                 }
                 Err(e) => ResponseData {
-                    body: format!("Error: {}", e),
+                    body: format_request_error(&e),
                     status: "Failed".to_string(),
                     time: "0ms".to_string(),
                     headers: vec![],
+                    response_headers_bytes: 0,
+                    response_body_bytes: 0,
+                    request_headers_bytes,
+                    request_body_bytes,
+                    prepare_ms,
+                    waiting_ms: 0,
+                    download_ms: 0,
+                    total_ms: prepare_ms,
                 },
             }
         })
@@ -461,6 +722,7 @@ impl ApiClient {
             self.editing_cookies = r.cookies;
             self.editing_body_ext = r.body_ext;
             self.editing_auth = r.auth;
+            self.editing_extractors = r.extractors;
             self.editing_request_id_for_history = Some(r.id);
             // Capture method for history entry too
             let _ = r.method;
@@ -472,12 +734,12 @@ impl ApiClient {
     }
 
     fn open_request(&mut self, folder_path: Vec<String>, request_id: String) {
-        if let Some(existing) = self.open_tabs.iter().position(|t| t.request_id == request_id) {
-            let tab = self.open_tabs[existing].clone();
+        if let Some(existing) = self.state.open_tabs.iter().position(|t| t.request_id == request_id) {
+            let tab = self.state.open_tabs[existing].clone();
             self.selected_folder_path = tab.folder_path;
             self.selected_request_id = Some(tab.request_id);
         } else {
-            self.open_tabs.push(OpenTab {
+            self.state.open_tabs.push(OpenTab {
                 folder_path: folder_path.clone(),
                 request_id: request_id.clone(),
             });
@@ -492,17 +754,22 @@ impl ApiClient {
     }
 
     fn close_tab(&mut self, idx: usize) {
-        if idx >= self.open_tabs.len() {
+        if idx >= self.state.open_tabs.len() {
             return;
         }
-        let closing = self.open_tabs.remove(idx);
+        let closing = self.state.open_tabs.remove(idx);
+        // If it was a draft, discard the draft entirely (user chose to
+        // close without saving).
+        if closing.folder_path.is_empty() {
+            self.state.drafts.retain(|d| d.id != closing.request_id);
+        }
         let was_active = self.selected_request_id.as_deref() == Some(closing.request_id.as_str());
         if was_active {
-            if self.open_tabs.is_empty() {
+            if self.state.open_tabs.is_empty() {
                 self.clear_selection();
             } else {
-                let new_idx = idx.min(self.open_tabs.len() - 1);
-                let tab = self.open_tabs[new_idx].clone();
+                let new_idx = idx.min(self.state.open_tabs.len() - 1);
+                let tab = self.state.open_tabs[new_idx].clone();
                 self.selected_folder_path = tab.folder_path;
                 self.selected_request_id = Some(tab.request_id);
                 self.load_request_for_editing();
@@ -515,29 +782,54 @@ impl ApiClient {
     }
 
     fn close_other_tabs(&mut self, keep_idx: usize) {
-        if keep_idx >= self.open_tabs.len() {
+        if keep_idx >= self.state.open_tabs.len() {
             return;
         }
-        let keep = self.open_tabs.remove(keep_idx);
-        self.open_tabs.clear();
-        self.open_tabs.push(keep.clone());
+        let keep = self.state.open_tabs.remove(keep_idx);
+        // Discard any draft requests whose tabs are about to be closed.
+        let keep_id = keep.request_id.clone();
+        let draft_ids: Vec<String> = self
+            .state
+            .open_tabs
+            .iter()
+            .filter(|t| t.folder_path.is_empty())
+            .map(|t| t.request_id.clone())
+            .collect();
+        self.state
+            .drafts
+            .retain(|d| d.id == keep_id || !draft_ids.contains(&d.id));
+        self.state.open_tabs.clear();
+        self.state.open_tabs.push(keep.clone());
         self.selected_folder_path = keep.folder_path;
         self.selected_request_id = Some(keep.request_id);
         self.load_request_for_editing();
     }
 
     fn close_all_tabs(&mut self) {
-        self.open_tabs.clear();
+        // Discard all drafts (they're only alive because they had a tab).
+        let draft_ids: Vec<String> = self
+            .state
+            .open_tabs
+            .iter()
+            .filter(|t| t.folder_path.is_empty())
+            .map(|t| t.request_id.clone())
+            .collect();
+        self.state.drafts.retain(|d| !draft_ids.contains(&d.id));
+        self.state.open_tabs.clear();
         self.clear_selection();
     }
 
     fn prune_stale_tabs(&mut self) {
-        let folders = &self.state.folders;
-        self.open_tabs
-            .retain(|t| find_request_info(folders, &t.folder_path, &t.request_id).is_some());
+        // Collect the data we need before the retain closure (so we don't
+        // borrow `self.state.open_tabs` mutably at the same time).
+        let folders = self.state.folders.clone();
+        let drafts = self.state.drafts.clone();
+        self.state.open_tabs.retain(|t| {
+            find_request_info(&folders, &drafts, &t.folder_path, &t.request_id).is_some()
+        });
         if let Some(rid) = self.selected_request_id.clone() {
-            if !self.open_tabs.iter().any(|t| t.request_id == rid) {
-                if let Some(first) = self.open_tabs.first().cloned() {
+            if !self.state.open_tabs.iter().any(|t| t.request_id == rid) {
+                if let Some(first) = self.state.open_tabs.first().cloned() {
                     self.selected_folder_path = first.folder_path;
                     self.selected_request_id = Some(first.request_id);
                     self.load_request_for_editing();
@@ -684,10 +976,11 @@ impl eframe::App for ApiClient {
             self.do_export_all(io::Format::Yaml);
         }
 
-        let (cmd_enter, cmd_k, f2) = ctx.input(|i| {
+        let (cmd_enter, cmd_k, cmd_s, f2) = ctx.input(|i| {
             (
                 i.modifiers.command && i.key_pressed(egui::Key::Enter),
                 i.modifiers.command && i.key_pressed(egui::Key::K),
+                i.modifiers.command && i.key_pressed(egui::Key::S),
                 i.key_pressed(egui::Key::F2),
             )
         });
@@ -696,6 +989,25 @@ impl eframe::App for ApiClient {
         }
         if cmd_k {
             self.focus_search_next_frame = true;
+        }
+        // Cmd/Ctrl+S — if the active tab is a draft, open the Save-draft
+        // modal to pick a destination collection. Saved requests are
+        // auto-persisted to disk on every edit so this shortcut is a no-op
+        // for them (other than a confirmation toast).
+        if cmd_s && self.selected_request_id.is_some() {
+            if self.selected_folder_path.is_empty() {
+                let draft_id = self.selected_request_id.clone().unwrap();
+                if let Some(idx) = self
+                    .state
+                    .open_tabs
+                    .iter()
+                    .position(|t| t.is_draft() && t.request_id == draft_id)
+                {
+                    self.begin_save_draft(idx);
+                }
+            } else {
+                self.show_toast("Saved");
+            }
         }
         // F2 — rename the active request (VS Code / Finder convention)
         if f2 && self.renaming_request_id.is_none() {
@@ -741,9 +1053,18 @@ impl eframe::App for ApiClient {
                 self.response_status = r.status.clone();
                 self.response_time = r.time.clone();
                 self.response_headers = r.headers.clone();
+                self.response_headers_bytes = r.response_headers_bytes;
+                self.response_body_bytes = r.response_body_bytes;
+                self.request_headers_bytes = r.request_headers_bytes;
+                self.request_body_bytes = r.request_body_bytes;
+                self.response_prepare_ms = r.prepare_ms;
+                self.response_waiting_ms = r.waiting_ms;
+                self.response_download_ms = r.download_ms;
+                self.response_total_ms = r.total_ms;
                 self.is_loading = false;
                 self.request_promise = None;
                 self.push_history_entry();
+                self.apply_response_extractors();
             } else {
                 ctx.request_repaint();
             }
@@ -751,11 +1072,28 @@ impl eframe::App for ApiClient {
 
         theme::apply_style(ctx);
 
+        // Paint the ENTIRE window background with C_BG before any panels
+        // render. egui leaves a ~50-60 logical-pixel "gutter" between
+        // `SidePanel::left` and `CentralPanel` (for separator/resize
+        // reservation) that neither panel's fill covers — without this
+        // base-layer paint, that gutter surfaces as egui's default
+        // near-black. Using the background layer ensures panels draw on top
+        // of our fill, not the other way around.
+        {
+            let screen_rect = ctx.screen_rect();
+            ctx.layer_painter(egui::LayerId::background()).rect_filled(
+                screen_rect,
+                egui::Rounding::ZERO,
+                C_BG,
+            );
+        }
+
         self.render_sidebar(ctx);
         self.render_snippet_panel(ctx);
         self.render_central(ctx);
         self.render_paste_modal(ctx);
         self.render_env_modal(ctx);
+        self.render_save_draft_modal(ctx);
         self.render_toast(ctx);
     }
 }
@@ -763,19 +1101,33 @@ impl eframe::App for ApiClient {
 impl ApiClient {
     fn render_sidebar(&mut self, ctx: &egui::Context) {
         egui::SidePanel::left("sidebar")
-            // Pinned width — egui's `resizable(true)` lets the right-edge
-            // hover style (1px stroke) feed back into `ui.available_width()`
-            // calculations inside the panel, which causes the panel to
-            // visibly shift on pointer movement. Keep it stable.
-            .exact_width(320.0)
-            .resizable(false)
-            .show_separator_line(true)
+            .default_width(320.0)
+            .width_range(260.0..=640.0)
+            .resizable(true)
+            // Disabled — egui adds a gutter/reserve region around the
+            // separator line that used to surface as a dark strip between
+            // sidebar and central panel. The base-layer bg paint in
+            // update() plus matching panel colors make the boundary invisible
+            // without the separator.
+            .show_separator_line(false)
             .frame(
                 egui::Frame::none()
                     .fill(C_PANEL)
-                    .inner_margin(egui::Margin::symmetric(10.0, 10.0)),
+                    // Asymmetric: less right-padding so sidebar content
+                    // butts close to the (invisible) boundary with central.
+                    .inner_margin(egui::Margin {
+                        left: 10.0,
+                        right: 4.0,
+                        top: 10.0,
+                        bottom: 10.0,
+                    }),
             )
             .show(ctx, |ui| {
+                // Defensive floor — paint the full sidebar rect before any
+                // children, so scroll tracks / code editors etc. don't
+                // surface with egui-default near-black fills.
+                ui.painter()
+                    .rect_filled(ui.max_rect(), egui::Rounding::ZERO, C_PANEL);
                 ui.add_space(4.0);
                 ui.horizontal(|ui| {
                     if let Some(tex) = &self.app_icon {
@@ -795,42 +1147,48 @@ impl ApiClient {
                 ui.add_space(6.0);
                 self.render_environment_picker(ui);
                 ui.add_space(8.0);
+                // Tab toggle. Use fixed-size Buttons (not `selectable_label`)
+                // so the width doesn't shift when the selected state changes.
                 ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 4.0;
                     let v = self.sidebar_view;
-                    if ui
-                        .selectable_label(
-                            v == SidebarView::Collections,
-                            egui::RichText::new(format!(
-                                "Collections ({})",
-                                self.state.folders.len()
-                            ))
+                    let tab_size = egui::vec2(130.0, 24.0);
+
+                    let coll_label = format!("Collections ({})", self.state.folders.len());
+                    let coll_selected = v == SidebarView::Collections;
+                    let coll_btn = egui::Button::new(
+                        egui::RichText::new(coll_label)
                             .size(12.0)
-                            .strong()
-                            .color(if v == SidebarView::Collections {
-                                C_ACCENT
-                            } else {
-                                C_MUTED
-                            }),
-                        )
-                        .clicked()
-                    {
+                            .color(if coll_selected { C_ACCENT } else { C_MUTED }),
+                    )
+                    .fill(if coll_selected {
+                        C_ACCENT.linear_multiply(0.15)
+                    } else {
+                        egui::Color32::TRANSPARENT
+                    })
+                    .stroke(egui::Stroke::NONE)
+                    .rounding(egui::Rounding::same(5.0))
+                    .min_size(tab_size);
+                    if ui.add(coll_btn).clicked() {
                         self.sidebar_view = SidebarView::Collections;
                     }
-                    ui.add_space(8.0);
-                    if ui
-                        .selectable_label(
-                            v == SidebarView::History,
-                            egui::RichText::new(format!("History ({})", self.state.history.len()))
-                                .size(12.0)
-                                .strong()
-                                .color(if v == SidebarView::History {
-                                    C_ACCENT
-                                } else {
-                                    C_MUTED
-                                }),
-                        )
-                        .clicked()
-                    {
+
+                    let hist_label = format!("History ({})", self.state.history.len());
+                    let hist_selected = v == SidebarView::History;
+                    let hist_btn = egui::Button::new(
+                        egui::RichText::new(hist_label)
+                            .size(12.0)
+                            .color(if hist_selected { C_ACCENT } else { C_MUTED }),
+                    )
+                    .fill(if hist_selected {
+                        C_ACCENT.linear_multiply(0.15)
+                    } else {
+                        egui::Color32::TRANSPARENT
+                    })
+                    .stroke(egui::Stroke::NONE)
+                    .rounding(egui::Rounding::same(5.0))
+                    .min_size(tab_size);
+                    if ui.add(hist_btn).clicked() {
                         self.sidebar_view = SidebarView::History;
                     }
                 });
@@ -936,18 +1294,27 @@ impl ApiClient {
                 ui.add_space(10.0);
 
                 ui.horizontal(|ui| {
-                    let clear_w = if self.search_query.is_empty() { 0.0 } else { 26.0 };
+                    ui.spacing_mut().item_spacing.x = 4.0;
+                    // Hand-drawn magnifying-glass icon — avoids emoji-font
+                    // fallback that looks pixelated in egui's default font.
+                    let (icon_rect, _) = ui.allocate_exact_size(
+                        egui::vec2(18.0, 24.0),
+                        egui::Sense::hover(),
+                    );
+                    paint_search_icon(ui.painter(), icon_rect.center(), C_MUTED);
+
+                    let clear_w = if self.search_query.is_empty() { 0.0 } else { 22.0 };
                     let search_resp = ui.add(
                         egui::TextEdit::singleline(&mut self.search_query)
                             .desired_width(ui.available_width() - clear_w)
-                            .hint_text("🔎 Search (⌘K)"),
+                            .hint_text("Search (⌘K)"),
                     );
                     if self.focus_search_next_frame {
                         self.focus_search_next_frame = false;
                         search_resp.request_focus();
                     }
                     if !self.search_query.is_empty()
-                        && ui.small_button("✕").on_hover_text("Clear search").clicked()
+                        && close_x_button(ui, "Clear search").clicked()
                     {
                         self.search_query.clear();
                     }
@@ -963,13 +1330,29 @@ impl ApiClient {
 
                 ui.add_space(6.0);
 
+                // Scroll with trackpad / wheel. Bar is hidden entirely —
+                // `VisibleWhenNeeded` was causing visible width shifts when
+                // the bar faded in/out on pointer hover, which showed as the
+                // sidebar "resizing on pointer move".
                 egui::ScrollArea::vertical()
                     .id_salt("sidebar_scroll")
                     .auto_shrink([false, false])
                     .scroll_bar_visibility(
-                        egui::scroll_area::ScrollBarVisibility::VisibleWhenNeeded,
+                        egui::scroll_area::ScrollBarVisibility::AlwaysHidden,
                     )
                     .show(ui, |ui| {
+                        // Section header — small uppercase label so users can
+                        // distinguish *collections* (top-level) from
+                        // *folders* (nested) at a glance.
+                        ui.add_space(4.0);
+                        ui.label(
+                            egui::RichText::new("COLLECTIONS")
+                                .size(10.5)
+                                .strong()
+                                .color(C_MUTED),
+                        );
+                        ui.add_space(4.0);
+
                         let folders = self.state.folders.clone();
                         let query = self.search_query.to_lowercase();
                         for folder in &folders {
@@ -1088,27 +1471,23 @@ impl ApiClient {
                         ui.painter()
                             .rect_filled(rect, egui::Rounding::same(6.0), bg);
 
-                        // Method pill
-                        let pill_w = 50.0;
-                        let pill_h = 18.0;
-                        let pill_rect = egui::Rect::from_min_size(
-                            egui::pos2(rect.left() + 8.0, rect.top() + 8.0),
-                            egui::vec2(pill_w, pill_h),
-                        );
-                        ui.painter()
-                            .rect_filled(pill_rect, egui::Rounding::same(4.0), mc);
+                        // Method as colored text (no pill bg)
+                        let method_left = rect.left() + 10.0;
+                        let method_y = rect.top() + 17.0;
+                        let method_font =
+                            egui::FontId::new(10.0, egui::FontFamily::Proportional);
                         ui.painter().text(
-                            pill_rect.center(),
-                            egui::Align2::CENTER_CENTER,
+                            egui::pos2(method_left, method_y),
+                            egui::Align2::LEFT_CENTER,
                             format!("{}", entry.method),
-                            egui::FontId::new(10.0, egui::FontFamily::Proportional),
-                            pill_text_color(mc),
+                            method_font,
+                            mc,
                         );
 
-                        // Status + time on the right of the pill row
+                        // Status + time on the right
                         let info = format!("{}  ·  {}ms", entry.status, entry.time_ms);
                         ui.painter().text(
-                            egui::pos2(pill_rect.right() + 8.0, pill_rect.center().y),
+                            egui::pos2(method_left + 46.0, method_y),
                             egui::Align2::LEFT_CENTER,
                             info,
                             egui::FontId::new(11.0, egui::FontFamily::Proportional),
@@ -1305,6 +1684,13 @@ impl ApiClient {
                     .inner_margin(egui::Margin::symmetric(0.0, 0.0)),
             )
             .show(ctx, |ui| {
+            // Defensive floor: paint the full panel rect with C_BG BEFORE
+            // any children render. Without this, if any child widget (scroll
+            // track, code editor, etc.) leaves a sub-region with an
+            // un-themed dark/transparent fill, the OS default (near-black)
+            // bleeds through as a "black strip".
+            ui.painter()
+                .rect_filled(ui.max_rect(), egui::Rounding::ZERO, C_BG);
             self.render_tabs_bar(ui);
             if self.selected_request_id.is_none() {
                 ui.centered_and_justified(|ui| {
@@ -1338,24 +1724,85 @@ impl ApiClient {
             }
 
             egui::Frame::none()
-                .inner_margin(egui::Margin::symmetric(14.0, 10.0))
+                .inner_margin(egui::Margin {
+                    // Tight left margin — sidebar ends here, we want central
+                    // content to start right after without a visible dead
+                    // zone. The background layer paints C_BG underneath so
+                    // the tiny sliver between panels is invisible.
+                    left: 10.0,
+                    right: 16.0,
+                    top: 10.0,
+                    bottom: 8.0,
+                })
                 .show(ui, |ui| {
                     self.render_url_bar(ui);
-                    ui.add_space(10.0);
-                    self.render_request_tabs(ui);
-                    ui.add_space(10.0);
+                    ui.add_space(8.0);
+
+                    // Vertical split with a draggable handle between
+                    // the request-editor section (top) and the response
+                    // section (bottom) — Postman-style.
+                    let drag_handle_h: f32 = 5.0;
+                    let min_req = 160.0_f32;
+                    let min_resp = 140.0_f32;
+                    let total_h = ui.available_height();
+                    let max_req =
+                        (total_h - drag_handle_h - min_resp).max(min_req);
+                    self.request_split_px =
+                        self.request_split_px.clamp(min_req, max_req);
+                    let req_h = self.request_split_px;
+
+                    // Top: request editor
+                    ui.allocate_ui(
+                        egui::vec2(ui.available_width(), req_h),
+                        |ui| {
+                            self.render_request_tabs(ui);
+                        },
+                    );
+
+                    // Drag handle — 5px-tall invisible strip with a
+                    // 1px accent line painted in the middle. Cursor
+                    // changes to ResizeRow on hover.
+                    let handle_resp = ui.allocate_response(
+                        egui::vec2(ui.available_width(), drag_handle_h),
+                        egui::Sense::drag(),
+                    );
+                    if handle_resp.hovered() || handle_resp.dragged() {
+                        ui.output_mut(|o| {
+                            o.cursor_icon = egui::CursorIcon::ResizeRow;
+                        });
+                    }
+                    if ui.is_rect_visible(handle_resp.rect) {
+                        let line_y = handle_resp.rect.center().y;
+                        let line_color = if handle_resp.hovered()
+                            || handle_resp.dragged()
+                        {
+                            C_ACCENT
+                        } else {
+                            C_BORDER
+                        };
+                        ui.painter().line_segment(
+                            [
+                                egui::pos2(handle_resp.rect.left() + 20.0, line_y),
+                                egui::pos2(handle_resp.rect.right() - 20.0, line_y),
+                            ],
+                            egui::Stroke::new(1.0, line_color),
+                        );
+                    }
+                    if handle_resp.dragged() {
+                        self.request_split_px = (self.request_split_px
+                            + handle_resp.drag_delta().y)
+                            .clamp(min_req, max_req);
+                    }
+
+                    // Bottom: response section fills the rest.
                     self.render_response(ui);
                 });
         });
     }
 
     fn render_tabs_bar(&mut self, ui: &mut egui::Ui) {
-        // Skip the tabs bar entirely when nothing is open — this removes the
-        // dark strip above the empty state that otherwise looks like wasted
-        // space.
-        if self.open_tabs.is_empty() {
-            return;
-        }
+        // Always render the tabs bar — the "+" button lives here so users
+        // can create a new unsaved draft request at any time.
         let bar_height = 38.0;
         egui::Frame::none()
             .fill(C_PANEL_DARK)
@@ -1373,6 +1820,8 @@ impl ApiClient {
                 let mut close: Option<usize> = None;
                 let mut close_others: Option<usize> = None;
                 let mut close_all = false;
+                let mut new_draft = false;
+                let mut save_draft: Option<usize> = None;
 
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 4.0;
@@ -1385,35 +1834,79 @@ impl ApiClient {
                         .show(ui, |ui| {
                             ui.horizontal(|ui| {
                                 ui.spacing_mut().item_spacing.x = 4.0;
-                                let tabs_snapshot = self.open_tabs.clone();
+                                let tabs_snapshot = self.state.open_tabs.clone();
                                 for (i, tab) in tabs_snapshot.iter().enumerate() {
                                     let info = find_request_info(
                                         &self.state.folders,
+                                        &self.state.drafts,
                                         &tab.folder_path,
                                         &tab.request_id,
                                     );
-                                    let (method, name) = info
-                                        .clone()
-                                        .unwrap_or((HttpMethod::GET, "(missing)".to_string()));
+                                    let (method, name, url) = info.clone().unwrap_or((
+                                        HttpMethod::GET,
+                                        "(missing)".to_string(),
+                                        String::new(),
+                                    ));
                                     let is_active = self.selected_request_id.as_deref()
                                         == Some(tab.request_id.as_str());
 
-                                    let action =
-                                        render_single_tab(ui, i, &method, &name, is_active);
+                                    let action = render_single_tab(
+                                        ui,
+                                        i,
+                                        &method,
+                                        &name,
+                                        &url,
+                                        is_active,
+                                        tab.is_draft(),
+                                    );
                                     match action {
                                         TabAction::Activate => activate = Some(i),
                                         TabAction::Close => close = Some(i),
                                         TabAction::CloseOthers => close_others = Some(i),
                                         TabAction::CloseAll => close_all = true,
+                                        TabAction::SaveDraft => save_draft = Some(i),
                                         TabAction::None => {}
                                     }
+                                }
+
+                                // "+" button — creates a new Untitled draft.
+                                ui.add_space(2.0);
+                                let (plus_rect, plus_resp) = ui.allocate_exact_size(
+                                    egui::vec2(30.0, 28.0),
+                                    egui::Sense::click(),
+                                );
+                                if ui.is_rect_visible(plus_rect) {
+                                    let hovered = plus_resp.hovered();
+                                    // Neutral hover — subtle elevated grey,
+                                    // matching Postman's "new tab" button.
+                                    if hovered {
+                                        ui.painter().rect_filled(
+                                            plus_rect,
+                                            egui::Rounding::same(4.0),
+                                            C_ELEVATED,
+                                        );
+                                    }
+                                    let color = if hovered { C_TEXT } else { C_MUTED };
+                                    ui.painter().text(
+                                        plus_rect.center(),
+                                        egui::Align2::CENTER_CENTER,
+                                        "+",
+                                        egui::FontId::new(18.0, egui::FontFamily::Proportional),
+                                        color,
+                                    );
+                                }
+                                if plus_resp
+                                    .on_hover_text("New request (unsaved)")
+                                    .clicked()
+                                {
+                                    new_draft = true;
                                 }
                             });
                         });
                 });
 
                 if let Some(i) = activate {
-                    if let Some(tab) = self.open_tabs.get(i).cloned() {
+                    if let Some(tab) = self.state.open_tabs.get(i).cloned() {
                         self.selected_folder_path = tab.folder_path;
                         self.selected_request_id = Some(tab.request_id);
                         self.load_request_for_editing();
@@ -1432,7 +1925,448 @@ impl ApiClient {
                 if close_all {
                     self.close_all_tabs();
                 }
+                if new_draft {
+                    self.new_draft_request();
+                }
+                if let Some(idx) = save_draft {
+                    self.begin_save_draft(idx);
+                }
             });
+    }
+
+    /// Open the "Save to folder" modal for the draft at tab index `idx`.
+    fn begin_save_draft(&mut self, idx: usize) {
+        let Some(tab) = self.state.open_tabs.get(idx).cloned() else {
+            return;
+        };
+        if !tab.folder_path.is_empty() {
+            return; // not actually a draft
+        }
+        let Some(draft) = self.state.drafts.iter().find(|d| d.id == tab.request_id).cloned()
+        else {
+            return;
+        };
+        self.save_draft_open = true;
+        self.save_draft_tab_idx = Some(idx);
+        self.save_draft_name = if draft.name.is_empty() || draft.name == "Untitled" {
+            "New Request".to_string()
+        } else {
+            draft.name
+        };
+        // Default to the first top-level collection if any.
+        self.save_draft_target_path = self
+            .state
+            .folders
+            .first()
+            .map(|f| vec![f.id.clone()])
+            .unwrap_or_default();
+        self.save_draft_search.clear();
+        self.save_draft_new_folder_name = None;
+    }
+
+    fn render_save_draft_modal(&mut self, ctx: &egui::Context) {
+        if !self.save_draft_open {
+            return;
+        }
+        let mut open = self.save_draft_open;
+        let mut do_save = false;
+        let mut do_cancel = false;
+        let mut create_folder: Option<(Vec<String>, String)> = None;
+
+        egui::Window::new(
+            egui::RichText::new("SAVE REQUEST").size(12.0).strong().color(C_MUTED),
+        )
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(false)
+            .default_width(560.0)
+            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .show(ctx, |ui| {
+                ui.set_min_width(540.0);
+
+                // Name
+                ui.label(egui::RichText::new("Request name").size(11.0).color(C_MUTED));
+                let name_resp = ui.add(
+                    egui::TextEdit::singleline(&mut self.save_draft_name)
+                        .desired_width(f32::INFINITY),
+                );
+                ui.add_space(10.0);
+
+                // Breadcrumb
+                let breadcrumb = self.save_draft_breadcrumb();
+                ui.label(
+                    egui::RichText::new(format!("Save to  {}", breadcrumb))
+                        .size(12.0)
+                        .color(C_TEXT),
+                );
+                ui.add_space(6.0);
+
+                // Search
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.save_draft_search)
+                        .hint_text("Search for collection or folder")
+                        .desired_width(f32::INFINITY),
+                );
+                ui.add_space(6.0);
+
+                // Folder tree (scrollable)
+                egui::Frame::none()
+                    .fill(C_PANEL_DARK)
+                    .stroke(egui::Stroke::new(1.0, C_BORDER))
+                    .rounding(egui::Rounding::same(6.0))
+                    .inner_margin(4.0)
+                    .show(ui, |ui| {
+                        ui.set_width(ui.available_width());
+                        egui::ScrollArea::vertical()
+                            .id_salt("save_draft_tree")
+                            .max_height(260.0)
+                            .auto_shrink([false, false])
+                            .show(ui, |ui| {
+                                ui.set_width(ui.available_width());
+                                let folders = self.state.folders.clone();
+                                let query = self.save_draft_search.to_lowercase();
+                                for f in &folders {
+                                    Self::render_save_tree_row(
+                                        ui,
+                                        f,
+                                        &mut vec![],
+                                        &mut self.save_draft_target_path,
+                                        &query,
+                                    );
+                                }
+                            });
+                    });
+
+                ui.add_space(8.0);
+
+                // New folder — either show the "+ New folder" button or,
+                // if the user clicked it, an inline input with Create/Cancel.
+                let mut cancel_new_folder = false;
+                if let Some(name) = self.save_draft_new_folder_name.as_mut() {
+                    let target_path_snapshot = self.save_draft_target_path.clone();
+                    ui.horizontal(|ui| {
+                        ui.add(
+                            egui::TextEdit::singleline(name)
+                                .hint_text("New folder name")
+                                .desired_width(260.0),
+                        );
+                        let enabled = !name.trim().is_empty();
+                        if ui
+                            .add_enabled(
+                                enabled,
+                                egui::Button::new(
+                                    egui::RichText::new("Create").color(egui::Color32::WHITE),
+                                )
+                                .fill(if enabled { C_ACCENT } else { C_ELEVATED })
+                                .min_size(egui::vec2(72.0, 26.0)),
+                            )
+                            .clicked()
+                        {
+                            create_folder =
+                                Some((target_path_snapshot.clone(), name.trim().to_string()));
+                        }
+                        if ui.button("Cancel").clicked() {
+                            cancel_new_folder = true;
+                        }
+                    });
+                } else if ui
+                    .add(
+                        egui::Button::new(
+                            egui::RichText::new("+ New folder").size(12.0).color(C_ACCENT),
+                        )
+                        .fill(egui::Color32::TRANSPARENT)
+                        .stroke(egui::Stroke::NONE),
+                    )
+                    .clicked()
+                {
+                    self.save_draft_new_folder_name = Some(String::new());
+                }
+                if cancel_new_folder {
+                    self.save_draft_new_folder_name = None;
+                }
+
+                ui.add_space(8.0);
+                ui.separator();
+                ui.add_space(6.0);
+
+                // Save / Cancel
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.button("Cancel").clicked() {
+                        do_cancel = true;
+                    }
+                    let can_save = !self.save_draft_target_path.is_empty()
+                        && !self.save_draft_name.trim().is_empty();
+                    let save_btn = egui::Button::new(
+                        egui::RichText::new("Save")
+                            .color(egui::Color32::WHITE)
+                            .strong(),
+                    )
+                    .fill(if can_save { C_ACCENT } else { C_ELEVATED })
+                    .min_size(egui::vec2(80.0, 28.0));
+                    if ui.add_enabled(can_save, save_btn).clicked() {
+                        do_save = true;
+                    }
+                });
+
+                ui.input(|i| {
+                    if i.key_pressed(egui::Key::Escape) {
+                        do_cancel = true;
+                    }
+                });
+
+                if !name_resp.has_focus()
+                    && self.save_draft_tab_idx.is_some()
+                    && !do_save
+                    && !do_cancel
+                    && self.save_draft_search.is_empty()
+                    && self.save_draft_new_folder_name.is_none()
+                {
+                    name_resp.request_focus();
+                }
+            });
+        self.save_draft_open = open;
+
+        // Create the new folder outside the UI closure to avoid borrow
+        // conflicts (we were holding `&self.state.folders` immutably while
+        // iterating the tree).
+        if let Some((parent_path, folder_name)) = create_folder {
+            let new_id = Uuid::new_v4().to_string();
+            let new_folder = Folder {
+                id: new_id.clone(),
+                name: folder_name,
+                requests: vec![],
+                subfolders: vec![],
+            };
+            let inserted = if parent_path.is_empty() {
+                self.state.folders.push(new_folder);
+                true
+            } else if let Some(parent) = self.folder_at_path_mut(&parent_path) {
+                parent.subfolders.push(new_folder);
+                true
+            } else {
+                false
+            };
+            if inserted {
+                let mut new_path = parent_path.clone();
+                new_path.push(new_id);
+                self.save_draft_target_path = new_path;
+                self.save_draft_new_folder_name = None;
+                self.save_state();
+            }
+        }
+
+        if do_save {
+            self.commit_save_draft();
+        }
+        if do_cancel || !self.save_draft_open {
+            self.save_draft_open = false;
+            self.save_draft_tab_idx = None;
+            self.save_draft_target_path.clear();
+            self.save_draft_name.clear();
+            self.save_draft_search.clear();
+            self.save_draft_new_folder_name = None;
+        }
+    }
+
+    /// Human-readable breadcrumb of the currently-selected destination
+    /// folder path, e.g. "Personal / API v2 / Search".
+    fn save_draft_breadcrumb(&self) -> String {
+        if self.save_draft_target_path.is_empty() {
+            return "(select a folder)".to_string();
+        }
+        let mut parts: Vec<String> = Vec::new();
+        let mut current: Option<&Folder> = None;
+        for (depth, id) in self.save_draft_target_path.iter().enumerate() {
+            let found = if depth == 0 {
+                self.state.folders.iter().find(|f| &f.id == id)
+            } else {
+                current.and_then(|c| c.subfolders.iter().find(|f| &f.id == id))
+            };
+            match found {
+                Some(f) => {
+                    parts.push(f.name.clone());
+                    current = Some(f);
+                }
+                None => break,
+            }
+        }
+        parts.join(" / ")
+    }
+
+    /// Recursively render one row of the save-draft folder tree. `path`
+    /// is the running path from root down to (not including) `folder`;
+    /// `target` is the currently-selected destination that this row will
+    /// update when clicked.
+    fn render_save_tree_row(
+        ui: &mut egui::Ui,
+        folder: &Folder,
+        path: &mut Vec<String>,
+        target: &mut Vec<String>,
+        query: &str,
+    ) {
+        let mut this_path = path.clone();
+        this_path.push(folder.id.clone());
+
+        // Filter: show row if self or any descendant matches the query.
+        let matches_self = query.is_empty() || folder.name.to_lowercase().contains(query);
+        let matches_descendant = !query.is_empty()
+            && folder.subfolders.iter().any(|f| Self::subtree_has_match(f, query));
+        if !matches_self && !matches_descendant {
+            return;
+        }
+
+        let depth = path.len();
+        let is_selected = *target == this_path;
+        let row_h = 28.0;
+        let indent = 14.0 * depth as f32 + 8.0;
+
+        let (rect, resp) = ui.allocate_exact_size(
+            egui::vec2(ui.available_width(), row_h),
+            egui::Sense::click(),
+        );
+        if ui.is_rect_visible(rect) {
+            let bg = if is_selected {
+                C_ACCENT.linear_multiply(0.18)
+            } else if resp.hovered() {
+                C_ELEVATED
+            } else {
+                egui::Color32::TRANSPARENT
+            };
+            ui.painter()
+                .rect_filled(rect, egui::Rounding::same(4.0), bg);
+            let icon_x = rect.left() + indent;
+            let text_y = rect.center().y;
+            // Folder icon — painter-drawn (two stacked rounded rects) so
+            // we don't depend on unicode glyphs egui's bundled font
+            // doesn't ship (e.g. `▸` rendered as a tofu square).
+            let icon_body = egui::Rect::from_min_size(
+                egui::pos2(icon_x, text_y - 4.0),
+                egui::vec2(14.0, 10.0),
+            );
+            let icon_tab = egui::Rect::from_min_size(
+                egui::pos2(icon_x, text_y - 7.0),
+                egui::vec2(6.0, 3.5),
+            );
+            let icon_color = if is_selected { C_ACCENT } else { C_MUTED };
+            ui.painter()
+                .rect_filled(icon_tab, egui::Rounding::same(1.5), icon_color);
+            ui.painter()
+                .rect_filled(icon_body, egui::Rounding::same(2.0), icon_color);
+            ui.painter().text(
+                egui::pos2(icon_x + 20.0, text_y),
+                egui::Align2::LEFT_CENTER,
+                &folder.name,
+                egui::FontId::proportional(13.0),
+                C_TEXT,
+            );
+        }
+        if resp.clicked() {
+            *target = this_path.clone();
+        }
+
+        // Recurse into subfolders.
+        if !folder.subfolders.is_empty() {
+            path.push(folder.id.clone());
+            for sub in &folder.subfolders {
+                Self::render_save_tree_row(ui, sub, path, target, query);
+            }
+            path.pop();
+        }
+    }
+
+    fn subtree_has_match(folder: &Folder, query: &str) -> bool {
+        if folder.name.to_lowercase().contains(query) {
+            return true;
+        }
+        folder.subfolders.iter().any(|f| Self::subtree_has_match(f, query))
+    }
+
+    /// Mutable lookup of a folder at an arbitrary path (top-level collection
+    /// at path[0], nested subfolders after). Returns None if the path
+    /// doesn't resolve.
+    fn folder_at_path_mut(&mut self, path: &[String]) -> Option<&mut Folder> {
+        if path.is_empty() {
+            return None;
+        }
+        let mut cur = self.state.folders.iter_mut().find(|f| f.id == path[0])?;
+        for id in &path[1..] {
+            cur = cur.subfolders.iter_mut().find(|f| &f.id == id)?;
+        }
+        Some(cur)
+    }
+
+    /// Move the draft referenced by the modal into the selected folder path.
+    fn commit_save_draft(&mut self) {
+        let Some(idx) = self.save_draft_tab_idx else { return; };
+        let target_path = self.save_draft_target_path.clone();
+        if target_path.is_empty() {
+            return;
+        }
+        let Some(tab) = self.state.open_tabs.get(idx).cloned() else { return; };
+        if !tab.folder_path.is_empty() {
+            return;
+        }
+        let draft_id = tab.request_id.clone();
+        let draft_pos = self.state.drafts.iter().position(|d| d.id == draft_id);
+        let Some(pos) = draft_pos else { return; };
+        let mut req = self.state.drafts.remove(pos);
+        req.name = self.save_draft_name.trim().to_string();
+
+        let inserted = if let Some(folder) = self.folder_at_path_mut(&target_path) {
+            folder.requests.push(req);
+            true
+        } else {
+            false
+        };
+        if inserted {
+            self.state.open_tabs[idx].folder_path = target_path.clone();
+            self.selected_folder_path = target_path;
+            self.selected_request_id = Some(draft_id);
+            self.load_request_for_editing();
+            self.save_state();
+            self.show_toast("Request saved");
+        }
+
+        self.save_draft_open = false;
+        self.save_draft_tab_idx = None;
+        self.save_draft_target_path.clear();
+        self.save_draft_name.clear();
+        self.save_draft_search.clear();
+        self.save_draft_new_folder_name = None;
+    }
+
+    /// Create an "Untitled" draft request, add it as a tab, and activate it.
+    /// The draft lives in `state.drafts` (persisted) until the user either
+    /// closes the tab or explicitly saves it to a folder via the tab's
+    /// right-click menu.
+    fn new_draft_request(&mut self) {
+        let draft = Request {
+            id: Uuid::new_v4().to_string(),
+            name: "Untitled".to_string(),
+            method: HttpMethod::GET,
+            url: String::new(),
+            query_params: vec![],
+            headers: vec![],
+            cookies: vec![],
+            body: String::new(),
+            body_ext: None,
+            auth: Auth::None,
+            extractors: vec![],
+        };
+        let id = draft.id.clone();
+        self.state.drafts.push(draft);
+        self.state.open_tabs.push(OpenTab {
+            folder_path: vec![],
+            request_id: id.clone(),
+        });
+        self.selected_folder_path = vec![];
+        self.selected_request_id = Some(id);
+        self.load_request_for_editing();
+        self.response_text.clear();
+        self.response_status.clear();
+        self.response_time.clear();
+        self.response_headers.clear();
+        self.save_state();
     }
 
     fn render_snippet_panel(&mut self, ctx: &egui::Context) {
@@ -1519,12 +2453,20 @@ impl ApiClient {
                             .max_height(avail_h)
                             .show(ui, |ui| {
                                 let mut text = snippet.clone();
+                                let lang = self.snippet_lang;
+                                let mut layouter =
+                                    move |ui: &egui::Ui, s: &str, wrap_width: f32| {
+                                        let mut job =
+                                            build_snippet_layout_job(s, lang, wrap_width);
+                                        job.wrap.max_width = wrap_width;
+                                        ui.fonts(|f| f.layout_job(job))
+                                    };
                                 ui.add(
                                     egui::TextEdit::multiline(&mut text)
                                         .code_editor()
                                         .interactive(false)
                                         .desired_width(f32::INFINITY)
-                                        .font(egui::TextStyle::Monospace),
+                                        .layouter(&mut layouter),
                                 );
                             });
                     });
@@ -1685,6 +2627,16 @@ impl ApiClient {
             Auth::Bearer { .. } => "Auth (Bearer)".to_string(),
             Auth::Basic { .. } => "Auth (Basic)".to_string(),
         };
+        let active_extractors = self
+            .editing_extractors
+            .iter()
+            .filter(|e| e.enabled && !e.variable.trim().is_empty())
+            .count();
+        let tests_label = if active_extractors == 0 {
+            "Tests".to_string()
+        } else {
+            format!("Tests ({})", active_extractors)
+        };
 
         ui.horizontal(|ui| {
             tab_button(ui, &mut self.request_tab, RequestTab::Params, &params_label);
@@ -1692,19 +2644,22 @@ impl ApiClient {
             tab_button(ui, &mut self.request_tab, RequestTab::Cookies, &cookies_label);
             tab_button(ui, &mut self.request_tab, RequestTab::Body, &body_label);
             tab_button(ui, &mut self.request_tab, RequestTab::Auth, &auth_label);
+            tab_button(ui, &mut self.request_tab, RequestTab::Tests, &tests_label);
         });
 
+        // Use whatever vertical space we've been given by the caller
+        // (render_central allocates the request section with a fixed
+        // height so the user can drag-resize the split).
         egui::Frame::none()
             .fill(C_PANEL)
             .inner_margin(12.0)
             .rounding(10.0)
             .stroke(egui::Stroke::new(1.0, C_BORDER))
             .show(ui, |ui| {
-                let section_height = (ui.available_height() * 0.38).clamp(140.0, 260.0);
-                ui.set_min_height(section_height);
-                ui.set_max_height(section_height);
+                let avail = ui.available_height();
                 egui::ScrollArea::vertical()
                     .id_salt("request_tab_scroll")
+                    .max_height(avail)
                     .auto_shrink([false, false])
                     .show(ui, |ui| match self.request_tab {
                         RequestTab::Params => self.render_params_tab(ui),
@@ -1712,20 +2667,13 @@ impl ApiClient {
                         RequestTab::Cookies => self.render_cookies_tab(ui),
                         RequestTab::Body => self.render_body_tab(ui),
                         RequestTab::Auth => self.render_auth_tab(ui),
+                        RequestTab::Tests => self.render_tests_tab(ui),
                     });
             });
     }
 
     fn render_params_tab(&mut self, ui: &mut egui::Ui) {
-        let final_url = curl::build_full_url(&self.editing_url, &self.editing_params);
         let changed = render_kv_table(ui, "Query Params", &mut self.editing_params, true);
-        ui.add_space(8.0);
-        ui.label(
-            egui::RichText::new(format!("Final URL: {}", final_url))
-                .size(11.0)
-                .color(C_MUTED),
-        );
-        // Trim trailing blank if user typed in it (it stays as a real entry now)
         if changed {
             let params = self.editing_params.clone();
             self.update_current_request(|r| r.query_params = params);
@@ -2055,6 +3003,166 @@ impl ApiClient {
         }
     }
 
+    /// Post-response extractors — rules that pull a value out of the
+    /// response (JSON-path into body, header name, or status code) and
+    /// write it into the currently-active environment as a variable.
+    /// Next request can reference it with `{{name}}`.
+    fn render_tests_tab(&mut self, ui: &mut egui::Ui) {
+        ui.label(
+            egui::RichText::new("Extract values from the response into environment variables.")
+                .size(12.0)
+                .color(C_MUTED),
+        );
+        ui.add_space(2.0);
+        ui.label(
+            egui::RichText::new(
+                "Body path: dot + bracket syntax, e.g. `data.token` or `items[0].id`.",
+            )
+            .size(11.5)
+            .color(C_MUTED),
+        );
+        ui.add_space(8.0);
+
+        // Ensure a trailing blank ghost row so users can just start typing.
+        if self
+            .editing_extractors
+            .last()
+            .map(|e| !e.variable.is_empty() || !e.expression.is_empty())
+            .unwrap_or(true)
+        {
+            self.editing_extractors.push(ResponseExtractor {
+                enabled: true,
+                variable: String::new(),
+                source: ExtractorSource::Body,
+                expression: String::new(),
+            });
+        }
+
+        let avail = ui.available_width();
+        let cb_w = 22.0;
+        let var_w = 180.0;
+        let src_w = 110.0;
+        let del_w = 22.0;
+        let pad = 6.0;
+        let expr_w = (avail - cb_w - var_w - src_w - del_w - pad * 4.0).max(180.0);
+        let row_h = 24.0;
+
+        ui.horizontal(|ui| {
+            ui.add_space(cb_w + pad);
+            ui.label(egui::RichText::new("VARIABLE").size(10.0).color(C_MUTED));
+            ui.add_space(var_w - 46.0);
+            ui.label(egui::RichText::new("SOURCE").size(10.0).color(C_MUTED));
+            ui.add_space(src_w - 36.0);
+            ui.label(egui::RichText::new("EXPRESSION").size(10.0).color(C_MUTED));
+        });
+        ui.add_space(2.0);
+        ui.separator();
+        ui.add_space(4.0);
+
+        let mut changed = false;
+        let mut to_remove: Option<usize> = None;
+        let row_count = self.editing_extractors.len();
+        let id_salt = egui::Id::new("extractors_table");
+        for (i, ex) in self.editing_extractors.iter_mut().enumerate() {
+            let is_ghost =
+                i == row_count - 1 && ex.variable.is_empty() && ex.expression.is_empty();
+            ui.horizontal(|ui| {
+                if is_ghost {
+                    ui.add_space(cb_w);
+                } else if ui.add(egui::Checkbox::new(&mut ex.enabled, "")).changed() {
+                    changed = true;
+                }
+                ui.add_space(pad);
+
+                let color = if ex.enabled { C_TEXT } else { C_MUTED };
+                if ui
+                    .add_sized(
+                        [var_w, row_h],
+                        egui::TextEdit::singleline(&mut ex.variable)
+                            .id(id_salt.with((i, "var")))
+                            .hint_text(if is_ghost { "var_name" } else { "" })
+                            .text_color(color),
+                    )
+                    .changed()
+                {
+                    changed = true;
+                }
+                ui.add_space(pad);
+
+                egui::ComboBox::from_id_salt(id_salt.with((i, "src")))
+                    .selected_text(ex.source.label())
+                    .width(src_w)
+                    .show_ui(ui, |ui| {
+                        for s in [
+                            ExtractorSource::Body,
+                            ExtractorSource::Header,
+                            ExtractorSource::Status,
+                        ] {
+                            if ui
+                                .selectable_label(ex.source == s, s.label())
+                                .clicked()
+                            {
+                                if ex.source != s {
+                                    ex.source = s;
+                                    changed = true;
+                                }
+                            }
+                        }
+                    });
+                ui.add_space(pad);
+
+                let hint = match ex.source {
+                    ExtractorSource::Body => "data.token",
+                    ExtractorSource::Header => "X-Request-Id",
+                    ExtractorSource::Status => "(ignored)",
+                };
+                let expr_enabled = !matches!(ex.source, ExtractorSource::Status);
+                if ui
+                    .add_sized(
+                        [expr_w, row_h],
+                        egui::TextEdit::singleline(&mut ex.expression)
+                            .id(id_salt.with((i, "expr")))
+                            .hint_text(if expr_enabled && is_ghost { hint } else { "" })
+                            .interactive(expr_enabled)
+                            .text_color(color),
+                    )
+                    .changed()
+                {
+                    changed = true;
+                }
+
+                ui.add_space(pad);
+                if is_ghost {
+                    ui.add_space(del_w);
+                } else if close_x_button(ui, "Remove extractor").clicked() {
+                    to_remove = Some(i);
+                }
+            });
+            ui.add_space(2.0);
+        }
+
+        if let Some(i) = to_remove {
+            self.editing_extractors.remove(i);
+            changed = true;
+        }
+        if changed {
+            let ext = self.editing_extractors.clone();
+            self.update_current_request(|r| r.extractors = ext);
+        }
+
+        if self.state.active_env_id.is_none() {
+            ui.add_space(10.0);
+            ui.label(
+                egui::RichText::new(
+                    "No active environment — extracted values will be discarded. \
+                     Pick or create an environment from the sidebar.",
+                )
+                .size(11.5)
+                .color(C_ORANGE),
+            );
+        }
+    }
+
     fn render_response(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             ui.label(
@@ -2063,12 +3171,21 @@ impl ApiClient {
                     .strong()
                     .color(C_TEXT),
             );
-            ui.add_space(8.0);
+            ui.add_space(12.0);
+
+            let bullet = || {
+                egui::RichText::new("•")
+                    .color(C_MUTED.linear_multiply(0.7))
+                    .size(12.0)
+            };
+            let info_text = |s: String| egui::RichText::new(s).color(C_MUTED).size(12.0);
+
             if !self.response_status.is_empty() {
+                // Status badge — colored pill, e.g. "200 OK" or "404 Not Found"
                 let sc = status_color(&self.response_status);
                 egui::Frame::none()
-                    .fill(sc.linear_multiply(0.2))
-                    .rounding(egui::Rounding::same(6.0))
+                    .fill(sc.linear_multiply(0.18))
+                    .rounding(egui::Rounding::same(5.0))
                     .inner_margin(egui::Margin::symmetric(8.0, 3.0))
                     .show(ui, |ui| {
                         ui.label(
@@ -2080,36 +3197,49 @@ impl ApiClient {
                     });
             }
             if !self.response_time.is_empty() {
-                egui::Frame::none()
-                    .fill(C_ELEVATED)
-                    .rounding(egui::Rounding::same(6.0))
-                    .inner_margin(egui::Margin::symmetric(8.0, 3.0))
-                    .show(ui, |ui| {
-                        ui.label(
-                            egui::RichText::new(format!("⏱ {}", self.response_time))
-                                .color(C_ACCENT)
-                                .size(12.0),
-                        );
-                    });
+                ui.add_space(4.0);
+                ui.label(bullet());
+                ui.add_space(2.0);
+                let time_resp = ui.label(info_text(self.response_time.clone()));
+                let prep = self.response_prepare_ms;
+                let wait = self.response_waiting_ms;
+                let dl = self.response_download_ms;
+                let total = self.response_total_ms;
+                time_resp.on_hover_ui(move |ui| {
+                    render_time_breakdown(ui, prep, wait, dl, total);
+                });
             }
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui
-                    .add(
-                        egui::Button::new(
-                            egui::RichText::new("Copy").size(12.0).color(C_TEXT),
-                        )
-                        .fill(C_ELEVATED)
-                        .stroke(egui::Stroke::NONE)
-                        .rounding(egui::Rounding::same(6.0))
-                        .min_size(egui::vec2(60.0, 24.0)),
-                    )
-                    .clicked()
-                    && !self.response_text.is_empty()
-                {
-                    ui.output_mut(|o| o.copied_text = self.response_text.clone());
-                    self.show_toast("Response copied");
-                }
-            });
+            let total_resp_bytes =
+                self.response_headers_bytes + self.response_body_bytes;
+            if total_resp_bytes > 0 {
+                ui.add_space(4.0);
+                ui.label(bullet());
+                ui.add_space(2.0);
+                let size_resp = ui.label(info_text(format_bytes(total_resp_bytes)));
+                // Hover popover with breakdown — response size + request size,
+                // mirroring Postman's globe-icon tooltip.
+                let resp_h_bytes = self.response_headers_bytes;
+                let resp_b_bytes = self.response_body_bytes;
+                let req_h_bytes = self.request_headers_bytes;
+                let req_b_bytes = self.request_body_bytes;
+                size_resp.on_hover_ui(move |ui| {
+                    render_size_breakdown(
+                        ui,
+                        resp_h_bytes,
+                        resp_b_bytes,
+                        req_h_bytes,
+                        req_b_bytes,
+                    );
+                });
+            }
+            if self.response_status.is_empty() {
+                ui.label(
+                    egui::RichText::new("— no response yet")
+                        .color(C_MUTED)
+                        .size(12.0)
+                        .italics(),
+                );
+            }
         });
 
         ui.add_space(4.0);
@@ -2130,25 +3260,252 @@ impl ApiClient {
         });
         ui.add_space(4.0);
 
-        let remaining_height = (ui.available_height() - 10.0).max(120.0);
+        // Fill all remaining vertical space.
+        let remaining_height = ui.available_height().max(120.0);
+
+        // Loading state — show a centered spinner + timer while the
+        // in-flight request is pending. This replaces both the empty
+        // state and the stale previous response while a send is in
+        // progress, so the UI is obviously "working".
+        if self.is_loading {
+            let full_w = ui.available_width();
+            let full_h = ui.available_height().max(120.0);
+            egui::Frame::none()
+                .fill(C_PANEL_DARK)
+                .inner_margin(16.0)
+                .rounding(10.0)
+                .stroke(egui::Stroke::new(1.0, C_BORDER))
+                .show(ui, |ui| {
+                    let margin = 32.0;
+                    ui.set_width(full_w - margin);
+                    ui.set_min_height(full_h - margin);
+                    let inner_h = ui.available_height();
+                    ui.vertical_centered(|ui| {
+                        ui.add_space((inner_h * 0.30).max(24.0));
+                        ui.add(egui::Spinner::new().size(26.0).color(C_ACCENT));
+                        ui.add_space(10.0);
+                        ui.label(
+                            egui::RichText::new("Sending request…")
+                                .size(13.0)
+                                .color(C_TEXT),
+                        );
+                        ui.add_space(4.0);
+                        ui.label(
+                            egui::RichText::new("Press Esc to stay — response will appear here")
+                                .size(11.5)
+                                .color(C_MUTED),
+                        );
+                    });
+                });
+            // Keep the frame animating while we wait.
+            ui.ctx().request_repaint();
+            return;
+        }
+
+        // Postman-style empty state — if we haven't sent a request yet,
+        // show a few hint lines instead of an empty body frame.
+        if self.response_status.is_empty() {
+            let full_w = ui.available_width();
+            let full_h = ui.available_height().max(120.0);
+            egui::Frame::none()
+                .fill(C_PANEL_DARK)
+                .inner_margin(16.0)
+                .rounding(10.0)
+                .stroke(egui::Stroke::new(1.0, C_BORDER))
+                .show(ui, |ui| {
+                    // Force the Frame to expand to the full size of the
+                    // response panel. Without these, the Frame shrinks to
+                    // the hint text, leaving dead grey space on the right
+                    // and below (Frame auto-sizes to content).
+                    let margin = 32.0; // 16.0 × 2
+                    ui.set_width(full_w - margin);
+                    ui.set_min_height(full_h - margin);
+                    let inner_h = ui.available_height();
+                    ui.vertical_centered(|ui| {
+                        ui.add_space((inner_h * 0.32).max(24.0));
+                        ui.label(
+                            egui::RichText::new("No response yet")
+                                .size(15.0)
+                                .color(C_TEXT),
+                        );
+                        ui.add_space(8.0);
+                        ui.label(
+                            egui::RichText::new("Send a request to see the response here.")
+                                .size(12.5)
+                                .color(C_MUTED),
+                        );
+                        ui.add_space(4.0);
+                        ui.label(
+                            egui::RichText::new("Shortcut: Cmd / Ctrl + Enter")
+                                .size(12.0)
+                                .color(C_MUTED),
+                        );
+                    });
+                });
+            return;
+        }
+
+        let full_w = ui.available_width();
+        let full_h = ui.available_height().max(120.0);
         egui::Frame::none()
             .fill(C_PANEL_DARK)
             .inner_margin(12.0)
             .rounding(10.0)
             .stroke(egui::Stroke::new(1.0, C_BORDER))
             .show(ui, |ui| {
+                // Force Frame to fill the full response panel rather than
+                // auto-sizing to content (which leaves right/bottom gaps).
+                let margin = 24.0; // 12.0 × 2
+                ui.set_width(full_w - margin);
+                ui.set_min_height(full_h - margin);
                 egui::ScrollArea::vertical()
                     .id_salt("response_scroll")
                     .max_height(remaining_height)
                     .auto_shrink([false, false])
                     .show(ui, |ui| match self.response_tab {
                         ResponseTab::Body => {
-                            ui.add(
-                                egui::TextEdit::multiline(&mut self.response_text.as_str())
-                                    .code_editor()
-                                    .desired_width(f32::INFINITY)
-                                    .font(egui::TextStyle::Monospace),
-                            );
+                            // Three view modes (like Postman's body toolbar):
+                            //   • JSON — syntax-highlighted pretty code
+                            //   • Tree — collapsible tree view
+                            //   • Raw  — verbatim text
+                            // JSON/Tree fall back to Raw when the body isn't
+                            // valid JSON.
+                            let parsed: Option<serde_json::Value> =
+                                serde_json::from_str(&self.response_text).ok();
+                            let is_json = parsed.is_some();
+                            let mut copy_clicked = false;
+                            let mut toggle_search = false;
+                            ui.horizontal(|ui| {
+                                let mut view = self.body_view;
+                                body_view_pill(ui, &mut view, BodyView::Json, "JSON");
+                                body_view_pill(ui, &mut view, BodyView::Tree, "Tree");
+                                body_view_pill(ui, &mut view, BodyView::Raw, "Raw");
+                                self.body_view = view;
+                                if matches!(self.body_view, BodyView::Tree) && is_json {
+                                    ui.add_space(8.0);
+                                    ui.add(
+                                        egui::TextEdit::singleline(&mut self.body_tree_filter)
+                                            .hint_text("Filter keys / values")
+                                            .desired_width(200.0),
+                                    );
+                                }
+                                // Right-side icon buttons — search + copy.
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(egui::Align::Center),
+                                    |ui| {
+                                        if icon_button(ui, "Copy response body", paint_copy_icon)
+                                            .clicked()
+                                        {
+                                            copy_clicked = true;
+                                        }
+                                        ui.add_space(2.0);
+                                        if icon_button(ui, "Search in body", paint_search_icon)
+                                            .clicked()
+                                        {
+                                            toggle_search = true;
+                                        }
+                                    },
+                                );
+                            });
+                            if toggle_search {
+                                self.body_search_visible = !self.body_search_visible;
+                                if !self.body_search_visible {
+                                    self.body_search_query.clear();
+                                }
+                            }
+                            if copy_clicked {
+                                ui.ctx()
+                                    .output_mut(|o| o.copied_text = self.response_text.clone());
+                                self.show_toast("Copied response body");
+                            }
+                            if self.body_search_visible {
+                                ui.add_space(4.0);
+                                ui.horizontal(|ui| {
+                                    ui.add(
+                                        egui::TextEdit::singleline(&mut self.body_search_query)
+                                            .hint_text("Find in body…")
+                                            .desired_width(ui.available_width() - 40.0),
+                                    );
+                                    if icon_button(ui, "Close search", |p, c, col| {
+                                        paint_x(p, c, 5.0, col, 1.5)
+                                    })
+                                    .clicked()
+                                    {
+                                        self.body_search_visible = false;
+                                        self.body_search_query.clear();
+                                    }
+                                });
+                            }
+                            ui.add_space(6.0);
+
+                            let effective_view = if !is_json
+                                && !matches!(self.body_view, BodyView::Raw)
+                            {
+                                BodyView::Raw
+                            } else {
+                                self.body_view
+                            };
+
+                            // Make the editor background extend to the
+                            // outer response panel — no inner border, so
+                            // short payloads don't look like a small
+                            // floating card with empty space below.
+                            match effective_view {
+                                BodyView::Json => {
+                                    // `&mut &str` gives egui a read-only
+                                    // buffer — the user can click, position
+                                    // the caret, select text, scroll and
+                                    // copy (⌘C) just like in Postman, but
+                                    // edits are dropped because the buffer
+                                    // can't be mutated.
+                                    let mut buf: &str = &self.response_text;
+                                    let search = self.body_search_query.clone();
+                                    let mut layouter = move |ui: &egui::Ui,
+                                                             s: &str,
+                                                             wrap_width: f32| {
+                                        let mut job =
+                                            build_json_layout_job_with_search(s, &search);
+                                        job.wrap.max_width = wrap_width;
+                                        ui.fonts(|f| f.layout_job(job))
+                                    };
+                                    ui.add_sized(
+                                        egui::vec2(
+                                            ui.available_width(),
+                                            ui.available_height(),
+                                        ),
+                                        egui::TextEdit::multiline(&mut buf)
+                                            .frame(false)
+                                            .desired_width(f32::INFINITY)
+                                            .font(egui::TextStyle::Monospace)
+                                            .layouter(&mut layouter),
+                                    );
+                                }
+                                BodyView::Tree => {
+                                    if let Some(v) = parsed {
+                                        let filter = self.body_tree_filter.to_lowercase();
+                                        render_json_tree(
+                                            ui,
+                                            egui::Id::new("resp_tree_root"),
+                                            "",
+                                            &v,
+                                            &filter,
+                                            0,
+                                        );
+                                    }
+                                }
+                                BodyView::Raw => {
+                                    ui.add_sized(
+                                        egui::vec2(
+                                            ui.available_width(),
+                                            ui.available_height(),
+                                        ),
+                                        egui::TextEdit::multiline(&mut self.response_text.as_str())
+                                            .frame(false)
+                                            .desired_width(f32::INFINITY)
+                                            .font(egui::TextStyle::Monospace),
+                                    );
+                                }
+                            }
                         }
                         ResponseTab::Headers => {
                             if self.response_headers.is_empty() {
@@ -2308,84 +3665,46 @@ impl ApiClient {
         let query = self.search_query.to_lowercase();
         let searching = !query.is_empty();
 
-        let icon = if depth == 0 { "📚" } else { "📁" };
-        let mut header = egui::CollapsingHeader::new(if is_renaming {
-            egui::RichText::new("").size(13.0)
+        // Visually separate collections (top-level) from folders (nested):
+        //   • collections render without a folder glyph — just the chevron
+        //     and a strong-weight name.
+        //   • subfolders render with a small painter-drawn folder icon
+        //     between the chevron and the name, so users can tell them
+        //     apart at a glance (matching Postman / Insomnia).
+        // A custom `.icon(...)` fn replaces CollapsingHeader's default
+        // triangle too, because egui's default icon uses a glyph that
+        // renders as tofu on some font setups — painter shapes are
+        // always font-safe.
+        let header_text = if is_renaming {
+            String::new()
         } else {
-            egui::RichText::new(format!("{} {}", icon, folder.name))
+            folder.name.clone()
+        };
+        let is_collection = depth == 0;
+        let name_prefix = if is_collection || is_renaming {
+            String::new()
+        } else {
+            // Leading space lets the folder icon we'll paint sit in front
+            // of the header text without overlapping.
+            "   ".to_string()
+        };
+        let mut header = egui::CollapsingHeader::new(
+            egui::RichText::new(format!("{}{}", name_prefix, header_text))
                 .size(13.0)
-                .color(if depth == 0 { C_ACCENT } else { C_TEXT })
-                .strong()
-        })
+                .color(C_TEXT)
+                .strong(),
+        )
         .id_salt(&folder.id)
-        .default_open(true);
+        .default_open(true)
+        .icon(paint_folder_chevron);
         if searching {
             header = header.open(Some(true));
         }
+        // Buttons-as-context: use right-click on the folder header to
+        // add a request, add a subfolder, rename, duplicate, delete, etc.
+        // Track what was chosen so we can apply it after the header closure.
+        let mut action_add_request = false;
         let header_response = header.show(ui, |ui| {
-            ui.add_space(4.0);
-
-            ui.horizontal(|ui| {
-                let half = (ui.available_width() - 4.0) / 2.0;
-                if ui
-                    .add_sized(
-                        [half, 26.0],
-                        egui::Button::new(egui::RichText::new("➕ Request").size(12.0))
-                            .fill(C_BORDER)
-                            .stroke(egui::Stroke::NONE),
-                    )
-                    .clicked()
-                {
-                    let new_req = Request {
-                        id: Uuid::new_v4().to_string(),
-                        name: format!("Request {}", folder.requests.len() + 1),
-                        method: HttpMethod::GET,
-                        url: "https://api.example.com".to_string(),
-                        query_params: vec![],
-                        headers: vec![],
-                        cookies: vec![],
-                        body: String::new(),
-                        body_ext: None,
-                        auth: Auth::None,
-                    };
-                    let new_id = new_req.id.clone();
-
-                    self.selected_folder_path = path.clone();
-
-                    if let Some(f) = self.get_current_folder_mut() {
-                        f.requests.push(new_req);
-                    }
-                    self.save_state();
-                    self.open_request(path.clone(), new_id);
-                }
-
-                if ui
-                    .add_sized(
-                        [half, 26.0],
-                        egui::Button::new(egui::RichText::new("➕ Folder").size(12.0))
-                            .fill(C_BORDER)
-                            .stroke(egui::Stroke::NONE),
-                    )
-                    .on_hover_text("Create subfolder")
-                    .clicked()
-                {
-                    let new_folder = Folder {
-                        id: Uuid::new_v4().to_string(),
-                        name: format!("Folder {}", folder.subfolders.len() + 1),
-                        requests: vec![],
-                        subfolders: vec![],
-                    };
-
-                    self.selected_folder_path = path.clone();
-                    if let Some(f) = self.get_current_folder_mut() {
-                        f.subfolders.push(new_folder);
-                    }
-                    self.save_state();
-                }
-            });
-
-            ui.add_space(4.0);
-
             let mut to_delete: Option<String> = None;
             let mut to_duplicate: Option<String> = None;
             for req in &folder.requests {
@@ -2431,28 +3750,21 @@ impl ApiClient {
                             .rect_filled(bar, egui::Rounding::same(2.0), C_ACCENT);
                     }
 
-                    // Smaller, denser method pill
-                    let pill_w = 40.0;
-                    let pill_h = 16.0;
-                    let pill_left = rect.left() + 8.0;
-                    let pill_top = rect.center().y - pill_h / 2.0;
-                    let pill_rect = egui::Rect::from_min_size(
-                        egui::pos2(pill_left, pill_top),
-                        egui::vec2(pill_w, pill_h),
-                    );
-                    ui.painter()
-                        .rect_filled(pill_rect, egui::Rounding::same(3.0), mc);
+                    // Method as bold colored TEXT (no pill background).
+                    // Reserve a fixed-width slot so all names align
+                    // regardless of method length (GET vs OPTIONS).
+                    let method_slot_w = 46.0;
+                    let method_left = rect.left() + 10.0;
                     ui.painter().text(
-                        pill_rect.center(),
-                        egui::Align2::CENTER_CENTER,
+                        egui::pos2(method_left, rect.center().y),
+                        egui::Align2::LEFT_CENTER,
                         format!("{}", req.method),
-                        egui::FontId::new(9.0, egui::FontFamily::Proportional),
-                        pill_text_color(mc),
+                        egui::FontId::new(10.0, egui::FontFamily::Proportional),
+                        mc,
                     );
 
                     if !is_renaming {
-                        let name_color = C_TEXT;
-                        let name_x = pill_rect.right() + 8.0;
+                        let name_x = method_left + method_slot_w;
                         let name_pos = egui::pos2(name_x, rect.center().y);
                         let font = egui::FontId::new(12.5, egui::FontFamily::Proportional);
                         let max_w = rect.right() - name_x - 6.0;
@@ -2462,17 +3774,17 @@ impl ApiClient {
                             egui::Align2::LEFT_CENTER,
                             display_name,
                             font,
-                            name_color,
+                            C_TEXT,
                         );
                     }
                 }
 
                 // Inline rename TextEdit overlay (clearly visible against the row)
                 if is_renaming {
-                    // Match the compact pill geometry: 8 + 40 = 48 px offset
-                    let pill_right = rect.left() + 8.0 + 40.0;
+                    // Same geometry as the name: method_left (10) + method_slot_w (46)
+                    let name_start = rect.left() + 10.0 + 46.0;
                     let edit_rect = egui::Rect::from_min_max(
-                        egui::pos2(pill_right + 4.0, rect.top() + 3.0),
+                        egui::pos2(name_start - 2.0, rect.top() + 3.0),
                         egui::pos2(rect.right() - 4.0, rect.bottom() - 3.0),
                     );
                     // Visible background + accent border so the input is obvious.
@@ -2598,6 +3910,18 @@ impl ApiClient {
             }
         });
 
+        // For nested folders, paint a small folder glyph in the 3-space
+        // gap we reserved at the front of the header label. Collections
+        // (depth == 0) intentionally get no folder icon so it's obvious
+        // which rows are top-level.
+        if !is_collection && !is_renaming {
+            let rect = header_response.header_response.rect;
+            // Chevron sits at ~rect.left() + 8; reserve ~12px for it then
+            // a small gap before the folder glyph.
+            let icon_center = egui::pos2(rect.left() + 24.0, rect.center().y);
+            paint_folder_icon(&ui.painter_at(rect), icon_center, C_MUTED);
+        }
+
         if is_renaming {
             let rect = header_response.header_response.rect;
             let mut rename_rect = rect;
@@ -2631,29 +3955,60 @@ impl ApiClient {
             let mut export_yaml = false;
             let mut add_subfolder = false;
             header_response.header_response.context_menu(|ui| {
-                if ui.button("✏ Rename").clicked() {
-                    start_rename = true;
+                if ui.button("Add request").clicked() {
+                    action_add_request = true;
                     ui.close_menu();
                 }
-                if ui.button("➕ Add subfolder").clicked() {
+                if ui.button("Add subfolder").clicked() {
                     add_subfolder = true;
                     ui.close_menu();
                 }
                 ui.separator();
-                if ui.button("📤 Export as JSON...").clicked() {
+                if ui.button("Rename").clicked() {
+                    start_rename = true;
+                    ui.close_menu();
+                }
+                ui.separator();
+                if ui.button("Export as JSON...").clicked() {
                     export_json = true;
                     ui.close_menu();
                 }
-                if ui.button("📤 Export as YAML...").clicked() {
+                if ui.button("Export as YAML...").clicked() {
                     export_yaml = true;
                     ui.close_menu();
                 }
                 ui.separator();
-                if ui.button(format!("🗑 Delete {}", noun)).clicked() {
+                if ui.button(format!("Delete {}", noun)).clicked() {
                     delete_folder = true;
                     ui.close_menu();
                 }
             });
+
+            // "Add request" — create a new request inside THIS folder and
+            // open it as a tab.
+            if action_add_request {
+                self.selected_folder_path = path.clone();
+                let count = folder.requests.len() + 1;
+                let new_req = Request {
+                    id: Uuid::new_v4().to_string(),
+                    name: format!("Request {}", count),
+                    method: HttpMethod::GET,
+                    url: "https://api.example.com".to_string(),
+                    query_params: vec![],
+                    headers: vec![],
+                    cookies: vec![],
+                    body: String::new(),
+                    body_ext: None,
+                    auth: Auth::None,
+                    extractors: vec![],
+                };
+                let new_id = new_req.id.clone();
+                if let Some(f) = self.get_current_folder_mut() {
+                    f.requests.push(new_req);
+                }
+                self.save_state();
+                self.open_request(path.clone(), new_id);
+            }
             if start_rename {
                 self.renaming_folder_id = Some(folder_id.clone());
                 self.rename_folder_text = folder_name;
@@ -2722,6 +4077,46 @@ impl ApiClient {
 }
 
 
+/// Ensure the URL has a scheme so reqwest can parse it. Users
+/// commonly paste `api.example.com/foo` expecting it to work.
+///
+/// Defaults to `http://` — matches curl's historical default and
+/// Postman's behavior for schemeless URLs. This works for internal /
+/// dev hosts that don't terminate TLS on :443; users hitting a
+/// public API can always type `https://` themselves, but an internal
+/// `dev.foo.int` served on port 80 would otherwise connection-refuse
+/// because we'd be dialing :443.
+fn ensure_url_scheme(url: &str) -> String {
+    let t = url.trim();
+    if t.is_empty() {
+        return t.to_string();
+    }
+    let lower = t.to_ascii_lowercase();
+    if lower.starts_with("http://")
+        || lower.starts_with("https://")
+        || lower.starts_with("ws://")
+        || lower.starts_with("wss://")
+    {
+        return t.to_string();
+    }
+    format!("http://{}", t)
+}
+
+/// Flatten a reqwest error's cause chain into a readable multi-line
+/// string. reqwest's top-level `Display` often just says "builder
+/// error" or "error sending request"; the actual reason (invalid URL,
+/// DNS failure, etc.) is hidden in `source()`.
+fn format_request_error(err: &reqwest::Error) -> String {
+    use std::error::Error;
+    let mut msg = format!("Error: {}", err);
+    let mut source: Option<&(dyn Error + 'static)> = err.source();
+    while let Some(s) = source {
+        msg.push_str(&format!("\n  caused by: {}", s));
+        source = s.source();
+    }
+    msg
+}
+
 fn main() -> Result<(), eframe::Error> {
     // Force NSApp into Regular activation policy BEFORE eframe starts the
     // macOS run loop. Once NSApp.run has begun processing events, macOS
@@ -2742,6 +4137,11 @@ fn main() -> Result<(), eframe::Error> {
 
     let options = eframe::NativeOptions {
         viewport,
+        // Don't restore window geometry from a previous run — eframe's
+        // default `persist_window = true` was reopening the app at the last
+        // dragged size, which could be much smaller than the `with_inner_size`
+        // default (including below `min_inner_size`).
+        persist_window: false,
         ..Default::default()
     };
 
