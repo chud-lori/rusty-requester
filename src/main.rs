@@ -155,6 +155,14 @@ struct ApiClient {
     editing_settings: AppSettings,
     /// About modal (Help → About Rusty Requester).
     show_about_modal: bool,
+    /// When `Some`, the central panel shows a collection/folder
+    /// overview ("homepage") for that folder ID instead of the
+    /// active request editor. Set by the folder `⋯` menu →
+    /// "Open overview". Cleared when the user picks any request.
+    viewing_folder_id: Option<String>,
+    /// Working copy of the folder description while the overview
+    /// is open — written back to `Folder.description` on blur.
+    editing_folder_desc: String,
     /// Have we installed the macOS NSMenu yet? We defer the install
     /// to the first `update()` frame because doing it before
     /// `eframe::run_native` lets winit overwrite our menu with its
@@ -176,6 +184,7 @@ impl Default for ApiClient {
                 name: "My Requests".to_string(),
                 requests: vec![],
                 subfolders: vec![],
+                description: String::new(),
             }],
             environments: vec![],
             active_env_id: None,
@@ -257,6 +266,8 @@ impl Default for ApiClient {
             show_settings_modal: false,
             editing_settings: AppSettings::default(),
             show_about_modal: false,
+            viewing_folder_id: None,
+            editing_folder_desc: String::new(),
             #[cfg(target_os = "macos")]
             macos_menu_installed: false,
         };
@@ -585,7 +596,20 @@ impl ApiClient {
         self.toast = Some((msg.into(), 2.5));
     }
 
+    /// Activate collection-overview mode for `folder_id`. Shows the
+    /// folder's homepage (title / stats / description) in the central
+    /// panel instead of the request editor. Clears any selected
+    /// request so the editor doesn't fight for space.
+    pub(crate) fn open_folder_overview(&mut self, folder_id: &str) {
+        let desc = find_folder_desc(&self.state.folders, folder_id).unwrap_or_default();
+        self.viewing_folder_id = Some(folder_id.to_string());
+        self.editing_folder_desc = desc;
+        self.selected_request_id = None;
+    }
+
     fn open_request(&mut self, folder_path: Vec<String>, request_id: String) {
+        // Any request activation leaves the collection overview mode.
+        self.viewing_folder_id = None;
         if let Some(existing) = self.state.open_tabs.iter().position(|t| t.request_id == request_id) {
             let tab = self.state.open_tabs[existing].clone();
             self.selected_folder_path = tab.folder_path;
@@ -829,6 +853,7 @@ impl ApiClient {
                         name: format!("Collection {}", self.state.folders.len() + 1),
                         requests: vec![],
                         subfolders: vec![],
+                        description: String::new(),
                     });
                     self.save_state();
                 }
@@ -1091,6 +1116,7 @@ impl ApiClient {
             Folder {
                 id: Uuid::new_v4().to_string(),
                 name: src.name.clone(),
+                description: src.description.clone(),
                 requests: src
                     .requests
                     .iter()
@@ -1122,6 +1148,45 @@ impl ApiClient {
     }
 }
 
+
+/// Walk a folder tree and return a clone of the folder with this id
+/// (or any descendant). Used by the overview view to pull current
+/// metadata without holding a long-lived borrow.
+pub(crate) fn find_folder_by_id<'a>(
+    folders: &'a [Folder],
+    id: &str,
+) -> Option<&'a Folder> {
+    for f in folders {
+        if f.id == id {
+            return Some(f);
+        }
+        if let Some(got) = find_folder_by_id(&f.subfolders, id) {
+            return Some(got);
+        }
+    }
+    None
+}
+
+/// Mutable counterpart of `find_folder_by_id` — used when saving the
+/// description from the overview back into the tree.
+pub(crate) fn find_folder_by_id_mut<'a>(
+    folders: &'a mut [Folder],
+    id: &str,
+) -> Option<&'a mut Folder> {
+    for f in folders {
+        if f.id == id {
+            return Some(f);
+        }
+        if let Some(got) = find_folder_by_id_mut(&mut f.subfolders, id) {
+            return Some(got);
+        }
+    }
+    None
+}
+
+fn find_folder_desc(folders: &[Folder], id: &str) -> Option<String> {
+    find_folder_by_id(folders, id).map(|f| f.description.clone())
+}
 
 fn main() -> Result<(), eframe::Error> {
     // Cheap `--version` / `-V` flag so anyone (user or `install.sh`)

@@ -380,6 +380,7 @@ impl ApiClient {
                 name: folder_name,
                 requests: vec![],
                 subfolders: vec![],
+                description: String::new(),
             };
             let inserted = if parent_path.is_empty() {
                 self.state.folders.push(new_folder);
@@ -814,6 +815,7 @@ impl ApiClient {
                     name: "Imported".to_string(),
                     requests: vec![],
                     subfolders: vec![],
+                    description: String::new(),
                 });
             }
 
@@ -1078,6 +1080,7 @@ impl ApiClient {
                 name: format!("Collection {}", self.state.folders.len() + 1),
                 requests: vec![],
                 subfolders: vec![],
+                description: String::new(),
             });
             self.save_state();
         }

@@ -168,6 +168,7 @@ impl ApiClient {
                         name: format!("Collection {}", self.state.folders.len() + 1),
                         requests: vec![],
                         subfolders: vec![],
+                        description: String::new(),
                     });
                     self.save_state();
                 }
@@ -841,6 +842,7 @@ impl ApiClient {
             if dots_resp.clicked() {
                 ui.memory_mut(|m| m.toggle_popup(popup_id));
             }
+            let mut open_overview = false;
             egui::popup::popup_below_widget(
                 ui,
                 popup_id,
@@ -848,6 +850,10 @@ impl ApiClient {
                 egui::PopupCloseBehavior::CloseOnClick,
                 |ui| {
                     ui.set_min_width(180.0);
+                    if ui.button("Open overview").clicked() {
+                        open_overview = true;
+                    }
+                    ui.separator();
                     if ui.button("Add request").clicked() {
                         action_add_request = true;
                     }
@@ -873,8 +879,13 @@ impl ApiClient {
                 },
             );
 
-            // Keep the right-click context menu in sync (same 5 items).
+            // Keep the right-click context menu in sync.
             header_response.header_response.context_menu(|ui| {
+                if ui.button("Open overview").clicked() {
+                    open_overview = true;
+                    ui.close_menu();
+                }
+                ui.separator();
                 if ui.button("Add request").clicked() {
                     action_add_request = true;
                     ui.close_menu();
@@ -947,12 +958,16 @@ impl ApiClient {
                         name: format!("Folder {}", subcount),
                         requests: vec![],
                         subfolders: vec![],
+                        description: String::new(),
                     });
                 }
                 self.save_state();
             }
             if duplicate_folder {
                 self.duplicate_folder(&folder_id);
+            }
+            if open_overview {
+                self.open_folder_overview(&folder_id);
             }
             if delete_folder {
                 self.delete_folder(&folder_id);

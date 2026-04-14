@@ -26,6 +26,17 @@ impl ApiClient {
             ui.painter()
                 .rect_filled(ui.max_rect(), egui::Rounding::ZERO, C_BG);
             self.render_tabs_bar(ui);
+
+            // Collection overview — activated via sidebar folder's
+            // `⋯` menu or right-click → "Open overview". Shows folder
+            // title / stats / editable description instead of the
+            // request editor. Dismissed automatically when the user
+            // opens any request (see `open_request`).
+            if self.viewing_folder_id.is_some() {
+                self.render_collection_overview(ui);
+                return;
+            }
+
             if self.selected_request_id.is_none() {
                 ui.centered_and_justified(|ui| {
                     ui.vertical_centered(|ui| {
@@ -1276,6 +1287,200 @@ impl ApiClient {
         }
     }
 
+    /// Collection/folder "homepage": big title, quick stats, editable
+    /// description, and a list of contained requests. Persists
+    /// description changes back into the folder tree on every edit.
+    fn render_collection_overview(&mut self, ui: &mut egui::Ui) {
+        let folder_id = match &self.viewing_folder_id {
+            Some(id) => id.clone(),
+            None => return,
+        };
+        // Snapshot what we need; don't hold a borrow across the
+        // whole render closure (we also want to write the description
+        // back on change).
+        let Some(folder_snapshot) =
+            crate::find_folder_by_id(&self.state.folders, &folder_id).cloned()
+        else {
+            // Folder was deleted while we were viewing it — just
+            // leave overview mode.
+            self.viewing_folder_id = None;
+            return;
+        };
+        let (req_count, sub_count) = count_requests_and_folders(&folder_snapshot);
+
+        egui::Frame::none()
+            .inner_margin(egui::Margin {
+                left: 32.0,
+                right: 32.0,
+                top: 26.0,
+                bottom: 10.0,
+            })
+            .show(ui, |ui| {
+                egui::ScrollArea::vertical()
+                    .id_salt(("overview_scroll", folder_snapshot.id.clone()))
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        // Title
+                        ui.label(
+                            egui::RichText::new(&folder_snapshot.name)
+                                .size(26.0)
+                                .strong()
+                                .color(C_TEXT),
+                        );
+                        ui.add_space(6.0);
+
+                        // Stats line — "N requests · M subfolders"
+                        let stats = format!(
+                            "{} request{} · {} subfolder{}",
+                            req_count,
+                            if req_count == 1 { "" } else { "s" },
+                            sub_count,
+                            if sub_count == 1 { "" } else { "s" },
+                        );
+                        ui.label(
+                            egui::RichText::new(stats).size(12.5).color(C_MUTED),
+                        );
+                        ui.add_space(16.0);
+
+                        // Description — editable multiline field. Auto-
+                        // saves on every change; no "Save" button.
+                        ui.label(
+                            egui::RichText::new("DESCRIPTION")
+                                .size(10.5)
+                                .strong()
+                                .color(C_MUTED),
+                        );
+                        ui.add_space(4.0);
+                        let desc_resp = ui.add(
+                            egui::TextEdit::multiline(&mut self.editing_folder_desc)
+                                .hint_text(
+                                    "Write a description for this collection. \
+                                     Explain what it's for, any auth quirks, \
+                                     env setup, etc.",
+                                )
+                                .desired_rows(4)
+                                .desired_width(f32::INFINITY),
+                        );
+                        if desc_resp.changed() {
+                            let new_desc = self.editing_folder_desc.clone();
+                            if let Some(folder) =
+                                crate::find_folder_by_id_mut(&mut self.state.folders, &folder_id)
+                            {
+                                folder.description = new_desc;
+                            }
+                            self.save_state();
+                        }
+                        ui.add_space(20.0);
+
+                        // Request list — click to jump into that request.
+                        if !folder_snapshot.requests.is_empty() {
+                            ui.label(
+                                egui::RichText::new("REQUESTS")
+                                    .size(10.5)
+                                    .strong()
+                                    .color(C_MUTED),
+                            );
+                            ui.add_space(6.0);
+                            let path = folder_path_from_root(
+                                &self.state.folders,
+                                &folder_id,
+                            )
+                            .unwrap_or_default();
+                            for req in &folder_snapshot.requests {
+                                let mc = method_color(&req.method);
+                                let (rect, resp) = ui.allocate_exact_size(
+                                    egui::vec2(ui.available_width(), 28.0),
+                                    egui::Sense::click(),
+                                );
+                                if ui.is_rect_visible(rect) {
+                                    if resp.hovered() {
+                                        ui.painter().rect_filled(
+                                            rect,
+                                            egui::Rounding::same(5.0),
+                                            C_ELEVATED,
+                                        );
+                                    }
+                                    ui.painter().text(
+                                        egui::pos2(rect.left() + 8.0, rect.center().y),
+                                        egui::Align2::LEFT_CENTER,
+                                        format!("{}", req.method),
+                                        egui::FontId::new(
+                                            10.5,
+                                            egui::FontFamily::Proportional,
+                                        ),
+                                        mc,
+                                    );
+                                    ui.painter().text(
+                                        egui::pos2(rect.left() + 60.0, rect.center().y),
+                                        egui::Align2::LEFT_CENTER,
+                                        &req.name,
+                                        egui::FontId::new(
+                                            12.5,
+                                            egui::FontFamily::Proportional,
+                                        ),
+                                        C_TEXT,
+                                    );
+                                }
+                                let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+                                if resp.clicked() {
+                                    self.open_request(path.clone(), req.id.clone());
+                                }
+                            }
+                        } else {
+                            ui.label(
+                                egui::RichText::new(
+                                    "This collection has no requests yet. \
+                                     Right-click it in the sidebar to add one.",
+                                )
+                                .size(12.0)
+                                .color(C_MUTED)
+                                .italics(),
+                            );
+                        }
+                    });
+            });
+    }
+
+}
+
+/// Count requests and subfolders recursively.
+fn count_requests_and_folders(folder: &Folder) -> (usize, usize) {
+    let mut reqs = folder.requests.len();
+    let mut subs = folder.subfolders.len();
+    for sub in &folder.subfolders {
+        let (r, s) = count_requests_and_folders(sub);
+        reqs += r;
+        subs += s;
+    }
+    (reqs, subs)
+}
+
+/// Find the path of IDs from the top-level collections array down to
+/// the folder with the given id. Returns `None` if not found.
+fn folder_path_from_root(folders: &[Folder], target: &str) -> Option<Vec<String>> {
+    fn dfs(
+        folders: &[Folder],
+        target: &str,
+        path: &mut Vec<String>,
+    ) -> bool {
+        for f in folders {
+            path.push(f.id.clone());
+            if f.id == target {
+                return true;
+            }
+            if dfs(&f.subfolders, target, path) {
+                return true;
+            }
+            path.pop();
+        }
+        false
+    }
+    let mut path = Vec::new();
+    if dfs(folders, target, &mut path) {
+        Some(path)
+    } else {
+        None
+    }
 }
 
 /// Attempt to decode a token as a JWT. Returns the pretty-printed

@@ -292,6 +292,10 @@ pub struct Folder {
     pub requests: Vec<Request>,
     #[serde(default)]
     pub subfolders: Vec<Folder>,
+    /// Free-text description shown on the collection/folder overview
+    /// page. Multiline; can be empty.
+    #[serde(default)]
+    pub description: String,
 }
 
 #[derive(Serialize, Deserialize, Default)]

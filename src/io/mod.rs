@@ -238,6 +238,7 @@ fn postman_to_folder(pc: &PostmanCollection) -> Folder {
         },
         requests: Vec::new(),
         subfolders: Vec::new(),
+        description: String::new(),
     };
     for item in &pc.item {
         process_item(item, &mut root);
@@ -256,6 +257,7 @@ fn process_item(item: &PostmanItem, parent: &mut Folder) {
             },
             requests: Vec::new(),
             subfolders: Vec::new(),
+            description: String::new(),
         };
         for s in subitems {
             process_item(s, &mut sub);
@@ -430,6 +432,7 @@ mod tests {
                 assertions: vec![],
             }],
             subfolders: vec![],
+            description: String::new(),
         }];
         let s = export_string(&folders, Format::Json).unwrap();
         let back = import_from_str(&s, "json").unwrap();
@@ -446,6 +449,7 @@ mod tests {
             name: "Test".into(),
             requests: vec![],
             subfolders: vec![],
+            description: String::new(),
         }];
         let s = export_string(&folders, Format::Yaml).unwrap();
         let back = import_from_str(&s, "yaml").unwrap();
