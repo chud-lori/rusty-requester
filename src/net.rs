@@ -28,6 +28,34 @@ pub fn build_client(settings: &AppSettings) -> reqwest::Client {
     b.build().unwrap_or_else(|_| reqwest::Client::new())
 }
 
+/// Extract `(host, path)` from an absolute URL for cookie-jar
+/// matching. Never fails — returns empty strings on a malformed URL
+/// so callers keep working. We avoid pulling in the `url` crate
+/// since everything else we do here is string-based already.
+pub fn parse_url_host_path(url: &str) -> (String, String) {
+    let rest = url
+        .trim_start_matches("https://")
+        .trim_start_matches("http://")
+        .trim_start_matches("ws://")
+        .trim_start_matches("wss://");
+    let (host_port, path_and_q) = match rest.find('/') {
+        Some(i) => rest.split_at(i),
+        None => (rest, "/"),
+    };
+    let host = host_port
+        .split(':')
+        .next()
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    let path = path_and_q
+        .split(['?', '#'])
+        .next()
+        .unwrap_or("/")
+        .to_string();
+    let path = if path.is_empty() { "/".to_string() } else { path };
+    (host, path)
+}
+
 /// Ensure the URL has a scheme so reqwest can parse it. Defaults to
 /// `http://` — matches curl's historical default and Postman's
 /// behavior for schemeless URLs. Users hitting HTTPS-only services
@@ -46,6 +74,21 @@ pub fn ensure_url_scheme(url: &str) -> String {
         return t.to_string();
     }
     format!("http://{}", t)
+}
+
+/// Build a long-lived tokio runtime used to drive every HTTP request.
+/// Stored on `ApiClient` and shared across `execute_request` calls so
+/// we don't pay the spawn-runtime cost (~1ms + thread allocation)
+/// per click of Send. Use `multi_thread` with 2 worker threads — one
+/// driver, one for body streaming — small enough to keep memory low,
+/// big enough to never block.
+pub fn build_runtime() -> tokio::runtime::Runtime {
+    tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .thread_name("rr-net")
+        .build()
+        .expect("failed to build tokio runtime")
 }
 
 /// Flatten a reqwest error's cause chain into a readable multi-line
@@ -68,17 +111,19 @@ pub fn format_request_error(err: &reqwest::Error) -> String {
 /// timings. Designed to run off the UI thread via
 /// `poll_promise::Promise::spawn_thread`.
 ///
-/// The `client` is shared across calls (built once from the current
-/// `AppSettings` — see `build_client`). `max_body_bytes` is the soft
-/// cap after which the body is truncated and a banner is prepended;
-/// `0` disables the cap.
+/// Both `client` and `runtime_handle` are shared across calls. The
+/// client is built once from `AppSettings` (see `build_client`); the
+/// runtime is owned by `ApiClient` (see `build_runtime`). Reusing
+/// both saves the per-send cost of spinning a fresh runtime + TCP
+/// connection pool. `max_body_bytes` is the soft cap after which the
+/// body is truncated and a banner is prepended; `0` disables the cap.
 pub fn execute_request(
     client: reqwest::Client,
+    runtime_handle: tokio::runtime::Handle,
     request: &Request,
     env: Option<&Environment>,
     max_body_bytes: usize,
 ) -> ResponseData {
-    let rt = tokio::runtime::Runtime::new().unwrap();
     let t_prepare_start = std::time::Instant::now();
 
     // Apply environment substitution to all string fields up-front.
@@ -98,7 +143,7 @@ pub fn execute_request(
         },
     };
 
-    rt.block_on(async {
+    runtime_handle.block_on(async {
         let final_url_base = ensure_url_scheme(&final_url_base);
         let final_url = curl::build_full_url(&final_url_base, &sub_params);
 
@@ -112,24 +157,46 @@ pub fn execute_request(
             HttpMethod::OPTIONS => client.request(reqwest::Method::OPTIONS, &final_url),
         };
 
-        let mut cookie_parts: Vec<String> = Vec::new();
+        // Build the outgoing `Cookie` header from three sources,
+        // deduped by name (last wins): the request's explicit Cookies
+        // tab, explicit `Cookie:` headers, and the active
+        // environment's persisted cookie jar (matched by host+path).
+        let (url_host, url_path) = parse_url_host_path(&final_url);
+        let jar_cookies = env
+            .map(|e| crate::cookies::cookies_for_url(&e.cookies, &url_host, &url_path))
+            .unwrap_or_default();
+        let mut cookie_map: std::collections::BTreeMap<String, String> =
+            std::collections::BTreeMap::new();
+        for (k, v) in jar_cookies {
+            cookie_map.insert(k, v);
+        }
+        for c in &sub_cookies {
+            if c.enabled && !c.key.is_empty() {
+                cookie_map.insert(c.key.clone(), c.value.clone());
+            }
+        }
         for h in &sub_headers {
             if !h.enabled || h.key.trim().is_empty() {
                 continue;
             }
             if h.key.eq_ignore_ascii_case("cookie") {
-                cookie_parts.push(h.value.clone());
+                // Parse "a=1; b=2" and merge into the map.
+                for pair in h.value.split(';') {
+                    if let Some((k, v)) = pair.split_once('=') {
+                        cookie_map.insert(k.trim().to_string(), v.trim().to_string());
+                    }
+                }
                 continue;
             }
             req_builder = req_builder.header(&h.key, &h.value);
         }
-        for c in &sub_cookies {
-            if c.enabled && !c.key.is_empty() {
-                cookie_parts.push(format!("{}={}", c.key, c.value));
-            }
-        }
-        if !cookie_parts.is_empty() {
-            req_builder = req_builder.header("Cookie", cookie_parts.join("; "));
+        if !cookie_map.is_empty() {
+            let joined = cookie_map
+                .iter()
+                .map(|(k, v)| format!("{}={}", k, v))
+                .collect::<Vec<_>>()
+                .join("; ");
+            req_builder = req_builder.header("Cookie", joined);
         }
 
         match &sub_auth {
@@ -187,6 +254,7 @@ pub fn execute_request(
                     status: "Failed".to_string(),
                     time: "0ms".to_string(),
                     headers: vec![],
+                    set_cookies: vec![],
                     response_headers_bytes: 0,
                     response_body_bytes: 0,
                     request_headers_bytes: 0,
@@ -252,6 +320,18 @@ pub fn execute_request(
                     })
                     .collect();
 
+                // Parse every `Set-Cookie` header into a StoredCookie
+                // so the caller can merge them into the active env.
+                // Host defaults to the request's host if the cookie
+                // omits an explicit Domain.
+                let set_cookies: Vec<crate::model::StoredCookie> = response
+                    .headers()
+                    .get_all(reqwest::header::SET_COOKIE)
+                    .iter()
+                    .filter_map(|v| v.to_str().ok())
+                    .filter_map(|s| crate::cookies::parse_set_cookie(s, &url_host))
+                    .collect();
+
                 // Stream body with a size cap so a multi-GB payload
                 // doesn't OOM the app. We read chunks until we hit
                 // `max_body_bytes`, then stop and prepend a banner.
@@ -281,6 +361,7 @@ pub fn execute_request(
                     status,
                     time,
                     headers,
+                    set_cookies,
                     response_headers_bytes,
                     response_body_bytes,
                     request_headers_bytes,
@@ -296,6 +377,7 @@ pub fn execute_request(
                 status: "Failed".to_string(),
                 time: "0ms".to_string(),
                 headers: vec![],
+                set_cookies: vec![],
                 response_headers_bytes: 0,
                 response_body_bytes: 0,
                 request_headers_bytes,

@@ -158,6 +158,7 @@ impl ApiClient {
                 id: Uuid::new_v4().to_string(),
                 name: format!("Environment {}", self.state.environments.len() + 1),
                 variables: vec![],
+                cookies: vec![],
             };
             let new_id = new.id.clone();
             self.state.environments.push(new);
@@ -529,7 +530,7 @@ impl ApiClient {
     /// Mutable lookup of a folder at an arbitrary path (top-level collection
     /// at path[0], nested subfolders after). Returns None if the path
     /// doesn't resolve.
-    fn folder_at_path_mut(&mut self, path: &[String]) -> Option<&mut Folder> {
+    pub(crate) fn folder_at_path_mut(&mut self, path: &[String]) -> Option<&mut Folder> {
         if path.is_empty() {
             return None;
         }
@@ -1239,6 +1240,181 @@ impl ApiClient {
         }
     }
 
+    /// Command palette (⌘P) — fuzzy-find across every request in
+    /// every collection and jump to it. Modal Area-based popup with
+    /// keyboard-only navigation (↑/↓, Enter to activate, Esc to
+    /// dismiss). Matches VS Code / Sublime / fzf-style UX.
+    pub(crate) fn render_command_palette(&mut self, ctx: &egui::Context) {
+        if !self.show_command_palette {
+            return;
+        }
+        // Build the match list — (path, request, display labels).
+        let entries = collect_palette_entries(&self.state.folders);
+        let query_lc = self.palette_query.to_lowercase();
+        let matches: Vec<&PaletteEntry> = entries
+            .iter()
+            .filter(|e| {
+                if query_lc.is_empty() {
+                    true
+                } else {
+                    fuzzy_contains(&e.haystack_lc, &query_lc)
+                }
+            })
+            .take(200)
+            .collect();
+
+        // Clamp selection to the visible matches (in case the user
+        // typed and the filter shrunk the list).
+        if self.palette_selected >= matches.len() {
+            self.palette_selected = matches.len().saturating_sub(1);
+        }
+
+        let (enter, esc, arrow_up, arrow_down) = ctx.input(|i| {
+            (
+                i.key_pressed(egui::Key::Enter),
+                i.key_pressed(egui::Key::Escape),
+                i.key_pressed(egui::Key::ArrowUp),
+                i.key_pressed(egui::Key::ArrowDown),
+            )
+        });
+        if esc {
+            self.show_command_palette = false;
+            return;
+        }
+        if arrow_down && !matches.is_empty() {
+            self.palette_selected = (self.palette_selected + 1) % matches.len();
+        }
+        if arrow_up && !matches.is_empty() {
+            self.palette_selected = if self.palette_selected == 0 {
+                matches.len() - 1
+            } else {
+                self.palette_selected - 1
+            };
+        }
+        let mut activate: Option<(Vec<String>, String)> = None;
+        if enter {
+            if let Some(e) = matches.get(self.palette_selected) {
+                activate = Some((e.folder_path.clone(), e.request_id.clone()));
+            }
+        }
+
+        // Darken the background to draw focus.
+        let screen = ctx.screen_rect();
+        ctx.layer_painter(egui::LayerId::new(
+            egui::Order::Middle,
+            egui::Id::new("palette_backdrop"),
+        ))
+        .rect_filled(
+            screen,
+            egui::Rounding::ZERO,
+            egui::Color32::from_black_alpha(140),
+        );
+
+        let mut open = true;
+        egui::Window::new(
+            egui::RichText::new("COMMAND PALETTE").size(11.0).strong().color(C_MUTED),
+        )
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(false)
+            .fixed_size(egui::vec2(560.0, 420.0))
+            .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 80.0))
+            .show(ctx, |ui| {
+                let query_resp = ui.add(
+                    egui::TextEdit::singleline(&mut self.palette_query)
+                        .hint_text("Search requests by name, URL, or method…")
+                        .desired_width(f32::INFINITY)
+                        .font(egui::TextStyle::Body),
+                );
+                if self.palette_focus_pending {
+                    self.palette_focus_pending = false;
+                    query_resp.request_focus();
+                }
+                ui.add_space(6.0);
+                ui.label(
+                    egui::RichText::new(format!(
+                        "{} result{}",
+                        matches.len(),
+                        if matches.len() == 1 { "" } else { "s" }
+                    ))
+                    .size(10.5)
+                    .color(C_MUTED),
+                );
+                ui.separator();
+
+                egui::ScrollArea::vertical()
+                    .id_salt("palette_scroll")
+                    .max_height(320.0)
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        for (i, m) in matches.iter().enumerate() {
+                            let is_sel = i == self.palette_selected;
+                            let (rect, resp) = ui.allocate_exact_size(
+                                egui::vec2(ui.available_width(), 34.0),
+                                egui::Sense::click(),
+                            );
+                            if ui.is_rect_visible(rect) {
+                                let bg = if is_sel {
+                                    C_ACCENT.linear_multiply(0.18)
+                                } else if resp.hovered() {
+                                    C_ELEVATED
+                                } else {
+                                    egui::Color32::TRANSPARENT
+                                };
+                                ui.painter()
+                                    .rect_filled(rect, egui::Rounding::same(5.0), bg);
+                                // Method
+                                let mc = method_color(&m.method);
+                                ui.painter().text(
+                                    egui::pos2(rect.left() + 10.0, rect.top() + 10.0),
+                                    egui::Align2::LEFT_TOP,
+                                    format!("{}", m.method),
+                                    egui::FontId::new(10.5, egui::FontFamily::Proportional),
+                                    mc,
+                                );
+                                ui.painter().text(
+                                    egui::pos2(rect.left() + 60.0, rect.top() + 7.0),
+                                    egui::Align2::LEFT_TOP,
+                                    &m.name,
+                                    egui::FontId::new(13.0, egui::FontFamily::Proportional),
+                                    C_TEXT,
+                                );
+                                ui.painter().text(
+                                    egui::pos2(rect.left() + 60.0, rect.top() + 22.0),
+                                    egui::Align2::LEFT_TOP,
+                                    &m.breadcrumb,
+                                    egui::FontId::new(10.5, egui::FontFamily::Proportional),
+                                    C_MUTED,
+                                );
+                            }
+                            let resp = resp
+                                .on_hover_cursor(egui::CursorIcon::PointingHand);
+                            if resp.clicked() {
+                                activate = Some((m.folder_path.clone(), m.request_id.clone()));
+                            }
+                        }
+                    });
+
+                ui.add_space(4.0);
+                ui.horizontal(|ui| {
+                    ui.label(
+                        egui::RichText::new(
+                            "↑ ↓  navigate    Enter  open    Esc  dismiss",
+                        )
+                        .size(10.5)
+                        .color(C_MUTED),
+                    );
+                });
+            });
+        if !open {
+            self.show_command_palette = false;
+        }
+        if let Some((path, req_id)) = activate {
+            self.show_command_palette = false;
+            self.open_request(path, req_id);
+        }
+    }
+
     pub(crate) fn render_toast(&mut self, ctx: &egui::Context) {
         let Some((msg, ttl)) = self.toast.clone() else {
             return;
@@ -1265,4 +1441,80 @@ impl ApiClient {
             });
     }
 
+}
+
+/// One row in the command palette result list.
+struct PaletteEntry {
+    folder_path: Vec<String>,
+    request_id: String,
+    name: String,
+    method: HttpMethod,
+    /// "Personal / api-v2 / GET" — shown as the secondary line in
+    /// the palette so users see where the request lives.
+    breadcrumb: String,
+    /// Lowercased haystack used by the fuzzy matcher (name + URL +
+    /// method + breadcrumb concatenated). Cached so we don't
+    /// re-allocate per keystroke.
+    haystack_lc: String,
+}
+
+fn collect_palette_entries(folders: &[Folder]) -> Vec<PaletteEntry> {
+    let mut out = Vec::new();
+    for folder in folders {
+        walk_palette(folder, vec![folder.id.clone()], folder.name.clone(), &mut out);
+    }
+    out
+}
+
+fn walk_palette(
+    folder: &Folder,
+    path: Vec<String>,
+    breadcrumb: String,
+    out: &mut Vec<PaletteEntry>,
+) {
+    for r in &folder.requests {
+        let haystack = format!(
+            "{} {} {} {}",
+            r.name, r.url, r.method, breadcrumb
+        )
+        .to_lowercase();
+        out.push(PaletteEntry {
+            folder_path: path.clone(),
+            request_id: r.id.clone(),
+            name: r.name.clone(),
+            method: r.method.clone(),
+            breadcrumb: format!("{} · {}", breadcrumb, r.url),
+            haystack_lc: haystack,
+        });
+    }
+    for sub in &folder.subfolders {
+        let mut sub_path = path.clone();
+        sub_path.push(sub.id.clone());
+        let sub_breadcrumb = format!("{} / {}", breadcrumb, sub.name);
+        walk_palette(sub, sub_path, sub_breadcrumb, out);
+    }
+}
+
+/// Tiny "subsequence" fuzzy matcher — every char of `needle` (already
+/// lowercase) must appear somewhere in `haystack` in order. Same
+/// algorithm fzf falls back to. Cheap, no scoring, good enough for
+/// palette filtering.
+fn fuzzy_contains(haystack: &str, needle: &str) -> bool {
+    if needle.is_empty() {
+        return true;
+    }
+    let mut chars = needle.chars();
+    let mut want = match chars.next() {
+        Some(c) => c,
+        None => return true,
+    };
+    for c in haystack.chars() {
+        if c == want {
+            match chars.next() {
+                Some(next) => want = next,
+                None => return true,
+            }
+        }
+    }
+    false
 }

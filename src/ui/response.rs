@@ -11,86 +11,80 @@ use crate::ApiClient;
 use eframe::egui;
 
 impl ApiClient {
-    pub(crate) fn render_response(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
+    /// Render `[status pill] · [time ms] · [total bytes]` inside a
+    /// right-to-left layout, with hover tooltips (phase breakdown on
+    /// time, request+response size breakdown on size). Rendered on
+    /// the far-right of the Body/Headers tab row, Postman-style.
+    fn render_response_status_chips(&self, ui: &mut egui::Ui) {
+        if self.response_status.is_empty() {
             ui.label(
-                egui::RichText::new("Response")
-                    .size(15.0)
-                    .strong()
-                    .color(C_TEXT),
+                egui::RichText::new("No response yet")
+                    .color(C_MUTED)
+                    .size(11.5)
+                    .italics(),
             );
-            ui.add_space(12.0);
-
-            let bullet = || {
+            return;
+        }
+        let bullet_sep = |ui: &mut egui::Ui| {
+            ui.add_space(4.0);
+            ui.label(
                 egui::RichText::new("•")
                     .color(C_MUTED.linear_multiply(0.7))
-                    .size(12.0)
-            };
-            let info_text = |s: String| egui::RichText::new(s).color(C_MUTED).size(12.0);
-
-            if !self.response_status.is_empty() {
-                // Status badge — colored pill, e.g. "200 OK" or "404 Not Found"
-                let sc = status_color(&self.response_status);
-                egui::Frame::none()
-                    .fill(sc.linear_multiply(0.18))
-                    .rounding(egui::Rounding::same(5.0))
-                    .inner_margin(egui::Margin::symmetric(8.0, 3.0))
-                    .show(ui, |ui| {
-                        ui.label(
-                            egui::RichText::new(&self.response_status)
-                                .color(sc)
-                                .strong()
-                                .size(12.0),
-                        );
-                    });
-            }
-            if !self.response_time.is_empty() {
-                ui.add_space(4.0);
-                ui.label(bullet());
-                ui.add_space(2.0);
-                let time_resp = ui.label(info_text(self.response_time.clone()));
-                let prep = self.response_prepare_ms;
-                let wait = self.response_waiting_ms;
-                let dl = self.response_download_ms;
-                let total = self.response_total_ms;
-                time_resp.on_hover_ui(move |ui| {
-                    render_time_breakdown(ui, prep, wait, dl, total);
-                });
-            }
-            let total_resp_bytes =
-                self.response_headers_bytes + self.response_body_bytes;
-            if total_resp_bytes > 0 {
-                ui.add_space(4.0);
-                ui.label(bullet());
-                ui.add_space(2.0);
-                let size_resp = ui.label(info_text(format_bytes(total_resp_bytes)));
-                // Hover popover with breakdown — response size + request size,
-                // mirroring Postman's globe-icon tooltip.
-                let resp_h_bytes = self.response_headers_bytes;
-                let resp_b_bytes = self.response_body_bytes;
-                let req_h_bytes = self.request_headers_bytes;
-                let req_b_bytes = self.request_body_bytes;
-                size_resp.on_hover_ui(move |ui| {
-                    render_size_breakdown(
-                        ui,
-                        resp_h_bytes,
-                        resp_b_bytes,
-                        req_h_bytes,
-                        req_b_bytes,
-                    );
-                });
-            }
-            if self.response_status.is_empty() {
+                    .size(12.0),
+            );
+            ui.add_space(4.0);
+        };
+        // In a right-to-left layout, items are laid out right-first,
+        // so visually: status · time · size (size ends up leftmost).
+        let total_resp_bytes =
+            self.response_headers_bytes + self.response_body_bytes;
+        if total_resp_bytes > 0 {
+            let resp_h = self.response_headers_bytes;
+            let resp_b = self.response_body_bytes;
+            let req_h = self.request_headers_bytes;
+            let req_b = self.request_body_bytes;
+            ui.label(
+                egui::RichText::new(format_bytes(total_resp_bytes))
+                    .color(C_MUTED)
+                    .size(12.0),
+            )
+            .on_hover_ui(move |ui| {
+                render_size_breakdown(ui, resp_h, resp_b, req_h, req_b);
+            });
+            bullet_sep(ui);
+        }
+        if !self.response_time.is_empty() {
+            let prep = self.response_prepare_ms;
+            let wait = self.response_waiting_ms;
+            let dl = self.response_download_ms;
+            let total = self.response_total_ms;
+            ui.label(
+                egui::RichText::new(self.response_time.clone())
+                    .color(C_MUTED)
+                    .size(12.0),
+            )
+            .on_hover_ui(move |ui| {
+                render_time_breakdown(ui, prep, wait, dl, total);
+            });
+            bullet_sep(ui);
+        }
+        let sc = status_color(&self.response_status);
+        egui::Frame::none()
+            .fill(sc.linear_multiply(0.18))
+            .rounding(egui::Rounding::same(5.0))
+            .inner_margin(egui::Margin::symmetric(8.0, 3.0))
+            .show(ui, |ui| {
                 ui.label(
-                    egui::RichText::new("— no response yet")
-                        .color(C_MUTED)
-                        .size(12.0)
-                        .italics(),
+                    egui::RichText::new(&self.response_status)
+                        .color(sc)
+                        .strong()
+                        .size(12.0),
                 );
-            }
-        });
+            });
+    }
 
-        ui.add_space(4.0);
+    pub(crate) fn render_response(&mut self, ui: &mut egui::Ui) {
+        ui.add_space(2.0);
         // One unified toolbar row — Body / Headers tabs on the left,
         // then the body-view pills (JSON / Tree / Raw) inline with
         // them when Body is active, and the save / copy / search
@@ -136,10 +130,14 @@ impl ApiClient {
                 }
             }
 
-            if body_active {
-                ui.with_layout(
-                    egui::Layout::right_to_left(egui::Align::Center),
-                    |ui| {
+            // Right side: action icons (Body tab only) + status chips.
+            // 6 px right edge padding so nothing sits flush against
+            // the panel border.
+            ui.with_layout(
+                egui::Layout::right_to_left(egui::Align::Center),
+                |ui| {
+                    ui.add_space(6.0);
+                    if body_active {
                         if icon_button(ui, "Save response to file", paint_save_icon)
                             .clicked()
                         {
@@ -153,9 +151,11 @@ impl ApiClient {
                         if icon_button(ui, "Search in body", paint_search_icon).clicked() {
                             toggle_search = true;
                         }
-                    },
-                );
-            }
+                        ui.add_space(12.0);
+                    }
+                    self.render_response_status_chips(ui);
+                },
+            );
         });
 
         if toggle_search {

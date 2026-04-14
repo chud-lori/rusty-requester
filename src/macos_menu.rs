@@ -18,6 +18,7 @@ pub const MENU_PASTE_CURL: &str = "paste_curl";
 pub const MENU_EXPORT_JSON: &str = "export_json";
 pub const MENU_EXPORT_YAML: &str = "export_yaml";
 pub const MENU_TOGGLE_SNIPPET: &str = "toggle_snippet";
+pub const MENU_COMMAND_PALETTE: &str = "command_palette";
 pub const MENU_SEND: &str = "send";
 pub const MENU_SETTINGS: &str = "settings";
 pub const MENU_ENVIRONMENTS: &str = "environments";
@@ -108,6 +109,13 @@ pub fn install() {
     // --- View ----------------------------------------------------------
     let view = Submenu::new("View", true);
     view.append_items(&[
+        &MenuItem::with_id(
+            MENU_COMMAND_PALETTE,
+            "Command Palette…",
+            true,
+            Some(Accelerator::new(Some(cmd), Code::KeyP)),
+        ),
+        &PredefinedMenuItem::separator(),
         &MenuItem::with_id(
             MENU_TOGGLE_SNIPPET,
             "Toggle code snippet panel",

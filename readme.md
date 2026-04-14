@@ -34,39 +34,56 @@ and of managing a wall of raw <code>curl</code> commands in my terminal.
 - 📝 Tabbed editor: **Params · Headers · Cookies · Body · Auth · Tests**
 - 🔗 Query-param builder with live "final URL" preview and auto-growing "ghost" row (type and a new empty row appears below)
 - 🍪 Cookies list (merged into a `Cookie` header on send)
-- 🔐 Auth presets: **No Auth · Bearer Token · Basic Auth**
+- 🔐 Auth presets: **No Auth · Bearer Token · Basic Auth** + **JWT decoder** (Bearer tokens auto-decode below the input — header & payload pretty JSON, scope/exp at a glance)
 - 📦 **Body modes**: Raw / `x-www-form-urlencoded` / `multipart/form-data` / **GraphQL** (query + variables, sent as `application/json`)
-- ✨ **Prettify / Minify** JSON body (one-click)
+- 📐 **Line-numbered request body** with subtle `Beautify` / `Minify` action links
 - 🌱 **Environment variables** — define key/value vars per environment, reference them anywhere with `{{varname}}`. Switch active env from the sidebar.
 - 📜 **Request history** — every send is logged (method, URL, status, time, response preview); browse the last 200 from the sidebar's History tab.
-- 🔗 **Post-response extractors (Tests tab)** — JSONPath-style rules that pull a value from the response (`data.token`, `items[0].id`, `$.x`, or a header name) and write it into the active environment, so the next request can `{{token}}` it.
+- 🔗 **Post-response extractors (Tests tab)** — dot/bracket paths (`data.token`, `items[0].id`, `$.x`) or header names that pull a value from the response and write it into the active environment, so the next request can `{{token}}` it.
+- ✅ **Assertions (Tests tab)** — pass/fail rules against the response: status equals/`>`/`<`, header exists, body-path equals / contains / matches `^2..$`. Result-dot per row (green / red / amber); toast summarizes after each send.
 
 ### Responses
-- 📊 Status pill + response time + size rendered inline like Postman (`200 OK · 54 ms · 434 B`)
+- 📊 Status pill + response time + size rendered inline with the Body/Headers tab row, on the right (Postman-style: `Body  Headers  JSON Tree Raw  [🔍][📋][💾]    200 OK · 54 ms · 434 B`)
 - 🛈 **Size hover tooltip** — breakdown of response headers/body and request headers/body bytes
 - 🛈 **Time hover tooltip** — gantt-style phase breakdown: Prepare · Waiting (TTFB) · Download
-- 🧩 **Body view modes**: **JSON** (syntax-highlighted code editor with line numbers), **Tree** (collapsible JSON tree with filter), **Raw** (verbatim)
+- 🧩 **Body view modes**: **JSON** (syntax-highlighted code editor with line numbers), **Tree** (collapsible JSON tree with filter + right-click "Copy path"), **Raw** (verbatim) — pills are inline with the section tabs and don't scroll away
 - 🔍 **Find in body** — toolbar search icon highlights all matches inline
-- 📋 **Copy response body** — toolbar icon copies the raw body to clipboard
+- 📋 **Copy response body** + 💾 **Save response to file** (Content-Type → file extension auto-suggested)
 - 📑 Separate **Body / Headers** tabs; rust-orange accent on header keys
 - ⏳ Rust-orange **loading spinner** while the request is in flight
-- 🎨 Auto-pretty-printed JSON responses; click into the view to position caret, select, ⌘C
+- 🎨 Auto-pretty-printed JSON responses; click into the view to position caret, select, ⌘A / ⌘C
+
+### Cookie jar (per-environment)
+- 🪪 **`Set-Cookie` auto-persisted** into the active environment with name/domain/path/expiry tracked
+- 🔄 **Auto-replayed** on the next request that matches host (suffix-match) + path (prefix-match) — same model browsers use
+- ⏰ Expired cookies (Max-Age / Expires past) pruned automatically; session cookies kept until app quit
+- 🔁 Switching active environment swaps the cookie set (Staging cookies don't leak into Prod)
 
 ### cURL interop
 - 📋 **Copy as cURL** — current request → clipboard as a `curl` command
 - 📥 **Paste from cURL** — paste any `curl` command and it becomes a request (method, URL, headers, body, auth, cookies, params — all parsed)
-- 💻 **Code snippet panel** — side panel generating `cURL` / Python `requests` / JavaScript `fetch` / HTTPie, with syntax-highlighted code + line numbers
+- 💻 **Code snippet panel** — side panel generating `cURL` / Python `requests` / JavaScript `fetch` / HTTPie, with syntax-highlighted code + line numbers and a copy icon
 
 ### Collections
 - 📚 **Collections & subfolders** — organize requests in nested folders
 - ➕ **Inline `+` button** on every folder header — adds a request in one click
-- ⋯ **Overflow menu** on every folder header — Add request · Add folder · Rename · Duplicate · Delete
+- ⋯ **Overflow menu** on every folder header — Open overview · Add request · Add folder · Rename · Duplicate · Delete
+- 📖 **Collection overview page** — click "Open overview" to see a dedicated homepage with title, recursive request/folder counts, an editable description, and a clickable request list
 - 🪆 **Duplicate** folders recursively (keeps structure, fresh UUIDs) or individual requests
 - 💾 **Save draft to any folder** — the save-draft modal shows a full folder tree with search + "New folder"
+- 🔄 **Drag to reorder** requests within a folder (drag the row, drop on a new position)
 - 🔎 **Search** across request names, URLs, methods, and folder names (⌘K to focus)
 - 📤 **Export** all collections as **JSON** or **YAML**
 - 📥 **Import** JSON, YAML, or **Postman Collection v2.1** files
 - ✏️ Rename via double-click or right-click
+
+### Workflow
+- 🎛 **Settings modal** — request timeout, max body size cap (50 MB default; truncates with banner), proxy URL, TLS verification toggle. All persisted to disk.
+- 🔌 **Reused HTTP client + tokio runtime** — no per-request connection-pool / runtime spinup; faster repeated sends.
+- ⌨️ **⌘P command palette** — fuzzy-find any request across every collection, ↑↓ navigate, Enter to open
+- ⌨️ Standard shortcuts: ⌘⏎ Send · ⌘K focus search · ⌘S save draft · F2 rename · Esc dismiss modals
+- 🍎 **Native macOS NSMenu bar** (Rusty Requester · File · View · Request · Help) via `muda`; in-window menu on Linux
+- ℹ **Help → About** opens a custom modal with creator credit + Contribute / Report-issue links
 
 ---
 
@@ -362,28 +379,45 @@ the character.
 - **`rfd`** — native open / save file dialogs
 - **`uuid`** — stable IDs for folders / requests
 
-Source layout:
+Source layout (~10 KLOC across 18 files):
 
 ```
 src/
-  main.rs              # ApiClient struct + core state methods + fn main
-  app.rs via main.rs   # (ApiClient state currently lives in main.rs)
-  model.rs             # Data types (Request, KvRow, Auth, HttpMethod, Folder, ResponseExtractor, ...)
+  main.rs              # ApiClient struct + core state + fn main + macOS menu dispatch
+  model.rs             # Data types — Request, Folder, Auth, HttpMethod, KvRow,
+                       #   ResponseExtractor, ResponseAssertion, AppSettings,
+                       #   Environment (with cookie jar), StoredCookie, ...
   theme.rs             # Rust-forge color constants + global egui style
-  widgets.rs           # Reusable widgets (kv_table, body view pills, icon painters, tooltips, ...)
-  net.rs               # execute_request, URL scheme, error formatting (pure, unit-testable)
-  snippet.rs           # Code-snippet generators + syntax highlighters (cURL/JSON/Python/JS)
-  extract.rs           # Post-response JSONPath-style extractor evaluator (unit-tested)
-  icon.rs              # App icon loading (texture + window icon + macOS dock)
+  widgets.rs           # Reusable widgets — kv_table, body view pills, icon painters,
+                       #   JSON tree (with right-click "Copy path"), tooltip panels,
+                       #   tab pills, drag/drop helpers
+  net.rs               # execute_request + reqwest::Client / tokio::Runtime builders +
+                       #   URL scheme, error formatting (no UI deps; unit-testable)
+  snippet.rs           # Code-snippet generators + syntax highlighters (cURL / JSON /
+                       #   Python / JS) with line-number gutter
+  extract.rs           # Dot/bracket JSON-path evaluator for extractors (5 tests)
+  assertion.rs         # Assertion evaluator (status/header/body × 7 ops) +
+                       #   tiny regex engine (no `regex` crate dep) (7 tests)
+  cookies.rs           # RFC 6265-ish cookie jar — parse Set-Cookie, host/path
+                       #   matching, expiry pruning (8 tests)
+  macos_menu.rs        # Native NSMenu via muda — App / File / View / Request /
+                       #   Help submenus + ⌘P / ⌘⏎ / ⇧⌘C accelerators
+  icon.rs              # App icon loading (texture + window icon + macOS dock icon)
   io/
-    mod.rs             # JSON / YAML export + Postman v2.1 import (unit-tested)
-    curl.rs            # cURL tokenizer / parser / builder         (unit-tested)
+    mod.rs             # JSON / YAML export + Postman v2.1 import       (unit-tested)
+    curl.rs            # cURL tokenizer / parser / builder              (unit-tested)
   ui/
     mod.rs             # submodule wiring
-    sidebar.rs         # left panel: collections tree, env picker, history, folder icons
-    editor.rs          # central panel: tabs bar, URL bar, request-editor tabs (incl. Tests)
-    response.rs        # response info bar, body toolbar (JSON/Tree/Raw), search, tooltips
-    modals.rs          # env mgr, save-draft folder picker, cURL paste, snippet panel, toast
+    sidebar.rs         # left panel — collections tree, env picker, history, folder
+                       #   row drag-to-reorder, search box
+    editor.rs          # central panel — tabs bar, URL bar, request-editor tabs
+                       #   (Params/Headers/Cookies/Body/Auth/Tests), collection
+                       #   overview page, JWT decoder
+    response.rs        # response panel — inline status chips, body toolbar
+                       #   (JSON/Tree/Raw), search, copy, save, headers grid,
+                       #   loading spinner, empty state
+    modals.rs          # env mgr, save-draft folder picker, cURL paste, snippet
+                       #   panel, settings, About modal, command palette (⌘P), toast
 
 assets/
   icon.png             # 512×512 generated by scripts/generate_icon.py
@@ -392,8 +426,11 @@ scripts/
   deploy.sh            # one-arg release script (version bump + tag + push)
   make_dmg.sh          # DMG packager invoked by `make dmg`
   generate_icon.py
-install.sh             # macOS one-line installer (downloads + unpacks the DMG)
+install.sh             # macOS + Linux one-line installer
 ```
+
+29 unit tests across `extract`, `assertion`, `cookies`, `io`, `io::curl`. Run
+`cargo test` to verify everything builds + passes.
 
 ---
 
@@ -460,45 +497,66 @@ Applications and you're done.
 
 ## 🗺️ Roadmap
 
-**Shipped:**
+**Shipped through v0.5:**
 
-- [x] cURL import (paste in URL bar) / export (right-side code panel: cURL, Python, JS, HTTPie)
+Foundations
+- [x] Full HTTP methods, tabbed editor (Params / Headers / Cookies / Body / Auth / Tests)
+- [x] cURL import (paste in URL bar) / export (right-side code panel: cURL, Python, JS, HTTPie) with syntax-highlighted line-numbered code view
 - [x] Postman Collection v2.1 import
-- [x] JSON / YAML export & import (all collections)
-- [x] Query parameter builder (table layout with enable/disable + description + auto-ghost row)
-- [x] Cookies tab
-- [x] Bearer / Basic auth presets
-- [x] Response headers viewer (separate Body / Headers tabs)
-- [x] Search across requests, URLs, methods, folder names
-- [x] Subfolders
-- [x] **Form-data / urlencoded body modes**
-- [x] **GraphQL body mode** — query + variables, sent as `application/json`
-- [x] **Environment variables** — `{{var}}` substitution with active env selector + manage modal
-- [x] **Request history** — last 200 sends with preview, accessible from sidebar
-- [x] Postman-style request tabs (open multiple requests, switch with one click)
-- [x] Inline rename via double-click
-- [x] **Post-response extractors (Tests tab)** — dot/bracket JSONPath → env variables for chaining
-- [x] **Response JSON views** — syntax-highlighted code (line numbers) + collapsible Tree + Raw + find-in-body search + copy-body button
-- [x] **Response info tooltips** — size breakdown (request/response headers+body bytes) and time breakdown (Prepare / Waiting / Download)
-- [x] Loading spinner + "builder error" → readable error chain
-- [x] Inline folder `+` / `⋯` toolbar (add request, add folder, rename, duplicate, delete)
-- [x] Duplicate folder (recursive, fresh UUIDs)
-- [x] Save-draft modal with full folder tree + inline "New folder"
-- [x] macOS one-line installer (`install.sh`)
+- [x] JSON / YAML export & import
+- [x] Query parameter builder + auto-growing ghost row pattern for all KV tables
+- [x] Bearer / Basic auth presets + **JWT decoder** for Bearer tokens
+- [x] Body modes: Raw / form-urlencoded / multipart / GraphQL
+- [x] Environment variables — `{{var}}` substitution with active env selector + manage modal
+- [x] Request history — last 200 sends with preview
+
+Workflow
+- [x] Postman-style request tabs (open multiple requests, switch with one click) with hover preview
+- [x] Inline rename via double-click; F2 shortcut
+- [x] Subfolders; collection overview page; inline folder `+`/`⋯` toolbar; duplicate folder recursively; save-draft folder picker with inline "New folder"
+- [x] Drag-to-reorder requests within a folder
+- [x] Search across requests, URLs, methods, folder names (⌘K)
+- [x] **⌘P command palette** — fuzzy-find any request and jump
+
+Response viewing
+- [x] **Body view modes**: JSON (syntax-highlighted code, line numbers), Tree (collapsible JSON tree with **right-click "Copy path"**), Raw
+- [x] Find-in-body, copy-body, **save-response-to-file**
+- [x] Response info chips (status / time / size) **inline** with the Body/Headers tab row; tooltips for size & time breakdowns
+- [x] Loading spinner; readable error chains (no more opaque "builder error")
+- [x] Auto-pretty-printed JSON; click-and-drag selection works in read-only views
+
+Testing
+- [x] **Post-response extractors** — dot/bracket JSON path → env variables for chaining
+- [x] **Assertions** — status / header / body × equals · contains · matches `^2..$` · exists · `>` · `<`. Per-row pass/fail dot.
+
+Networking & safety
+- [x] **Settings modal** — request timeout, max body cap (streaming + truncation banner), proxy URL, TLS verification toggle
+- [x] **Reused `reqwest::Client` + `tokio::Runtime`** across sends — no per-request spinup cost
+- [x] **Cookie jar (per-environment)** — `Set-Cookie` parsed, host/path-matched on next send, expiry-aware
+
+Platform
+- [x] macOS + Linux one-line installer (`install.sh`); auto-detects platform
+- [x] Universal macOS DMG (Apple Silicon + Intel) and Linux x86_64 tarball built by GitHub Actions
+- [x] **Native macOS NSMenu bar** (App / File / View / Request / Help) with ⌘P, ⌘⏎, ⇧⌘C accelerators
+- [x] Custom **About modal** with creator credit + Contribute / Report-issue links
 
 **In progress / planned:**
 
 - [ ] **WebSocket testing** — needs a separate connection lifecycle and message-log UI;
-      the plan is to add a `RequestKind::WebSocket` mode using `tokio-tungstenite` with a
+      plan is to add a `RequestKind::WebSocket` mode using `tokio-tungstenite` with a
       send box + scrolling message log per request.
+- [ ] **OAuth 2.0** flows (Authorization Code + PKCE, Client Credentials, refresh
+      token). Probably the highest-impact next addition for users hitting auth-gated
+      APIs; tokens would slot directly into the existing env / extractor system.
 - [ ] **Pre-request scripts** — full JS-style scripts via Rhai or Boa; the lightweight
-      post-response extractors are already in (see Shipped above).
-- [ ] **Request timeout + body size cap** — add a configurable `Client::timeout` and a
-      50 MB body cap with truncation banner, to prevent hung endpoints / OOM on huge
-      responses.
-- [ ] **Client / runtime reuse** — currently each send spins a fresh
-      `tokio::runtime::Runtime` + `reqwest::Client`; pooling these would reduce
-      per-request overhead.
+      post-response extractors + assertions cover ~80% of what users reach for, but
+      pre-request transformations need an embedded scripting engine.
+- [ ] **Server-Sent Events (SSE)** support — handy for the LLM-streaming endpoints
+      that have become common.
+- [ ] **Response diff** — "send twice, diff me" between two recent responses; useful
+      regression-test feature unique to this app.
+- [ ] **Light theme** — the dark theme is opinionated; a parallel light palette would
+      be straightforward but require touching every color constant.
 
 ---
 
