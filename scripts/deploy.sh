@@ -100,6 +100,16 @@ fi
 
 dim "  Cargo.toml + Makefile bumped"
 
+# --- Format check --------------------------------------------------------
+# Mirror what `ci.yml` enforces so we never tag a release that the CI
+# rustfmt job will reject. Cheap (~1 s); fail fast before pushing.
+blue "→ Checking formatting (cargo fmt --check)"
+if ! cargo fmt --all -- --check >/dev/null 2>&1; then
+    red "error: code is not rustfmt-clean. Run 'cargo fmt --all' and re-run deploy."
+    cargo fmt --all -- --check 2>&1 | head -20
+    exit 1
+fi
+
 # --- Rebuild so Cargo.lock picks up the new version ---------------------
 blue "→ Refreshing Cargo.lock"
 cargo build --release --quiet
