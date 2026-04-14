@@ -666,7 +666,9 @@ pub fn icon_button(
     hover_text: &str,
     paint: impl FnOnce(&egui::Painter, egui::Pos2, egui::Color32),
 ) -> egui::Response {
-    let size = egui::vec2(26.0, 22.0);
+    // Slimmer than a typical button so the body toolbar stays
+    // lightweight and leaves room for pills + filter + icons in one row.
+    let size = egui::vec2(22.0, 20.0);
     let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::click());
     if ui.is_rect_visible(rect) {
         let color = if resp.hovered() { C_TEXT } else { C_MUTED };
@@ -740,9 +742,11 @@ pub fn count_matches(folders: &[Folder], q: &str) -> usize {
     n
 }
 
-/// Small segmented-control pill used in the response Body tab to switch
-/// between Raw text and the JSON tree view. Styled like the main tab
-/// bar but compact (height ~22, no underline).
+/// Compact underlined text toggle used in the response Body toolbar
+/// to switch between JSON / Tree / Raw views. No background, no
+/// border — just colored text with an accent underline when active,
+/// matching Postman's Pretty/Raw/Preview style (less visual weight
+/// than a chunky pill, scans as a tabbed toggle).
 pub fn body_view_pill(
     ui: &mut egui::Ui,
     current: &mut BodyView,
@@ -751,28 +755,32 @@ pub fn body_view_pill(
 ) {
     let is_active = *current == value;
     let fg = if is_active { C_ACCENT } else { C_MUTED };
-    let bg = if is_active {
-        C_ACCENT.linear_multiply(0.15)
-    } else {
-        egui::Color32::TRANSPARENT
-    };
     let resp = ui
         .add(
             egui::Button::new(
                 egui::RichText::new(label)
-                    .size(12.0)
+                    .size(11.5)
                     .color(fg)
                     .strong(),
             )
-            .fill(bg)
-            .stroke(egui::Stroke::new(
-                1.0,
-                if is_active { C_ACCENT } else { C_BORDER },
-            ))
-            .min_size(egui::vec2(64.0, 22.0))
-            .rounding(egui::Rounding::same(6.0)),
+            .fill(egui::Color32::TRANSPARENT)
+            .stroke(egui::Stroke::NONE)
+            .min_size(egui::vec2(42.0, 20.0))
+            .rounding(egui::Rounding::same(3.0)),
         )
         .on_hover_cursor(egui::CursorIcon::PointingHand);
+    if is_active {
+        let rect = resp.rect;
+        let y = rect.bottom() - 1.0;
+        let pad = 6.0;
+        ui.painter().line_segment(
+            [
+                egui::pos2(rect.left() + pad, y),
+                egui::pos2(rect.right() - pad, y),
+            ],
+            egui::Stroke::new(1.5, C_ACCENT),
+        );
+    }
     if resp.clicked() {
         *current = value;
     }
