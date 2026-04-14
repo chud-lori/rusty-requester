@@ -150,7 +150,7 @@ pub fn elide(text: &str, max_width: f32, font: &egui::FontId, ui: &egui::Ui) -> 
     let mut lo = 0usize;
     let mut hi = text.chars().count();
     while lo < hi {
-        let mid = (lo + hi + 1) / 2;
+        let mid = (lo + hi).div_ceil(2);
         let candidate: String = text.chars().take(mid).collect::<String>() + ellipsis;
         if measure(&candidate) <= max_width {
             lo = mid;
@@ -676,7 +676,7 @@ pub fn icon_button(
             ui.painter()
                 .rect_filled(rect, egui::Rounding::same(4.0), C_ELEVATED);
         }
-        paint(&ui.painter(), rect.center(), color);
+        paint(ui.painter(), rect.center(), color);
     }
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
         .on_hover_text(hover_text)
@@ -788,8 +788,12 @@ pub fn body_view_pill(
 
 /// Render a JSON `Value` as an interactive, collapsible tree. Objects
 /// and arrays become expandable nodes; leaves are rendered inline as
-/// `key: value` with syntax colors.  `filter` (lowercase) hides any
+/// `key: value` with syntax colors. `filter` (lowercase) hides any
 /// subtree that has no matching key/value; an empty filter shows all.
+///
+/// Right-click any row to copy its dot/bracket path
+/// (e.g. `data.items[0].id`) to the clipboard — slots directly into
+/// extractors and assertions.
 pub fn render_json_tree(
     ui: &mut egui::Ui,
     id: egui::Id,
@@ -798,49 +802,204 @@ pub fn render_json_tree(
     filter: &str,
     depth: usize,
 ) {
+    render_json_tree_inner(ui, id, key, value, filter, depth, "");
+}
+
+fn render_json_tree_inner(
+    ui: &mut egui::Ui,
+    id: egui::Id,
+    key: &str,
+    value: &Value,
+    filter: &str,
+    depth: usize,
+    parent_path: &str,
+) {
     if !filter.is_empty() && !subtree_matches(key, value, filter) {
         return;
     }
 
+    let current_path = compose_json_path(parent_path, key);
+
     match value {
         Value::Object(map) => {
-            let summary = format!("{{...}} ({} key{})", map.len(), if map.len() == 1 { "" } else { "s" });
-            json_header(ui, id, key, &summary, depth, |ui| {
-                for (k, v) in map {
-                    render_json_tree(ui, id.with(k), k, v, filter, depth + 1);
-                }
-            });
+            let summary = format!(
+                "{{...}} ({} key{})",
+                map.len(),
+                if map.len() == 1 { "" } else { "s" }
+            );
+            json_header_with_menu(
+                ui,
+                id,
+                key,
+                &summary,
+                depth,
+                &current_path,
+                |ui| {
+                    for (k, v) in map {
+                        render_json_tree_inner(
+                            ui,
+                            id.with(k),
+                            k,
+                            v,
+                            filter,
+                            depth + 1,
+                            &current_path,
+                        );
+                    }
+                },
+            );
         }
         Value::Array(items) => {
-            let summary = format!("[...] ({} item{})", items.len(), if items.len() == 1 { "" } else { "s" });
-            json_header(ui, id, key, &summary, depth, |ui| {
-                for (i, v) in items.iter().enumerate() {
-                    let sub_key = format!("[{}]", i);
-                    render_json_tree(ui, id.with(i), &sub_key, v, filter, depth + 1);
-                }
-            });
+            let summary = format!(
+                "[...] ({} item{})",
+                items.len(),
+                if items.len() == 1 { "" } else { "s" }
+            );
+            json_header_with_menu(
+                ui,
+                id,
+                key,
+                &summary,
+                depth,
+                &current_path,
+                |ui| {
+                    for (i, v) in items.iter().enumerate() {
+                        let sub_key = format!("[{}]", i);
+                        render_json_tree_inner(
+                            ui,
+                            id.with(i),
+                            &sub_key,
+                            v,
+                            filter,
+                            depth + 1,
+                            &current_path,
+                        );
+                    }
+                },
+            );
         }
         _ => {
-            ui.horizontal(|ui| {
-                ui.add_space(16.0 * depth as f32 + 18.0);
-                if !key.is_empty() {
-                    ui.label(
-                        egui::RichText::new(format!("{}:", key))
-                            .color(C_ACCENT)
-                            .font(egui::FontId::monospace(12.5)),
+            // Allocate a clickable row so we can attach a right-click
+            // context menu to the leaf.
+            let row_h = 18.0;
+            let (rect, resp) = ui.allocate_exact_size(
+                egui::vec2(ui.available_width(), row_h),
+                egui::Sense::click(),
+            );
+            if ui.is_rect_visible(rect) {
+                if resp.hovered() {
+                    ui.painter().rect_filled(
+                        rect,
+                        egui::Rounding::same(3.0),
+                        C_ELEVATED,
                     );
                 }
+                let mut x = rect.left() + 16.0 * depth as f32 + 18.0;
+                let y = rect.center().y;
+                let font = egui::FontId::monospace(12.5);
+                if !key.is_empty() {
+                    let key_text = format!("{}:", key);
+                    let key_galley = ui.painter().layout_no_wrap(
+                        key_text.clone(),
+                        font.clone(),
+                        C_ACCENT,
+                    );
+                    ui.painter().galley(egui::pos2(x, y - key_galley.size().y / 2.0), key_galley.clone(), C_ACCENT);
+                    x += key_galley.size().x + 6.0;
+                }
                 let (color, text) = json_leaf_style(value);
-                ui.label(
-                    egui::RichText::new(text)
-                        .color(color)
-                        .font(egui::FontId::monospace(12.5)),
+                ui.painter().text(
+                    egui::pos2(x, y),
+                    egui::Align2::LEFT_CENTER,
+                    text,
+                    font,
+                    color,
                 );
-            });
+            }
+            attach_path_menu(&resp, &current_path);
         }
     }
 }
 
+/// "data" + "items" → "data.items"; "data.items" + "[0]" → "data.items[0]";
+/// empty parent + key "data" → "data"; empty key (root) → "".
+fn compose_json_path(parent: &str, key: &str) -> String {
+    if key.is_empty() {
+        return parent.to_string();
+    }
+    if parent.is_empty() {
+        // Top-level array index "[0]" stays "[0]"; top-level object key "data" stays "data".
+        return key.to_string();
+    }
+    if key.starts_with('[') {
+        format!("{}{}", parent, key)
+    } else {
+        format!("{}.{}", parent, key)
+    }
+}
+
+/// Same as the original `json_header` but the entire header response
+/// gets a right-click menu offering "Copy path".
+fn json_header_with_menu(
+    ui: &mut egui::Ui,
+    id: egui::Id,
+    key: &str,
+    summary: &str,
+    depth: usize,
+    path: &str,
+    body: impl FnOnce(&mut egui::Ui),
+) {
+    ui.horizontal(|ui| {
+        ui.add_space(16.0 * depth as f32);
+        let header_text = if key.is_empty() {
+            summary.to_string()
+        } else {
+            format!("{}  {}", key, summary)
+        };
+        let head = egui::CollapsingHeader::new(
+            egui::RichText::new(header_text)
+                .color(if key.is_empty() { C_MUTED } else { C_TEXT })
+                .font(egui::FontId::monospace(12.5)),
+        )
+        .id_salt(id)
+        .default_open(depth < 2)
+        .icon(paint_folder_chevron);
+        let resp = head.show(ui, body);
+        attach_path_menu(&resp.header_response, path);
+    });
+}
+
+/// Attach a right-click "Copy path" menu to any clickable Response.
+/// Empty paths (root) show the option as disabled to avoid copying
+/// "" silently.
+fn attach_path_menu(resp: &egui::Response, path: &str) {
+    let path = path.to_string();
+    let label = if path.is_empty() {
+        "Copy path (root)".to_string()
+    } else {
+        format!("Copy path  ·  {}", short_path(&path))
+    };
+    resp.context_menu(|ui| {
+        if ui.button(&label).clicked() {
+            ui.ctx().output_mut(|o| o.copied_text = path.clone());
+            ui.close_menu();
+        }
+    });
+}
+
+fn short_path(p: &str) -> String {
+    const MAX: usize = 48;
+    if p.len() <= MAX {
+        p.to_string()
+    } else {
+        format!("…{}", &p[p.len() - (MAX - 1)..])
+    }
+}
+
+// Original `json_header` is superseded by `json_header_with_menu`,
+// which adds the right-click "Copy path" menu. Removed to avoid
+// dead-code drift; restore from git history if needed.
+#[allow(dead_code)]
 fn json_header(
     ui: &mut egui::Ui,
     id: egui::Id,

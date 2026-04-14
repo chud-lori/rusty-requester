@@ -169,6 +169,11 @@ impl BodyMode {
     }
 }
 
+// Variant names mirror the HTTP-protocol token verbatim (capitalized,
+// per RFC 9110). Clippy's `upper_case_acronyms` lint wants e.g. `Get`,
+// but we serialize/display these directly to JSON and to the URL bar
+// where users expect to see "GET", not "Get".
+#[allow(clippy::upper_case_acronyms)]
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub enum HttpMethod {
     GET,
@@ -186,18 +191,14 @@ impl std::fmt::Display for HttpMethod {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Default)]
 pub enum Auth {
+    #[default]
     None,
     Bearer { token: String },
     Basic { username: String, password: String },
 }
 
-impl Default for Auth {
-    fn default() -> Self {
-        Auth::None
-    }
-}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum AuthKind {
@@ -373,6 +374,42 @@ pub struct Environment {
     pub name: String,
     #[serde(default)]
     pub variables: Vec<KvRow>,
+    /// Persistent cookie jar — populated by `Set-Cookie` response
+    /// headers and sent back on subsequent requests whose host +
+    /// path match. Scoped to the active environment so switching
+    /// envs (Staging → Prod) swaps cookie sets too.
+    #[serde(default)]
+    pub cookies: Vec<StoredCookie>,
+}
+
+/// Minimal RFC 6265-ish cookie record. Only tracks the fields we
+/// actually need for replay (domain, path, expiry). No SameSite /
+/// Priority / partitioning — not needed for an API client.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct StoredCookie {
+    pub name: String,
+    pub value: String,
+    /// Lowercase host match — "example.com" matches "api.example.com"
+    /// and "example.com" itself. Empty = match the request's exact host.
+    #[serde(default)]
+    pub domain: String,
+    /// URL-prefix match, default "/".
+    #[serde(default = "default_cookie_path")]
+    pub path: String,
+    /// Unix epoch seconds. `None` = session cookie (kept until the
+    /// app quits; treated as valid indefinitely for our purposes).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expires: Option<i64>,
+    /// Whether the cookie was marked `Secure` — we still send it on
+    /// plain http (dev APIs), but we track the flag.
+    #[serde(default)]
+    pub secure: bool,
+    #[serde(default)]
+    pub http_only: bool,
+}
+
+fn default_cookie_path() -> String {
+    "/".to_string()
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -444,6 +481,10 @@ pub struct ResponseData {
     pub status: String,
     pub time: String,
     pub headers: Vec<(String, String)>,
+    /// Parsed `Set-Cookie` headers, ready to merge into the active
+    /// environment's jar. Empty for cross-thread responses that had
+    /// no `Set-Cookie` at all.
+    pub set_cookies: Vec<StoredCookie>,
     /// Serialized byte size of the response headers (key: value CRLFs).
     pub response_headers_bytes: usize,
     /// Byte size of the *raw* response body (pre-pretty-print).

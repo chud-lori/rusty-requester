@@ -1007,12 +1007,10 @@ impl ApiClient {
                             if ui
                                 .selectable_label(ex.source == s, s.label())
                                 .clicked()
-                            {
-                                if ex.source != s {
+                                && ex.source != s {
                                     ex.source = s;
                                     changed = true;
                                 }
-                            }
                         }
                     });
                 ui.add_space(pad);

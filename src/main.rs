@@ -1,4 +1,5 @@
 mod assertion;
+mod cookies;
 mod extract;
 mod icon;
 mod io;
@@ -147,6 +148,8 @@ struct ApiClient {
     /// app startup and whenever the Settings modal saves. Reused across
     /// every send so we don't reopen TCP/TLS pools per request.
     http_client: reqwest::Client,
+    /// Long-lived tokio runtime — also reused across sends.
+    http_runtime: tokio::runtime::Runtime,
 
     /// Settings modal state.
     show_settings_modal: bool,
@@ -163,6 +166,12 @@ struct ApiClient {
     /// Working copy of the folder description while the overview
     /// is open — written back to `Folder.description` on blur.
     editing_folder_desc: String,
+
+    // --- Command palette (⌘P) ---------------------------------------
+    show_command_palette: bool,
+    palette_query: String,
+    palette_selected: usize,
+    palette_focus_pending: bool,
     /// Have we installed the macOS NSMenu yet? We defer the install
     /// to the first `update()` frame because doing it before
     /// `eframe::run_native` lets winit overwrite our menu with its
@@ -263,11 +272,16 @@ impl Default for ApiClient {
             body_search_query: String::new(),
             body_search_visible: false,
             http_client: net::build_client(&AppSettings::default()),
+            http_runtime: net::build_runtime(),
             show_settings_modal: false,
             editing_settings: AppSettings::default(),
             show_about_modal: false,
             viewing_folder_id: None,
             editing_folder_desc: String::new(),
+            show_command_palette: false,
+            palette_query: String::new(),
+            palette_selected: 0,
+            palette_focus_pending: false,
             #[cfg(target_os = "macos")]
             macos_menu_installed: false,
         };
@@ -405,10 +419,11 @@ impl ApiClient {
             self.response_time = String::new();
             self.response_headers.clear();
             let client = self.http_client.clone();
+            let rt_handle = self.http_runtime.handle().clone();
             let max_body_bytes =
                 (self.state.settings.max_body_mb as usize).saturating_mul(1024 * 1024);
             self.request_promise = Some(Promise::spawn_thread("request", move || {
-                net::execute_request(client, &request, env.as_ref(), max_body_bytes)
+                net::execute_request(client, rt_handle, &request, env.as_ref(), max_body_bytes)
             }));
         }
     }
@@ -422,6 +437,33 @@ impl ApiClient {
     /// response and write each result into the active environment. A
     /// toast summarizes how many values were captured so the user has
     /// feedback that chaining actually happened.
+    /// Fold `Set-Cookie` response cookies into the active environment's
+    /// jar (replacing matching name/domain/path entries, pruning
+    /// expired ones). No-op if there's no active env — cookies are
+    /// silently dropped. Most users want them per-env so we don't
+    /// fall back to anything global.
+    fn merge_cookies_into_env(&mut self, cookies: Vec<StoredCookie>) {
+        if cookies.is_empty() {
+            return;
+        }
+        let Some(env_id) = self.state.active_env_id.clone() else {
+            return;
+        };
+        let Some(env) = self
+            .state
+            .environments
+            .iter_mut()
+            .find(|e| e.id == env_id)
+        else {
+            return;
+        };
+        for c in cookies {
+            cookies::upsert(&mut env.cookies, c);
+        }
+        cookies::prune(&mut env.cookies);
+        self.save_state();
+    }
+
     fn apply_response_extractors(&mut self) {
         let Some(req) = self.get_current_request() else { return };
         if req.extractors.is_empty() {
@@ -544,7 +586,7 @@ impl ApiClient {
         let mut preview = self.response_text.clone();
         if preview.len() > 256 {
             preview.truncate(256);
-            preview.push_str("…");
+            preview.push('…');
         }
         let time_ms = self
             .response_time
@@ -781,7 +823,7 @@ impl ApiClient {
         };
         let path = rfd::FileDialog::new()
             .add_filter(label, &[ext])
-            .set_file_name(&format!("rusty-requester.{}", ext))
+            .set_file_name(format!("rusty-requester.{}", ext))
             .save_file();
         let Some(path) = path else { return };
         match io::export_string(&self.state.folders, format) {
@@ -866,6 +908,12 @@ impl ApiClient {
                 m::MENU_EXPORT_JSON => self.pending_export_json = true,
                 m::MENU_EXPORT_YAML => self.pending_export_yaml = true,
                 m::MENU_TOGGLE_SNIPPET => self.show_snippet_panel = !self.show_snippet_panel,
+                m::MENU_COMMAND_PALETTE => {
+                    self.show_command_palette = true;
+                    self.palette_query.clear();
+                    self.palette_selected = 0;
+                    self.palette_focus_pending = true;
+                }
                 m::MENU_SEND => self.send_request(),
                 m::MENU_SETTINGS => {
                     self.editing_settings = self.state.settings.clone();
@@ -939,10 +987,11 @@ impl eframe::App for ApiClient {
             self.do_export_all(io::Format::Yaml);
         }
 
-        let (cmd_enter, cmd_k, cmd_s, f2) = ctx.input(|i| {
+        let (cmd_enter, cmd_k, cmd_p, cmd_s, f2) = ctx.input(|i| {
             (
                 i.modifiers.command && i.key_pressed(egui::Key::Enter),
                 i.modifiers.command && i.key_pressed(egui::Key::K),
+                i.modifiers.command && i.key_pressed(egui::Key::P),
                 i.modifiers.command && i.key_pressed(egui::Key::S),
                 i.key_pressed(egui::Key::F2),
             )
@@ -952,6 +1001,12 @@ impl eframe::App for ApiClient {
         }
         if cmd_k {
             self.focus_search_next_frame = true;
+        }
+        if cmd_p {
+            self.show_command_palette = true;
+            self.palette_query.clear();
+            self.palette_selected = 0;
+            self.palette_focus_pending = true;
         }
         // Cmd/Ctrl+S — if the active tab is a draft, open the Save-draft
         // modal to pick a destination collection. Saved requests are
@@ -1025,7 +1080,11 @@ impl eframe::App for ApiClient {
                 self.response_download_ms = r.download_ms;
                 self.response_total_ms = r.total_ms;
                 self.is_loading = false;
+                // Merge any `Set-Cookie`s into the active env's jar
+                // before consuming the promise.
+                let cookies_to_merge = r.set_cookies.clone();
                 self.request_promise = None;
+                self.merge_cookies_into_env(cookies_to_merge);
                 self.push_history_entry();
                 self.apply_response_extractors();
                 self.apply_response_assertions();
@@ -1065,6 +1124,7 @@ impl eframe::App for ApiClient {
         self.render_settings_modal(ctx);
         self.render_save_draft_modal(ctx);
         self.render_about_modal(ctx);
+        self.render_command_palette(ctx);
         self.render_toast(ctx);
     }
 }

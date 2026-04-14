@@ -543,7 +543,7 @@ impl ApiClient {
         let header_response = header.show(ui, |ui| {
             let mut to_delete: Option<String> = None;
             let mut to_duplicate: Option<String> = None;
-            for req in &folder.requests {
+            for (i, req) in folder.requests.iter().enumerate() {
                 if searching
                     && !request_matches(req, &query)
                     && !folder.name.to_lowercase().contains(&query)
@@ -559,13 +559,70 @@ impl ApiClient {
                 let is_renaming =
                     self.renaming_request_id.as_deref() == Some(req.id.as_str());
 
-                // Compact Postman-style row
+                // Compact Postman-style row — also a drag source +
+                // drop target for in-folder reordering. Cross-folder
+                // drag isn't supported yet (would need extra path
+                // matching + fallback if dropped in dead space).
                 let row_h = 26.0;
                 let (rect, resp) = ui.allocate_exact_size(
                     egui::vec2(ui.available_width(), row_h),
-                    egui::Sense::click(),
+                    egui::Sense::click_and_drag(),
                 );
                 let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+
+                // Mark this row as the drag source the moment a drag
+                // starts. `dnd_set_drag_payload` carries the row's
+                // identity to the eventual drop site.
+                if resp.drag_started() {
+                    egui::DragAndDrop::set_payload::<DragPayload>(
+                        ui.ctx(),
+                        DragPayload {
+                            folder_path: path.clone(),
+                            request_id: req.id.clone(),
+                            from_index: i,
+                        },
+                    );
+                }
+                // While being dragged, paint a faint accent border so
+                // users see what's moving.
+                if egui::DragAndDrop::has_payload_of_type::<DragPayload>(ui.ctx())
+                    && resp.dragged()
+                {
+                    ui.painter().rect_stroke(
+                        rect,
+                        egui::Rounding::same(5.0),
+                        egui::Stroke::new(1.5, C_ACCENT),
+                    );
+                }
+                // While *another* row is being dragged and the pointer
+                // is over us, draw the drop indicator (a thin accent
+                // line above this row) and on release, perform the
+                // reorder.
+                if resp.hovered()
+                    && egui::DragAndDrop::has_payload_of_type::<DragPayload>(ui.ctx())
+                {
+                    let any_dragged = ui.ctx().input(|i| i.pointer.any_down());
+                    if any_dragged {
+                        ui.painter().line_segment(
+                            [
+                                egui::pos2(rect.left() + 4.0, rect.top() + 1.0),
+                                egui::pos2(rect.right() - 4.0, rect.top() + 1.0),
+                            ],
+                            egui::Stroke::new(2.0, C_ACCENT),
+                        );
+                    }
+                }
+                if let Some(payload) =
+                    resp.dnd_release_payload::<DragPayload>()
+                {
+                    if payload.folder_path == path && payload.from_index != i {
+                        self.reorder_request_in_folder(
+                            &path,
+                            payload.from_index,
+                            i,
+                        );
+                    }
+                }
 
                 if ui.is_rect_visible(rect) {
                     let bg = if is_selected {
@@ -974,4 +1031,44 @@ impl ApiClient {
             }
         }
     }
+
+    /// Move the request at `from_index` to `to_index` within the
+    /// folder at `path`. No-op if the path doesn't resolve or the
+    /// indices are out-of-bounds. Persists immediately.
+    pub(crate) fn reorder_request_in_folder(
+        &mut self,
+        path: &[String],
+        from_index: usize,
+        to_index: usize,
+    ) {
+        let Some(folder) = self.folder_at_path_mut(path) else {
+            return;
+        };
+        if from_index >= folder.requests.len() || to_index >= folder.requests.len() {
+            return;
+        }
+        if from_index == to_index {
+            return;
+        }
+        let item = folder.requests.remove(from_index);
+        let insert_at = if to_index > from_index {
+            to_index - 1
+        } else {
+            to_index
+        };
+        folder.requests.insert(insert_at, item);
+        self.save_state();
+    }
+}
+
+/// In-flight payload during a request-row drag. Carries enough info
+/// for the drop site to identify the source row + same-folder check.
+/// `request_id` is informational (could be used for cross-folder
+/// drops in the future); same-folder reorder uses `from_index`.
+#[derive(Clone, Debug)]
+pub(crate) struct DragPayload {
+    pub folder_path: Vec<String>,
+    #[allow(dead_code)]
+    pub request_id: String,
+    pub from_index: usize,
 }

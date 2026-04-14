@@ -12,7 +12,7 @@ use serde_json::Value;
 pub fn eval_body_path(body: &str, path: &str) -> Option<String> {
     let root: Value = serde_json::from_str(body).ok()?;
     let leaf = walk_path(&root, path)?;
-    Some(value_to_plain_string(&leaf))
+    Some(value_to_plain_string(leaf))
 }
 
 fn walk_path<'a>(root: &'a Value, path: &str) -> Option<&'a Value> {
