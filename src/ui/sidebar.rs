@@ -294,15 +294,16 @@ impl ApiClient {
 
                 ui.add_space(6.0);
 
-                // Scroll with trackpad / wheel. Bar is hidden entirely —
-                // `VisibleWhenNeeded` was causing visible width shifts when
-                // the bar faded in/out on pointer hover, which showed as the
-                // sidebar "resizing on pointer move".
+                // Thin floating scrollbar — `floating = true` in the
+                // global style (theme.rs) keeps it from reserving a
+                // width column, so we can show the bar without the
+                // "sidebar resizing on pointer move" jitter we used
+                // to hit with `VisibleWhenNeeded` + non-floating.
                 egui::ScrollArea::vertical()
                     .id_salt("sidebar_scroll")
                     .auto_shrink([false, false])
                     .scroll_bar_visibility(
-                        egui::scroll_area::ScrollBarVisibility::AlwaysHidden,
+                        egui::scroll_area::ScrollBarVisibility::VisibleWhenNeeded,
                     )
                     .show(ui, |ui| {
                         // Section header — small uppercase label so users can

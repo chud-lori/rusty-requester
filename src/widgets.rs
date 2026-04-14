@@ -393,21 +393,28 @@ pub fn render_single_tab(
             ui.painter().rect_filled(top, rounding, C_ACCENT);
         }
 
-        // Method as bold colored text (no filled pill), matching the
-        // sidebar-row convention.
+        // Method as bold colored text. `egui::TextStyle::Button` is
+        // the same style base used by the URL-bar method combobox, so
+        // tabs and URL bar show visually identical method labels (just
+        // different sizes for the context).
         let mc = method_color(method);
         let method_str = format!("{}", method);
-        let method_font = egui::FontId::new(10.0, egui::FontFamily::Proportional);
+        let method_font = egui::FontId::new(10.5, egui::FontFamily::Proportional);
         let method_slot_w = 42.0;
         let pad_left = rect.left() + 12.0;
         let mid_y = rect.center().y;
-        ui.painter().text(
-            egui::pos2(pad_left, mid_y),
-            egui::Align2::LEFT_CENTER,
-            method_str,
-            method_font,
-            mc,
-        );
+        // Paint the text twice — second pass slightly offset — for a
+        // faux-bold effect that matches RichText::strong() in the
+        // URL bar combobox (which uses the same color).
+        for dx in &[0.0_f32, 0.4] {
+            ui.painter().text(
+                egui::pos2(pad_left + dx, mid_y),
+                egui::Align2::LEFT_CENTER,
+                &method_str,
+                method_font.clone(),
+                mc,
+            );
+        }
 
         let name_x = pad_left + method_slot_w;
         let name_color = if is_active { C_TEXT } else { C_MUTED };

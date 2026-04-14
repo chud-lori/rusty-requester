@@ -524,21 +524,35 @@ impl ApiClient {
         let mut prettify = false;
         let mut minify = false;
         ui.horizontal(|ui| {
-            if ui
-                .small_button(egui::RichText::new("Prettify JSON").size(11.0))
-                .on_hover_text("Format body as pretty JSON")
-                .clicked()
-            {
-                prettify = true;
-            }
-            if ui
-                .small_button(egui::RichText::new("Minify").size(11.0))
-                .on_hover_text("Collapse JSON to one line")
-                .clicked()
-            {
-                minify = true;
-            }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                // Postman-style subtle action links on the right, not
+                // tacked-on buttons.
+                if ui
+                    .link(
+                        egui::RichText::new("Beautify")
+                            .size(11.5)
+                            .color(C_ACCENT),
+                    )
+                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                    .on_hover_text("Pretty-print JSON")
+                    .clicked()
+                {
+                    prettify = true;
+                }
+                ui.add_space(8.0);
+                if ui
+                    .link(
+                        egui::RichText::new("Minify")
+                            .size(11.5)
+                            .color(C_MUTED),
+                    )
+                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                    .on_hover_text("Collapse JSON to one line")
+                    .clicked()
+                {
+                    minify = true;
+                }
+                ui.add_space(12.0);
                 let size_label = if self.editing_body.is_empty() {
                     "empty".to_string()
                 } else {
@@ -548,6 +562,11 @@ impl ApiClient {
                     egui::RichText::new(size_label)
                         .size(11.0)
                         .color(C_MUTED),
+                )
+                .on_hover_text(
+                    "Size in UTF-8 bytes — exactly what goes on the wire.\n\
+                     ASCII chars are 1 byte each; accented / non-Latin chars \
+                     can be 2-4 bytes.",
                 );
             });
         });
@@ -580,16 +599,46 @@ impl ApiClient {
             }
         }
         ui.add_space(4.0);
-        if ui
-            .add_sized(
-                [ui.available_width(), ui.available_height() - 4.0],
-                egui::TextEdit::multiline(&mut self.editing_body)
-                    .code_editor()
-                    .hint_text("Request body (JSON, text, ...)")
-                    .font(egui::TextStyle::Monospace),
-            )
-            .changed()
-        {
+        // Two-column layout: left gutter shows one line number per
+        // logical line of the body; right column is the editor itself.
+        // Matches the snippet-panel pattern so wrapped long lines in
+        // the body stay inside the editor column instead of colliding
+        // with the gutter.
+        let avail_h = (ui.available_height() - 4.0).max(80.0);
+        let line_count = self.editing_body.split('\n').count().max(1);
+        let mut body_changed = false;
+        ui.horizontal_top(|ui| {
+            let gutter_w = 34.0;
+            ui.vertical(|ui| {
+                ui.spacing_mut().item_spacing.y = 0.0;
+                ui.set_width(gutter_w);
+                for i in 1..=line_count {
+                    ui.add_sized(
+                        [gutter_w, 17.0],
+                        egui::Label::new(
+                            egui::RichText::new(format!("{:>3}", i))
+                                .color(egui::Color32::from_rgb(100, 105, 115))
+                                .font(egui::FontId::monospace(12.5)),
+                        ),
+                    );
+                }
+            });
+            ui.add_space(4.0);
+            if ui
+                .add_sized(
+                    [ui.available_width(), avail_h],
+                    egui::TextEdit::multiline(&mut self.editing_body)
+                        .code_editor()
+                        .frame(false)
+                        .hint_text("Request body (JSON, text, ...)")
+                        .font(egui::TextStyle::Monospace),
+                )
+                .changed()
+            {
+                body_changed = true;
+            }
+        });
+        if body_changed {
             let body = self.editing_body.clone();
             self.update_current_request(|r| r.body = body);
         }

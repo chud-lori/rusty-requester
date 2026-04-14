@@ -100,8 +100,14 @@ pub fn apply_style(ctx: &egui::Context) {
     //      the `VisibleWhenNeeded` scrollbar fades in).
     //   2. There's no visible darker "track" strip between the panels
     //      (the track was using `extreme_bg_color`).
-    style.spacing.scroll.bar_width = 8.0;
+    // Thin floating scrollbar — floats over content so it doesn't
+    // reserve its own width column (otherwise toggling visibility
+    // shifts layout). ~4px bar matches Postman/VS Code aesthetics.
+    style.spacing.scroll.bar_width = 4.0;
     style.spacing.scroll.floating = true;
+    style.spacing.scroll.handle_min_length = 20.0;
+    style.spacing.scroll.bar_inner_margin = 2.0;
+    style.spacing.scroll.bar_outer_margin = 0.0;
 
     style.text_styles = [
         (TextStyle::Heading, FontId::new(20.0, FontFamily::Proportional)),
