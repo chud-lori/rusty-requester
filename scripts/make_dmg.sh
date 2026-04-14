@@ -85,13 +85,26 @@ echo "  mounted: $DEVICE"
 # often fails if this is too short.
 sleep 4
 
-echo "→ applying Finder window layout via AppleScript"
-# Each fragile call is wrapped in `try` so a single failure (e.g. macOS
-# rejecting the background-picture write) doesn't abort the rest of the
-# layout. The script as a whole is also `|| true`-tolerant for headless CI
-# runners — the DMG ships either way, just possibly without the polish.
-BG_POSIX="/Volumes/${VOLNAME}/.background/background.png"
-osascript <<EOF || echo "  ⚠ AppleScript layout did not apply cleanly — DMG will still build."
+# Skip the Finder-layout AppleScript step under CI / non-interactive
+# shells. GitHub Actions runners have no Finder UI to render the
+# layout, and worse: invoking osascript→Finder there leaves the
+# volume open which makes `hdiutil detach` fail with
+# "Resource busy". The DMG still works without the polish — users
+# just see the default Finder layout when they open it.
+SKIP_LAYOUT="${SKIP_LAYOUT:-}"
+if [ -n "${CI:-}" ] || [ -n "${GITHUB_ACTIONS:-}" ] || [ ! -t 0 ]; then
+    SKIP_LAYOUT="1"
+fi
+
+if [ -n "$SKIP_LAYOUT" ]; then
+    echo "→ skipping Finder window layout (CI / non-interactive shell)"
+else
+    echo "→ applying Finder window layout via AppleScript"
+    # Each fragile call is wrapped in `try` so a single failure (e.g. macOS
+    # rejecting the background-picture write) doesn't abort the rest of the
+    # layout.
+    BG_POSIX="/Volumes/${VOLNAME}/.background/background.png"
+    osascript <<EOF || echo "  ⚠ AppleScript layout did not apply cleanly — DMG will still build."
 tell application "Finder"
     tell disk "$VOLNAME"
         open
@@ -147,13 +160,34 @@ tell application "Finder"
     end tell
 end tell
 EOF
+fi
 
 # Make sure .DS_Store + the background symlink make it to disk before unmount.
 sync
 sleep 1
 
+# Retry detach a few times — even with `-force`, the first attempt
+# can race a still-open file handle (Spotlight / fseventsd) on
+# macos-latest CI runners. Back off and try again.
 echo "→ detaching"
-hdiutil detach "$DEVICE" -force >/dev/null
+detach_ok=""
+for attempt in 1 2 3 4 5; do
+    if hdiutil detach "$DEVICE" -force >/dev/null 2>&1; then
+        detach_ok="1"
+        break
+    fi
+    echo "  detach attempt $attempt failed; sleeping 2s and retrying…"
+    sleep 2
+done
+if [ -z "$detach_ok" ]; then
+    # Last-ditch fallback: diskutil knows how to unmount via different
+    # plumbing than hdiutil and sometimes succeeds where hdiutil fails.
+    echo "  hdiutil retries exhausted — trying diskutil unmount"
+    diskutil unmount force "$DEVICE" >/dev/null 2>&1 || {
+        echo "✗ unable to unmount $DEVICE — aborting" >&2
+        exit 16
+    }
+fi
 
 echo "→ converting to compressed read-only DMG"
 hdiutil convert "$TEMP_DMG" \
