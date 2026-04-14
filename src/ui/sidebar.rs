@@ -226,19 +226,33 @@ impl ApiClient {
                     );
                     paint_search_icon(ui.painter(), icon_rect.center(), C_MUTED);
 
-                    let clear_w = if self.search_query.is_empty() { 0.0 } else { 22.0 };
-                    let search_resp = ui.add(
+                    // Always reserve the close-button slot (visible or as
+                    // a phantom spacer) so the TextEdit's desired_width
+                    // doesn't change when the user starts typing. Without
+                    // this, the horizontal row claims more space than it
+                    // had, and the resizable SidePanel expands to the
+                    // right on every keystroke.
+                    let clear_w = 22.0;
+                    let spacing = ui.spacing().item_spacing.x;
+                    let search_w =
+                        (ui.available_width() - clear_w - spacing).max(80.0);
+                    let search_resp = ui.add_sized(
+                        [search_w, 24.0],
                         egui::TextEdit::singleline(&mut self.search_query)
-                            .desired_width(ui.available_width() - clear_w)
                             .hint_text("Search (⌘K)"),
                     );
                     if self.focus_search_next_frame {
                         self.focus_search_next_frame = false;
                         search_resp.request_focus();
                     }
-                    if !self.search_query.is_empty()
-                        && close_x_button(ui, "Clear search").clicked()
-                    {
+                    if self.search_query.is_empty() {
+                        // Phantom slot — same footprint as `close_x_button`
+                        // so the layout is stable across empty/typed states.
+                        ui.allocate_exact_size(
+                            egui::vec2(20.0, 20.0),
+                            egui::Sense::hover(),
+                        );
+                    } else if close_x_button(ui, "Clear search").clicked() {
                         self.search_query.clear();
                     }
                 });
