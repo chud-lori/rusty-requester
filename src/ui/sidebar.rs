@@ -49,12 +49,23 @@ impl ApiClient {
                                 .rounding(egui::Rounding::same(5.0)),
                         );
                     }
-                    ui.label(
-                        egui::RichText::new("Rusty Requester")
-                            .size(15.0)
-                            .strong()
-                            .color(C_TEXT),
-                    );
+                    ui.vertical(|ui| {
+                        ui.label(
+                            egui::RichText::new("Rusty Requester")
+                                .size(15.0)
+                                .strong()
+                                .color(C_TEXT),
+                        );
+                        // Baked-in build version — makes it obvious which
+                        // binary is actually running (mismatch vs what you
+                        // just shipped usually = macOS LaunchServices
+                        // cached the old bundle).
+                        ui.label(
+                            egui::RichText::new(concat!("v", env!("CARGO_PKG_VERSION")))
+                                .size(10.5)
+                                .color(C_MUTED),
+                        );
+                    });
                 });
                 ui.add_space(6.0);
                 self.render_environment_picker(ui);

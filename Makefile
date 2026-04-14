@@ -1,7 +1,12 @@
 # Rusty Requester — common build / dev tasks
 APP_NAME       := RustyRequester
 BUNDLE_ID      := com.rustyrequester.app
-VERSION := 0.2.2
+# Single source of truth: read the version straight from Cargo.toml's
+# `[package]` block so Info.plist's CFBundleShortVersionString and the
+# embedded CARGO_PKG_VERSION can never drift. deploy.sh only needs to
+# update Cargo.toml now (the `VERSION := ...` bump is still performed
+# for backwards compat).
+VERSION := $(shell awk '/^\[package\]/{p=1; next} /^\[/{p=0} p && /^version/{split($$0, a, "\""); print a[2]; exit}' Cargo.toml)
 TARGET_DIR     := target
 RELEASE_BIN    := $(TARGET_DIR)/release/rusty-requester
 ICON_PNG       := assets/icon.png
@@ -9,8 +14,12 @@ BUNDLE_DIR     := $(TARGET_DIR)/bundle
 APP_BUNDLE     := $(BUNDLE_DIR)/$(APP_NAME).app
 
 DMG_PATH       := $(BUNDLE_DIR)/$(APP_NAME).dmg
+# Release-asset filenames. Versioned so CDN caches can't serve stale
+# bytes under the same URL.
+DMG_ASSET      := $(BUNDLE_DIR)/$(APP_NAME)-v$(VERSION)-macos-universal.dmg
+LINUX_TARBALL  := $(BUNDLE_DIR)/$(APP_NAME)-v$(VERSION)-linux-x86_64.tar.gz
 
-.PHONY: help run release test fmt lint clean icon dmg-bg app app-install bundle-mac dmg
+.PHONY: help run release test fmt lint clean icon dmg-bg app app-install bundle-mac dmg dmg-universal tarball-linux
 
 help:
 	@echo "Targets:"
@@ -23,7 +32,9 @@ help:
 	@echo "  make dmg-bg        Regenerate assets/dmg_background.png from Python"
 	@echo "  make app           Build a macOS .app bundle (uses release binary + ICNS icon)"
 	@echo "  make app-install   Build the bundle and copy to /Applications"
-	@echo "  make dmg           Build a drag-to-Applications .dmg installer"
+	@echo "  make dmg           Build a drag-to-Applications .dmg installer (current arch only)"
+	@echo "  make dmg-universal Build a universal (arm64 + x86_64) .dmg — used by CI"
+	@echo "  make tarball-linux Build a Linux x86_64 .tar.gz (release asset) — used by CI"
 	@echo "  make clean         cargo clean + remove bundle"
 
 run:
@@ -109,3 +120,67 @@ $(RELEASE_BIN):
 dmg: bundle-mac
 	./scripts/make_dmg.sh
 	@echo "DMG ready: $(DMG_PATH)"
+
+# Universal macOS DMG — combines arm64 + x86_64 release binaries with
+# `lipo -create` before bundling. Requires both targets installed:
+#   rustup target add aarch64-apple-darwin x86_64-apple-darwin
+dmg-universal:
+	@command -v lipo >/dev/null 2>&1 || { echo "lipo not found (needs macOS)"; exit 1; }
+	rustup target add aarch64-apple-darwin x86_64-apple-darwin
+	cargo build --release --target aarch64-apple-darwin
+	cargo build --release --target x86_64-apple-darwin
+	mkdir -p $(TARGET_DIR)/release
+	lipo -create \
+	  $(TARGET_DIR)/aarch64-apple-darwin/release/rusty-requester \
+	  $(TARGET_DIR)/x86_64-apple-darwin/release/rusty-requester \
+	  -output $(RELEASE_BIN)
+	@echo "Universal binary:"
+	@file $(RELEASE_BIN)
+	$(MAKE) bundle-mac
+	./scripts/make_dmg.sh
+	cp $(DMG_PATH) $(DMG_ASSET)
+	@echo "Universal DMG ready: $(DMG_ASSET)"
+
+# Linux tarball — single x86_64 binary + icon + .desktop file, gzipped.
+# Extracted by the installer into ~/.local/share/rusty-requester and
+# symlinked into ~/.local/bin. Runs on most glibc-based distros from
+# ~2018 onward; static linking against musl would give broader reach
+# but pulls in extra reqwest/openssl complexity — defer if needed.
+tarball-linux:
+	cargo build --release --target x86_64-unknown-linux-gnu
+	rm -rf $(BUNDLE_DIR)/linux-stage
+	mkdir -p $(BUNDLE_DIR)/linux-stage/$(APP_NAME)
+	cp $(TARGET_DIR)/x86_64-unknown-linux-gnu/release/rusty-requester \
+	   $(BUNDLE_DIR)/linux-stage/$(APP_NAME)/rusty-requester
+	chmod +x $(BUNDLE_DIR)/linux-stage/$(APP_NAME)/rusty-requester
+	cp $(ICON_PNG) $(BUNDLE_DIR)/linux-stage/$(APP_NAME)/icon.png
+	@printf '%s\n' \
+	  '[Desktop Entry]' \
+	  'Type=Application' \
+	  'Name=Rusty Requester' \
+	  'Comment=Native, offline, lightweight API client' \
+	  'Exec=rusty-requester' \
+	  'Icon=rusty-requester' \
+	  'Categories=Development;Network;' \
+	  'Terminal=false' \
+	  > $(BUNDLE_DIR)/linux-stage/$(APP_NAME)/rusty-requester.desktop
+	@printf '%s\n' \
+	  '#!/bin/sh' \
+	  '# Installer invoked by install.sh. Idempotent.' \
+	  'set -e' \
+	  'STAGE=$$(cd "$$(dirname "$$0")" && pwd)' \
+	  'BIN="$$HOME/.local/share/rusty-requester"' \
+	  'LAUNCHER="$$HOME/.local/bin"' \
+	  'DESKTOP="$$HOME/.local/share/applications"' \
+	  'ICONS="$$HOME/.local/share/icons/hicolor/512x512/apps"' \
+	  'mkdir -p "$$BIN" "$$LAUNCHER" "$$DESKTOP" "$$ICONS"' \
+	  'install -m 755 "$$STAGE/rusty-requester" "$$BIN/rusty-requester"' \
+	  'install -m 644 "$$STAGE/icon.png" "$$ICONS/rusty-requester.png"' \
+	  'install -m 644 "$$STAGE/rusty-requester.desktop" "$$DESKTOP/rusty-requester.desktop"' \
+	  'ln -sf "$$BIN/rusty-requester" "$$LAUNCHER/rusty-requester"' \
+	  'command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$$DESKTOP" || true' \
+	  'echo "Installed. If $$LAUNCHER is on your PATH, run: rusty-requester"' \
+	  > $(BUNDLE_DIR)/linux-stage/$(APP_NAME)/install-local.sh
+	chmod +x $(BUNDLE_DIR)/linux-stage/$(APP_NAME)/install-local.sh
+	tar -czf $(LINUX_TARBALL) -C $(BUNDLE_DIR)/linux-stage $(APP_NAME)
+	@echo "Linux tarball ready: $(LINUX_TARBALL)"

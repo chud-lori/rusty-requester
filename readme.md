@@ -1,11 +1,23 @@
-# 🦀 Rusty Requester
+<h1 align="center">
+  <img src="assets/icon.png" width="96" alt="Rusty Requester" /><br/>
+  Rusty Requester
+</h1>
 
-A **native, offline, lightweight** API client built with Rust and `egui` — a Postman alternative that doesn't chew through hundreds of MB of RAM just to make HTTP requests.
+<p align="center">
+A <b>native, offline, lightweight</b> API client built with Rust and <code>egui</code> —
+a Postman alternative that doesn't chew through hundreds of MB of RAM just to make HTTP requests.
+</p>
 
-Vibe-coded because I got tired of Postman's bloat and cloud sync I never wanted, and tired of managing a wall of raw `curl` commands in my terminal.
+<p align="center">
+Vibe-coded because I got tired of Postman's bloat and cloud sync I never wanted,
+and of managing a wall of raw <code>curl</code> commands in my terminal.
+</p>
 
-![Rust](https://img.shields.io/badge/rust-%23000000.svg?style=for-the-badge&logo=rust&logoColor=white)
-![macOS](https://img.shields.io/badge/mac%20os-000000?style=for-the-badge&logo=macos&logoColor=F0F0F0)
+<p align="center">
+  <img src="https://img.shields.io/badge/rust-%23000000.svg?style=for-the-badge&logo=rust&logoColor=white" alt="Rust" />
+  <img src="https://img.shields.io/badge/mac%20os-000000?style=for-the-badge&logo=macos&logoColor=F0F0F0" alt="macOS" />
+  <img src="https://img.shields.io/badge/linux-000000?style=for-the-badge&logo=linux&logoColor=F0F0F0" alt="Linux" />
+</p>
 
 ---
 
@@ -72,47 +84,68 @@ Postman is a ~500 MB Electron app that phones home and wants you to log in. Rust
 
 ---
 
-## 📥 Install (macOS)
+## 📥 Install
 
-### One-line install (recommended)
+### One-line install (macOS + Linux)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/chud-lori/rusty-requester/main/install.sh | bash
 ```
 
-The script pulls the latest `RustyRequester.dmg` from GitHub Releases,
-copies the app into `/Applications` (falls back to `~/Applications` if
-the system folder isn't writable), and strips the Gatekeeper quarantine
-attribute so the first launch "just works."
+The installer auto-detects your platform and pulls the matching release
+asset:
+
+- **macOS** (universal, Apple Silicon + Intel) — `RustyRequester-vX.Y.Z-macos-universal.dmg`.
+  Copies `RustyRequester.app` into `/Applications` (falls back to
+  `~/Applications` if the system folder isn't writable), quits any
+  running instance, strips the Gatekeeper quarantine attribute, and
+  re-registers with Launch Services so Dock / Spotlight pick up the
+  new bundle.
+- **Linux** (x86_64 glibc) — `RustyRequester-vX.Y.Z-linux-x86_64.tar.gz`.
+  Extracts to `~/.local/share/rusty-requester`, symlinks the binary
+  into `~/.local/bin`, installs a `.desktop` entry into
+  `~/.local/share/applications`. No `sudo`. If `~/.local/bin` isn't on
+  your `PATH`, the script tells you how to add it.
 
 Install a specific version:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/chud-lori/rusty-requester/main/install.sh | VERSION=v0.2.0 bash
+curl -fsSL https://raw.githubusercontent.com/chud-lori/rusty-requester/main/install.sh | VERSION=v0.3.0 bash
 ```
 
-Leave the quarantine attribute intact (you'll do the "right-click → Open"
-dance yourself on first launch):
+macOS: keep the Gatekeeper quarantine attribute (you'll do the
+"right-click → Open" dance yourself on first launch):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/chud-lori/rusty-requester/main/install.sh | SKIP_QUARANTINE_STRIP=1 bash
 ```
 
-After it finishes, launch from Spotlight, Launchpad, or:
+After it finishes, launch:
 
 ```bash
-open /Applications/RustyRequester.app
+open /Applications/RustyRequester.app     # macOS
+rusty-requester                           # Linux (if ~/.local/bin on PATH)
 ```
 
-### Manual install (the old way)
+### Manual install
 
-1. Grab `RustyRequester.dmg` from the
+#### macOS
+
+1. Grab `RustyRequester-vX.Y.Z-macos-universal.dmg` from the
    [Releases page](https://github.com/chud-lori/rusty-requester/releases/latest)
 2. Open the `.dmg`, drag **`RustyRequester.app`** onto the
    **`Applications`** shortcut, eject the disk image
 3. Launch from Spotlight / Launchpad / `/Applications`
 
-### First launch — Gatekeeper
+#### Linux (x86_64 glibc)
+
+1. Grab `RustyRequester-vX.Y.Z-linux-x86_64.tar.gz` from the
+   [Releases page](https://github.com/chud-lori/rusty-requester/releases/latest)
+2. `tar -xzf RustyRequester-*-linux-x86_64.tar.gz`
+3. `cd RustyRequester && ./install-local.sh`
+4. Run `rusty-requester` (make sure `~/.local/bin` is on your `PATH`)
+
+### First launch — Gatekeeper (macOS)
 
 The app isn't notarised by Apple (no paid developer account), so macOS
 will refuse to open it on the first launch with *"can't be opened

@@ -12,48 +12,116 @@ permissions:
 
 jobs:
   macos:
-    name: Build macOS .dmg
+    name: Build macOS universal .dmg
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
 
       - uses: Swatinem/rust-cache@v2
 
-      # Defensive: nuke any cached `target/` artifacts before the release
-      # build so the DMG is always built from the tag's source. Without
-      # this, the rust-cache action can occasionally hand us an older
-      # compiled binary whose fingerprint cargo trusts, so the shipped
-      # DMG drifts from what the tag actually contains. Costs ~45s.
+      # Defensive: nuke any cached `target/` artifacts before the
+      # release build so the DMG is always built from the tag's
+      # source. Without this, the rust-cache action can occasionally
+      # hand us an older compiled binary whose fingerprint cargo
+      # trusts, so the shipped DMG drifts from what the tag actually
+      # contains.
       - name: Ensure clean build
         run: cargo clean
 
-      - name: Build release binary
-        run: cargo build --release
+      - name: Build universal DMG
+        run: make dmg-universal
 
-      - name: Build .app bundle and .dmg
-        run: make dmg
+      - name: Smoke-test universal binary
+        run: |
+          BIN=target/bundle/RustyRequester.app/Contents/MacOS/RustyRequester
+          file "$BIN"
+          "$BIN" --version
 
       - name: Show DMG info
         run: |
           ls -la target/bundle/
-          file target/bundle/RustyRequester.dmg
+          file target/bundle/*.dmg
 
-      - name: Upload DMG to release
+      - name: Upload to release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: target/bundle/RustyRequester.dmg
+          files: target/bundle/RustyRequester-v*-macos-universal.dmg
           generate_release_notes: true
           draft: false
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload DMG as workflow artifact (manual runs)
+      - name: Upload as workflow artifact (manual runs)
         if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
-          name: RustyRequester-dmg
-          path: target/bundle/RustyRequester.dmg
+          name: RustyRequester-macos-universal
+          path: target/bundle/RustyRequester-v*-macos-universal.dmg
+
+  linux:
+    name: Build Linux x86_64 tarball
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+
+      - uses: Swatinem/rust-cache@v2
+
+      # System deps for eframe (X11/Wayland/GL) and rfd (file dialog
+      # via GTK3). Ubuntu 24.04 (noble) runners may need `libgtk-3-0t64`
+      # instead of `libgtk-3-dev`; we install `-dev` variants at build
+      # time and the binary dynamically links against runtime libs
+      # present on any glibc-based desktop distro from ~2018 on.
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config libssl-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev \
+            libwayland-dev libx11-dev libxi-dev libxcursor-dev \
+            libxrandr-dev libxinerama-dev libgl1-mesa-dev \
+            libgtk-3-dev
+
+      - name: Ensure clean build
+        run: cargo clean
+
+      - name: Build Linux tarball
+        run: make tarball-linux
+
+      - name: Smoke-test binary
+        run: |
+          BIN=target/x86_64-unknown-linux-gnu/release/rusty-requester
+          file "$BIN"
+          "$BIN" --version
+
+      - name: Show tarball info
+        run: |
+          ls -la target/bundle/
+          file target/bundle/*.tar.gz
+
+      - name: Upload to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: target/bundle/RustyRequester-v*-linux-x86_64.tar.gz
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload as workflow artifact (manual runs)
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: RustyRequester-linux-x86_64
+          path: target/bundle/RustyRequester-v*-linux-x86_64.tar.gz

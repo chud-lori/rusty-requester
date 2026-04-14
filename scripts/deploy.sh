@@ -89,11 +89,13 @@ awk -v new="$VERSION" '
     { print }
 ' Cargo.toml > Cargo.toml.new && mv Cargo.toml.new Cargo.toml
 
-# Makefile — VERSION := X.Y.Z
-if grep -qE '^VERSION[[:space:]]*:=' Makefile; then
-    sed_inplace -E "s/^VERSION[[:space:]]*:=.*/VERSION := $VERSION/" Makefile
-else
-    yellow "  (Makefile has no VERSION line — skipped)"
+# Makefile no longer needs bumping — it reads VERSION from Cargo.toml
+# via `awk` at parse time. This avoids drift between the two. If you
+# still see a hardcoded `VERSION := X.Y.Z` line (e.g. from an old
+# checkout), update it so the Info.plist ends up correct:
+if grep -qE '^VERSION[[:space:]]*:=[[:space:]]*[0-9]' Makefile; then
+    yellow "  (Makefile has a legacy hardcoded VERSION — updating)"
+    sed_inplace -E "s/^VERSION[[:space:]]*:=[[:space:]]*[0-9][^[:space:]]*/VERSION := $VERSION/" Makefile
 fi
 
 dim "  Cargo.toml + Makefile bumped"

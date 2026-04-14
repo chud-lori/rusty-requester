@@ -944,6 +944,20 @@ impl ApiClient {
 
 
 fn main() -> Result<(), eframe::Error> {
+    // Cheap `--version` / `-V` flag so anyone (user or `install.sh`)
+    // can confirm which build is actually on disk without opening the
+    // UI — the single most useful weapon against LaunchServices-cache
+    // confusion.
+    for arg in std::env::args().skip(1) {
+        match arg.as_str() {
+            "--version" | "-V" => {
+                println!("rusty-requester {}", env!("CARGO_PKG_VERSION"));
+                return Ok(());
+            }
+            _ => {}
+        }
+    }
+
     // Force NSApp into Regular activation policy BEFORE eframe starts the
     // macOS run loop. Once NSApp.run has begun processing events, macOS
     // rejects the setActivationPolicy(Regular) call, which is why calling
