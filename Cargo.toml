@@ -26,3 +26,12 @@ opt-level = "z"
 lto = true
 codegen-units = 1
 strip = true
+
+# The `objc` 0.2 crate's macros (`class!`, `msg_send!`, `sel_impl`)
+# expand a legacy `#[cfg(feature = "cargo-clippy")]` attribute into
+# our crate, which newer rustc flags as an unexpected-cfg warning.
+# Whitelist the cfg so builds are quiet without silencing real typos.
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = [
+    "cfg(feature, values(\"cargo-clippy\"))",
+] }
