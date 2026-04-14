@@ -560,6 +560,43 @@ Platform
 
 ---
 
+## 🛡 Compatibility & stability
+
+Rusty Requester follows [Semantic Versioning](https://semver.org/).
+
+**Pre-1.0 (current).** Format additions are guarded with `#[serde(default)]`
+so old `data.json` files load cleanly into newer builds, but breaking
+changes (renames, type widening, removed fields) can still happen at any
+minor bump if necessary. Don't pin a specific feature shape across 0.x
+releases.
+
+**From 1.0 onward.** The following are stable across the entire `1.x`
+series — anything breaking them requires a major-version bump (`2.0`)
+with a documented migration path:
+
+- **`data.json` schema** — the on-disk format at
+  `~/Library/Application Support/rusty-requester/data.json` (macOS) /
+  `~/.local/share/rusty-requester/data.json` (Linux). New fields can be
+  added; existing fields keep their names, types, and serde tags.
+- **Install paths and bundle identity** — `/Applications/RustyRequester.app`,
+  bundle ID `com.rustyrequester.app`, fallback `~/Applications/`,
+  Linux `~/.local/share/rusty-requester/` and `~/.local/bin/rusty-requester`.
+- **CLI surface** — `--version` / `-V` flag, environment variables read by
+  `install.sh` (`VERSION`, `SKIP_QUARANTINE_STRIP`, `RUSTY_REPO`).
+- **Import / export formats** — JSON / YAML round-trip, Postman
+  Collection v2.1 import.
+- **Public macOS menu shortcuts** — `⌘⏎` Send, `⌘P` Command palette,
+  `⌘K` Sidebar search, `⇧⌘C` toggle snippet panel.
+
+Anything *not* in this list (UI layout, internal module structure, exact
+binary size, theme colors, syntax-highlight palette, behind-the-scenes
+HTTP timing measurement, etc.) is implementation detail and can change
+in any release.
+
+See [`CHANGELOG.md`](./CHANGELOG.md) for what's shipped.
+
+---
+
 ## 🤝 Contributing
 
 1. Fork the repo
