@@ -211,11 +211,15 @@ pub fn render_kv_table(
     let key_w = 200.0;
     let row_h = 24.0;
     let cell_pad = 6.0;
+    // Small trailing gap so the × delete button doesn't sit flush
+    // against the panel's right border.
+    let right_margin = 12.0;
+    let usable = avail - right_margin;
     let (val_w, desc_w) = if show_description {
-        let total = (avail - cb_w - key_w - del_w - cell_pad * 4.0).max(200.0);
+        let total = (usable - cb_w - key_w - del_w - cell_pad * 4.0).max(200.0);
         (total * 0.55, total * 0.45)
     } else {
-        let val = avail - cb_w - key_w - del_w - cell_pad * 3.0;
+        let val = usable - cb_w - key_w - del_w - cell_pad * 3.0;
         (val.max(150.0), 0.0)
     };
 
@@ -612,19 +616,29 @@ pub fn icon_button(
     resp.on_hover_text(hover_text)
 }
 
-/// Paints a tiny folder glyph (two stacked rounded rects) at the given
-/// center point. Font-free — matches `paint_folder_chevron`'s rationale.
+/// Paints a clean outlined folder silhouette at the given center point.
+/// Uses line segments (not filled rects) so the tab + body read as one
+/// single folder shape rather than two overlapping blobs. Font-free —
+/// matches `paint_folder_chevron`'s rationale.
 pub fn paint_folder_icon(painter: &egui::Painter, center: egui::Pos2, color: egui::Color32) {
-    let body = egui::Rect::from_center_size(
-        center + egui::vec2(0.0, 1.0),
-        egui::vec2(14.0, 10.0),
-    );
-    let tab = egui::Rect::from_min_size(
-        egui::pos2(body.left(), body.top() - 3.0),
-        egui::vec2(6.0, 3.5),
-    );
-    painter.rect_filled(tab, egui::Rounding::same(1.5), color);
-    painter.rect_filled(body, egui::Rounding::same(2.0), color);
+    let stroke = egui::Stroke::new(1.2, color);
+    // 14×9 outline. The tab occupies the top-left ~40% of the width,
+    // then a short diagonal joins it to the body's top edge.
+    let cx = center.x;
+    let cy = center.y;
+    let a = egui::pos2(cx - 7.0, cy - 4.0); // tab top-left
+    let b = egui::pos2(cx - 2.5, cy - 4.0); // tab top-right
+    let c = egui::pos2(cx - 1.0, cy - 2.0); // diagonal to body top
+    let d = egui::pos2(cx + 7.0, cy - 2.0); // body top-right
+    let e = egui::pos2(cx + 7.0, cy + 4.5); // body bottom-right
+    let f = egui::pos2(cx - 7.0, cy + 4.5); // body bottom-left
+
+    painter.line_segment([a, b], stroke); // tab top
+    painter.line_segment([b, c], stroke); // tab → body diagonal
+    painter.line_segment([c, d], stroke); // body top (right of tab)
+    painter.line_segment([d, e], stroke); // body right
+    painter.line_segment([e, f], stroke); // body bottom
+    painter.line_segment([f, a], stroke); // body left
 }
 
 pub fn folder_matches(folder: &Folder, q: &str) -> bool {

@@ -737,11 +737,15 @@ impl ApiClient {
 
             // Inline `+` (add request) and `...` (overflow menu) on the
             // right edge of the header — the toolbar pattern from Postman.
+            // `header_rect` is tight to the text width, so we pin to the
+            // *ui's* right edge for the x position and use the header_rect
+            // only for the y center.
             let header_rect = header_response.header_response.rect;
+            let right_edge = ui.max_rect().right();
             let btn_size = egui::vec2(22.0, 22.0);
             let plus_rect = egui::Rect::from_min_size(
                 egui::pos2(
-                    header_rect.right() - btn_size.x - 4.0,
+                    right_edge - btn_size.x - 4.0,
                     header_rect.center().y - btn_size.y / 2.0,
                 ),
                 btn_size,
