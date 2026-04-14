@@ -817,6 +817,123 @@ impl ApiClient {
         }
     }
 
+    /// App-wide settings modal — request timeout, body size cap, proxy,
+    /// TLS verification. Changes take effect immediately (we rebuild
+    /// the shared `reqwest::Client` on save).
+    pub(crate) fn render_settings_modal(&mut self, ctx: &egui::Context) {
+        if !self.show_settings_modal {
+            return;
+        }
+        let mut open = self.show_settings_modal;
+        let mut do_save = false;
+        let mut do_cancel = false;
+
+        egui::Window::new(
+            egui::RichText::new("SETTINGS").size(12.0).strong().color(C_MUTED),
+        )
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(false)
+            .default_width(440.0)
+            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .show(ctx, |ui| {
+                ui.set_min_width(420.0);
+
+                // Request timeout
+                ui.label(egui::RichText::new("Request timeout (seconds)").size(11.5).color(C_MUTED));
+                ui.add(
+                    egui::DragValue::new(&mut self.editing_settings.timeout_sec)
+                        .range(0..=3600)
+                        .speed(1.0)
+                        .suffix(" s"),
+                );
+                ui.label(
+                    egui::RichText::new("0 disables the timeout (requests can hang forever).")
+                        .size(10.5)
+                        .color(C_MUTED),
+                );
+                ui.add_space(10.0);
+
+                // Max body size
+                ui.label(egui::RichText::new("Max response body (MB)").size(11.5).color(C_MUTED));
+                ui.add(
+                    egui::DragValue::new(&mut self.editing_settings.max_body_mb)
+                        .range(0..=2048)
+                        .speed(1.0)
+                        .suffix(" MB"),
+                );
+                ui.label(
+                    egui::RichText::new(
+                        "Responses larger than this are truncated with a banner. \
+                         0 disables the cap (huge payloads may OOM the app).",
+                    )
+                    .size(10.5)
+                    .color(C_MUTED),
+                );
+                ui.add_space(10.0);
+
+                // Proxy
+                ui.label(egui::RichText::new("Proxy URL").size(11.5).color(C_MUTED));
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.editing_settings.proxy_url)
+                        .hint_text("http://proxy:8080 (leave empty for direct)")
+                        .desired_width(f32::INFINITY),
+                );
+                ui.add_space(10.0);
+
+                // Verify TLS
+                ui.checkbox(
+                    &mut self.editing_settings.verify_tls,
+                    "Verify TLS certificates",
+                );
+                ui.label(
+                    egui::RichText::new(
+                        "Unchecked = accept self-signed / expired certs. \
+                         Dangerous on the public internet; useful for internal dev APIs.",
+                    )
+                    .size(10.5)
+                    .color(C_MUTED),
+                );
+
+                ui.add_space(14.0);
+                ui.separator();
+                ui.add_space(6.0);
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.button("Cancel").clicked() {
+                        do_cancel = true;
+                    }
+                    let save_btn = egui::Button::new(
+                        egui::RichText::new("Save")
+                            .color(egui::Color32::WHITE)
+                            .strong(),
+                    )
+                    .fill(C_ACCENT)
+                    .min_size(egui::vec2(80.0, 28.0));
+                    if ui.add(save_btn).clicked() {
+                        do_save = true;
+                    }
+                });
+
+                ui.input(|i| {
+                    if i.key_pressed(egui::Key::Escape) {
+                        do_cancel = true;
+                    }
+                });
+            });
+        self.show_settings_modal = open;
+
+        if do_save {
+            self.state.settings = self.editing_settings.clone();
+            self.http_client = crate::net::build_client(&self.state.settings);
+            self.save_state();
+            self.show_toast("Settings saved");
+            self.show_settings_modal = false;
+        }
+        if do_cancel || !self.show_settings_modal {
+            self.show_settings_modal = false;
+        }
+    }
+
     pub(crate) fn render_toast(&mut self, ctx: &egui::Context) {
         let Some((msg, ttl)) = self.toast.clone() else {
             return;

@@ -552,6 +552,42 @@ pub fn paint_folder_chevron(ui: &mut egui::Ui, openness: f32, response: &egui::R
     ));
 }
 
+/// Paints a download / save icon — a downward arrow over a tray — at
+/// the given center. Used for "Save response to file".
+pub fn paint_save_icon(painter: &egui::Painter, center: egui::Pos2, color: egui::Color32) {
+    let stroke = egui::Stroke::new(1.4, color);
+    // Downward arrow
+    painter.line_segment(
+        [
+            egui::pos2(center.x, center.y - 5.0),
+            egui::pos2(center.x, center.y + 2.0),
+        ],
+        stroke,
+    );
+    painter.line_segment(
+        [
+            egui::pos2(center.x - 3.0, center.y - 1.0),
+            egui::pos2(center.x, center.y + 2.0),
+        ],
+        stroke,
+    );
+    painter.line_segment(
+        [
+            egui::pos2(center.x + 3.0, center.y - 1.0),
+            egui::pos2(center.x, center.y + 2.0),
+        ],
+        stroke,
+    );
+    // Tray base
+    painter.line_segment(
+        [
+            egui::pos2(center.x - 5.0, center.y + 5.0),
+            egui::pos2(center.x + 5.0, center.y + 5.0),
+        ],
+        stroke,
+    );
+}
+
 /// Paints a thin plus icon (two crossed lines) at the given center.
 pub fn paint_plus_icon(painter: &egui::Painter, center: egui::Pos2, color: egui::Color32) {
     let stroke = egui::Stroke::new(1.4, color);

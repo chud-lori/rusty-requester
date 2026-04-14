@@ -66,6 +66,23 @@ impl ApiClient {
                                 .color(C_MUTED),
                         );
                     });
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui
+                            .add(
+                                egui::Button::new(
+                                    egui::RichText::new("⚙").size(14.0).color(C_MUTED),
+                                )
+                                .min_size(egui::vec2(26.0, 24.0))
+                                .fill(egui::Color32::TRANSPARENT)
+                                .stroke(egui::Stroke::NONE),
+                            )
+                            .on_hover_text("Settings (timeout, body cap, proxy, TLS)")
+                            .clicked()
+                        {
+                            self.editing_settings = self.state.settings.clone();
+                            self.show_settings_modal = true;
+                        }
+                    });
                 });
                 ui.add_space(6.0);
                 self.render_environment_picker(ui);

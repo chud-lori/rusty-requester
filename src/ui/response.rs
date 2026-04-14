@@ -223,6 +223,7 @@ impl ApiClient {
                             let is_json = parsed.is_some();
                             let mut copy_clicked = false;
                             let mut toggle_search = false;
+                            let mut save_clicked = false;
                             ui.horizontal(|ui| {
                                 let mut view = self.body_view;
                                 body_view_pill(ui, &mut view, BodyView::Json, "JSON");
@@ -237,10 +238,20 @@ impl ApiClient {
                                             .desired_width(200.0),
                                     );
                                 }
-                                // Right-side icon buttons — search + copy.
+                                // Right-side icon buttons — save + copy + search.
                                 ui.with_layout(
                                     egui::Layout::right_to_left(egui::Align::Center),
                                     |ui| {
+                                        if icon_button(
+                                            ui,
+                                            "Save response to file",
+                                            paint_save_icon,
+                                        )
+                                        .clicked()
+                                        {
+                                            save_clicked = true;
+                                        }
+                                        ui.add_space(2.0);
                                         if icon_button(ui, "Copy response body", paint_copy_icon)
                                             .clicked()
                                         {
@@ -265,6 +276,39 @@ impl ApiClient {
                                 ui.ctx()
                                     .output_mut(|o| o.copied_text = self.response_text.clone());
                                 self.show_toast("Copied response body");
+                            }
+                            if save_clicked {
+                                // Pick an extension from Content-Type so
+                                // the default filename feels natural.
+                                let ext = match self
+                                    .response_headers
+                                    .iter()
+                                    .find(|(k, _)| k.eq_ignore_ascii_case("content-type"))
+                                    .map(|(_, v)| v.to_ascii_lowercase())
+                                    .as_deref()
+                                {
+                                    Some(v) if v.contains("json") => "json",
+                                    Some(v) if v.contains("xml") => "xml",
+                                    Some(v) if v.contains("html") => "html",
+                                    Some(v) if v.contains("csv") => "csv",
+                                    _ => "txt",
+                                };
+                                if let Some(path) = rfd::FileDialog::new()
+                                    .set_file_name(format!("response.{}", ext))
+                                    .save_file()
+                                {
+                                    match std::fs::write(&path, &self.response_text) {
+                                        Ok(()) => self.show_toast(format!(
+                                            "Saved to {}",
+                                            path.file_name()
+                                                .and_then(|n| n.to_str())
+                                                .unwrap_or("file")
+                                        )),
+                                        Err(e) => {
+                                            self.show_toast(format!("Save failed: {}", e))
+                                        }
+                                    }
+                                }
                             }
                             if self.body_search_visible {
                                 ui.add_space(4.0);

@@ -756,6 +756,54 @@ impl ApiClient {
                 {
                     changed = true;
                 }
+                // JWT decoder — if the token looks like `header.payload.sig`
+                // with 2 dots and each part is base64url-ish, render the
+                // decoded header + payload below.
+                if let Some((header_json, payload_json)) = try_decode_jwt(token) {
+                    ui.add_space(8.0);
+                    ui.label(
+                        egui::RichText::new("Decoded JWT")
+                            .size(11.0)
+                            .strong()
+                            .color(C_MUTED),
+                    );
+                    ui.add_space(4.0);
+                    egui::CollapsingHeader::new(
+                        egui::RichText::new("Header").color(C_TEXT).size(12.5),
+                    )
+                    .default_open(true)
+                    .show(ui, |ui| {
+                        let mut s: &str = &header_json;
+                        ui.add(
+                            egui::TextEdit::multiline(&mut s)
+                                .code_editor()
+                                .desired_rows(3)
+                                .desired_width(f32::INFINITY)
+                                .font(egui::TextStyle::Monospace),
+                        );
+                    });
+                    egui::CollapsingHeader::new(
+                        egui::RichText::new("Payload").color(C_TEXT).size(12.5),
+                    )
+                    .default_open(true)
+                    .show(ui, |ui| {
+                        let mut s: &str = &payload_json;
+                        ui.add(
+                            egui::TextEdit::multiline(&mut s)
+                                .code_editor()
+                                .desired_rows(6)
+                                .desired_width(f32::INFINITY)
+                                .font(egui::TextStyle::Monospace),
+                        );
+                    });
+                    ui.label(
+                        egui::RichText::new(
+                            "Signature is not verified — we just base64-decode the header and payload.",
+                        )
+                        .size(10.5)
+                        .color(C_MUTED),
+                    );
+                }
             }
             Auth::Basic { username, password } => {
                 ui.horizontal(|ui| {
@@ -951,4 +999,37 @@ impl ApiClient {
         }
     }
 
+}
+
+/// Attempt to decode a token as a JWT. Returns the pretty-printed
+/// header + payload as `(header_json, payload_json)` on success. We
+/// don't verify the signature — this is a dev convenience for
+/// eyeballing claims, not a security check.
+fn try_decode_jwt(token: &str) -> Option<(String, String)> {
+    let parts: Vec<&str> = token.trim().split('.').collect();
+    if parts.len() != 3 {
+        return None;
+    }
+    let decode_segment = |s: &str| -> Option<String> {
+        use base64::Engine;
+        let padded = {
+            let pad = (4 - s.len() % 4) % 4;
+            let mut t = s.to_string();
+            for _ in 0..pad {
+                t.push('=');
+            }
+            t
+        };
+        let bytes = base64::engine::general_purpose::URL_SAFE
+            .decode(padded.as_bytes())
+            .ok()?;
+        let raw = String::from_utf8(bytes).ok()?;
+        match serde_json::from_str::<serde_json::Value>(&raw) {
+            Ok(v) => serde_json::to_string_pretty(&v).ok(),
+            Err(_) => None,
+        }
+    };
+    let header = decode_segment(parts[0])?;
+    let payload = decode_segment(parts[1])?;
+    Some((header, payload))
 }

@@ -133,6 +133,17 @@ struct ApiClient {
     /// Whether the inline search input is visible (toggled by the 🔍
     /// icon button in the body toolbar).
     body_search_visible: bool,
+
+    /// Long-lived HTTP client built from `state.settings`. Rebuilt on
+    /// app startup and whenever the Settings modal saves. Reused across
+    /// every send so we don't reopen TCP/TLS pools per request.
+    http_client: reqwest::Client,
+
+    /// Settings modal state.
+    show_settings_modal: bool,
+    /// Working copy of settings while the modal is open. Committed to
+    /// `state.settings` on Save.
+    editing_settings: AppSettings,
 }
 
 impl Default for ApiClient {
@@ -155,6 +166,7 @@ impl Default for ApiClient {
             drafts: vec![],
             open_tabs: vec![],
             active_tab_id: None,
+            settings: AppSettings::default(),
         });
 
         let mut this = Self {
@@ -222,7 +234,14 @@ impl Default for ApiClient {
             body_tree_filter: String::new(),
             body_search_query: String::new(),
             body_search_visible: false,
+            http_client: net::build_client(&AppSettings::default()),
+            show_settings_modal: false,
+            editing_settings: AppSettings::default(),
         };
+        // Rebuild the HTTP client from the deserialized settings — the
+        // initial one above was a placeholder, because we couldn't read
+        // `state.settings` before `state` was moved into `this`.
+        this.http_client = net::build_client(&this.state.settings);
         // Restore active tab — if state has a saved `active_tab_id`,
         // activate that tab now. Otherwise fall back to the first open tab.
         let active_tab: Option<OpenTab> = {
@@ -350,8 +369,11 @@ impl ApiClient {
             self.response_status = "Sending request...".to_string();
             self.response_time = String::new();
             self.response_headers.clear();
+            let client = self.http_client.clone();
+            let max_body_bytes =
+                (self.state.settings.max_body_mb as usize).saturating_mul(1024 * 1024);
             self.request_promise = Some(Promise::spawn_thread("request", move || {
-                net::execute_request(&request, env.as_ref())
+                net::execute_request(client, &request, env.as_ref(), max_body_bytes)
             }));
         }
     }
@@ -859,6 +881,7 @@ impl eframe::App for ApiClient {
         self.render_central(ctx);
         self.render_paste_modal(ctx);
         self.render_env_modal(ctx);
+        self.render_settings_modal(ctx);
         self.render_save_draft_modal(ctx);
         self.render_toast(ctx);
     }
