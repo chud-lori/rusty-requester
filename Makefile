@@ -1,7 +1,7 @@
 # Rusty Requester — common build / dev tasks
 APP_NAME       := RustyRequester
 BUNDLE_ID      := com.rustyrequester.app
-VERSION := 0.2.0
+VERSION := 0.2.1
 TARGET_DIR     := target
 RELEASE_BIN    := $(TARGET_DIR)/release/rusty-requester
 ICON_PNG       := assets/icon.png
