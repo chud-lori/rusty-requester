@@ -324,6 +324,7 @@ impl ApiClient {
                     let avail = (ui.available_width() - btn_space - scheme_slot).max(200.0);
                     let url_edit = ui.add(
                         egui::TextEdit::singleline(&mut self.editing_url)
+                            .id_source("url_bar_edit")
                             .desired_width(avail)
                             .hint_text(
                                 "https://api.example.com/endpoint  (or paste a cURL command)",
