@@ -317,8 +317,11 @@ impl ApiClient {
                         });
 
                     // Reserve space for Send + Code buttons (~180 px)
+                    // and a fixed slot for the scheme hint so the URL
+                    // bar doesn't jitter as the indicator appears.
                     let btn_space = 180.0;
-                    let avail = (ui.available_width() - btn_space).max(200.0);
+                    let scheme_slot = 70.0;
+                    let avail = (ui.available_width() - btn_space - scheme_slot).max(200.0);
                     let url_edit = ui.add(
                         egui::TextEdit::singleline(&mut self.editing_url)
                             .desired_width(avail)
@@ -326,6 +329,34 @@ impl ApiClient {
                                 "https://api.example.com/endpoint  (or paste a cURL command)",
                             )
                             .font(egui::TextStyle::Monospace),
+                    );
+
+                    // Postman-style scheme hint — show "→ http" or
+                    // "→ https" when the user typed a schemeless URL,
+                    // so they know what we'll prepend on send.
+                    let trimmed_url = self.editing_url.trim();
+                    let lower = trimmed_url.to_ascii_lowercase();
+                    let has_scheme = lower.starts_with("http://")
+                        || lower.starts_with("https://")
+                        || lower.starts_with("ws://")
+                        || lower.starts_with("wss://");
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(scheme_slot, 0.0),
+                        egui::Layout::left_to_right(egui::Align::Center),
+                        |ui| {
+                            if !trimmed_url.is_empty() && !has_scheme {
+                                let scheme = crate::net::default_scheme_for(&lower);
+                                ui.label(
+                                    egui::RichText::new(format!("→ {}", scheme))
+                                        .color(C_MUTED)
+                                        .font(egui::FontId::monospace(11.0)),
+                                )
+                                .on_hover_text(format!(
+                                    "Will be sent as {}://{}",
+                                    scheme, trimmed_url
+                                ));
+                            }
+                        },
                     );
                     if url_edit.changed() {
                         let trimmed = self.editing_url.trim_start();

@@ -1,4 +1,5 @@
 use crate::model::{Auth, HttpMethod, KvRow, Request};
+use crate::net::ensure_url_scheme;
 use uuid::Uuid;
 
 pub fn to_curl(req: &Request) -> String {
@@ -6,7 +7,7 @@ pub fn to_curl(req: &Request) -> String {
     parts.push("curl".to_string());
     parts.push(format!("-X {}", req.method));
 
-    let full_url = build_full_url(&req.url, &req.query_params);
+    let full_url = build_full_url(&ensure_url_scheme(&req.url), &req.query_params);
     parts.push(format!("'{}'", esc(&full_url)));
 
     for h in &req.headers {

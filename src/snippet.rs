@@ -421,7 +421,7 @@ fn collect_send_headers(req: &Request) -> Vec<(String, String)> {
 fn python(req: &Request) -> String {
     let mut s = String::new();
     s.push_str("import requests\n\n");
-    let url = curl::build_full_url(&req.url, &req.query_params);
+    let url = curl::build_full_url(&crate::net::ensure_url_scheme(&req.url), &req.query_params);
     s.push_str(&format!("url = {:?}\n", url));
     let headers = collect_send_headers(req);
     if !headers.is_empty() {
@@ -476,7 +476,7 @@ fn python(req: &Request) -> String {
 
 fn javascript(req: &Request) -> String {
     let mut s = String::new();
-    let url = curl::build_full_url(&req.url, &req.query_params);
+    let url = curl::build_full_url(&crate::net::ensure_url_scheme(&req.url), &req.query_params);
     s.push_str(&format!("const url = {:?};\n\n", url));
     s.push_str("const options = {\n");
     s.push_str(&format!("  method: {:?},\n", req.method.to_string()));
@@ -512,7 +512,7 @@ fn javascript(req: &Request) -> String {
 
 fn httpie(req: &Request) -> String {
     let mut parts: Vec<String> = vec!["http".into(), format!("{}", req.method)];
-    let url = curl::build_full_url(&req.url, &req.query_params);
+    let url = curl::build_full_url(&crate::net::ensure_url_scheme(&req.url), &req.query_params);
     parts.push(format!("'{}'", url.replace('\'', "'\\''")));
     for (k, v) in collect_send_headers(req) {
         parts.push(format!("'{}:{}'", k, v));

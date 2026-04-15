@@ -60,10 +60,10 @@ pub fn parse_url_host_path(url: &str) -> (String, String) {
     (host, path)
 }
 
-/// Ensure the URL has a scheme so reqwest can parse it. Defaults to
-/// `http://` — matches curl's historical default and Postman's
-/// behavior for schemeless URLs. Users hitting HTTPS-only services
-/// can type `https://` explicitly.
+/// Ensure the URL has a scheme so reqwest can parse it. Mirrors
+/// Postman: `http://` for local/private hosts (localhost, 127.x,
+/// 10.x, 192.168.x, 172.16-31.x, *.local), `https://` for everything
+/// else. Users can always type a scheme explicitly to override.
 pub fn ensure_url_scheme(url: &str) -> String {
     let t = url.trim();
     if t.is_empty() {
@@ -77,7 +77,51 @@ pub fn ensure_url_scheme(url: &str) -> String {
     {
         return t.to_string();
     }
-    format!("http://{}", t)
+    format!("{}://{}", default_scheme_for(&lower), t)
+}
+
+/// Decide whether a schemeless URL should default to `http` or `https`.
+/// Pulled out so `ensure_url_scheme` and the URL-bar hint render the
+/// same prefix.
+pub fn default_scheme_for(url_lower: &str) -> &'static str {
+    let host_port = url_lower
+        .split('/')
+        .next()
+        .unwrap_or("")
+        .split(['?', '#'])
+        .next()
+        .unwrap_or("");
+    let host = host_port.split(':').next().unwrap_or("");
+    if is_local_host(host) {
+        "http"
+    } else {
+        "https"
+    }
+}
+
+/// `true` for hosts that should default to plain HTTP — local dev
+/// servers and RFC 1918 private ranges. Anything else gets HTTPS.
+fn is_local_host(host: &str) -> bool {
+    if host.is_empty() || host == "localhost" || host.ends_with(".local") {
+        return true;
+    }
+    // IPv6 loopback `[::1]` — strip brackets if present.
+    let h = host.trim_start_matches('[').trim_end_matches(']');
+    if h == "::1" {
+        return true;
+    }
+    // IPv4 — check common private ranges.
+    let octets: Vec<&str> = h.split('.').collect();
+    if octets.len() == 4 {
+        let parsed: Option<Vec<u8>> = octets.iter().map(|o| o.parse::<u8>().ok()).collect();
+        if let Some(o) = parsed {
+            return o[0] == 127
+                || o[0] == 10
+                || (o[0] == 192 && o[1] == 168)
+                || (o[0] == 172 && (16..=31).contains(&o[1]));
+        }
+    }
+    false
 }
 
 /// Build a long-lived tokio runtime used to drive every HTTP request.
