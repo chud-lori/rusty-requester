@@ -1,6 +1,7 @@
 mod assertion;
 mod cookies;
 mod extract;
+mod html_preview;
 mod icon;
 mod io;
 #[cfg(target_os = "macos")]
@@ -18,7 +19,13 @@ use icon::{
     set_macos_app_icon_image, APP_ICON_BYTES,
 };
 use model::*;
-use poll_promise::Promise;
+/// In-flight send: tokio task + result receiver. `handle.abort()` is
+/// what powers the Cancel button — dropping the future mid-`.await`
+/// also drops the underlying hyper connection.
+struct InFlightRequest {
+    handle: tokio::task::JoinHandle<()>,
+    rx: std::sync::mpsc::Receiver<ResponseData>,
+}
 use snippet::SnippetLang;
 use std::fs;
 use std::path::PathBuf;
@@ -67,7 +74,10 @@ struct ApiClient {
 
     storage_path: PathBuf,
 
-    request_promise: Option<Promise<ResponseData>>,
+    /// Active in-flight request. Holds a tokio `JoinHandle` so we can
+    /// `abort()` on Cancel, and a `mpsc::Receiver` to pick up the
+    /// `ResponseData` once the task completes. `None` when idle.
+    request_in_flight: Option<InFlightRequest>,
 
     renaming_folder_id: Option<String>,
     rename_folder_text: String,
@@ -235,7 +245,7 @@ impl Default for ApiClient {
             assertion_results: vec![],
             editing_request_id_for_history: None,
             storage_path,
-            request_promise: None,
+            request_in_flight: None,
             renaming_folder_id: None,
             rename_folder_text: String::new(),
             request_tab: RequestTab::Params,
@@ -407,6 +417,11 @@ impl ApiClient {
     }
 
     fn send_request(&mut self) {
+        // Already sending — treat second Send as a no-op. Cancel has
+        // its own button; we don't want double-firing to abort.
+        if self.request_in_flight.is_some() {
+            return;
+        }
         self.commit_editing();
         let env = self.active_environment().cloned();
         if let Some(request) = self.get_current_request() {
@@ -415,13 +430,34 @@ impl ApiClient {
             self.response_status = "Sending request...".to_string();
             self.response_time = String::new();
             self.response_headers.clear();
+
             let client = self.http_client.clone();
-            let rt_handle = self.http_runtime.handle().clone();
             let max_body_bytes =
                 (self.state.settings.max_body_mb as usize).saturating_mul(1024 * 1024);
-            self.request_promise = Some(Promise::spawn_thread("request", move || {
-                net::execute_request(client, rt_handle, &request, env.as_ref(), max_body_bytes)
-            }));
+            let (tx, rx) = std::sync::mpsc::channel::<ResponseData>();
+            // Spawn on our long-lived runtime so Cancel can abort
+            // the JoinHandle; dropping the future also drops the
+            // in-flight hyper connection. Result flows back via a
+            // std::sync::mpsc::channel that `update()` polls.
+            let handle = self.http_runtime.spawn(async move {
+                let r = net::execute_request_async(client, request, env, max_body_bytes).await;
+                let _ = tx.send(r);
+            });
+            self.request_in_flight = Some(InFlightRequest { handle, rx });
+        }
+    }
+
+    /// Abort the in-flight request (if any). Drops the tokio task so
+    /// the hyper/TCP connection unwinds immediately; surfaces a
+    /// "Cancelled" status so the user sees their click took effect.
+    fn cancel_request(&mut self) {
+        if let Some(f) = self.request_in_flight.take() {
+            f.handle.abort();
+            self.is_loading = false;
+            self.response_status = "Cancelled".to_string();
+            self.response_text = "Request was cancelled by the user.".to_string();
+            self.response_time = String::new();
+            self.show_toast("Request cancelled");
         }
     }
 
@@ -1065,31 +1101,44 @@ impl eframe::App for ApiClient {
             }
         }
 
-        if let Some(promise) = &self.request_promise {
-            if let Some(r) = promise.ready() {
-                self.response_text = r.body.clone();
-                self.response_status = r.status.clone();
-                self.response_time = r.time.clone();
-                self.response_headers = r.headers.clone();
-                self.response_headers_bytes = r.response_headers_bytes;
-                self.response_body_bytes = r.response_body_bytes;
-                self.request_headers_bytes = r.request_headers_bytes;
-                self.request_body_bytes = r.request_body_bytes;
-                self.response_prepare_ms = r.prepare_ms;
-                self.response_waiting_ms = r.waiting_ms;
-                self.response_download_ms = r.download_ms;
-                self.response_total_ms = r.total_ms;
-                self.is_loading = false;
-                // Merge any `Set-Cookie`s into the active env's jar
-                // before consuming the promise.
-                let cookies_to_merge = r.set_cookies.clone();
-                self.request_promise = None;
-                self.merge_cookies_into_env(cookies_to_merge);
-                self.push_history_entry();
-                self.apply_response_extractors();
-                self.apply_response_assertions();
-            } else {
-                ctx.request_repaint();
+        // Poll the in-flight send. `try_recv` is non-blocking; the
+        // tokio task `send(r)`s the result when done. We keep
+        // requesting a repaint so we tick until it lands.
+        if let Some(f) = &self.request_in_flight {
+            match f.rx.try_recv() {
+                Ok(r) => {
+                    self.response_text = r.body.clone();
+                    self.response_status = r.status.clone();
+                    self.response_time = r.time.clone();
+                    self.response_headers = r.headers.clone();
+                    self.response_headers_bytes = r.response_headers_bytes;
+                    self.response_body_bytes = r.response_body_bytes;
+                    self.request_headers_bytes = r.request_headers_bytes;
+                    self.request_body_bytes = r.request_body_bytes;
+                    self.response_prepare_ms = r.prepare_ms;
+                    self.response_waiting_ms = r.waiting_ms;
+                    self.response_download_ms = r.download_ms;
+                    self.response_total_ms = r.total_ms;
+                    self.is_loading = false;
+                    let cookies_to_merge = r.set_cookies.clone();
+                    self.request_in_flight = None;
+                    self.merge_cookies_into_env(cookies_to_merge);
+                    self.push_history_entry();
+                    self.apply_response_extractors();
+                    self.apply_response_assertions();
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {
+                    // Still in flight — keep the UI animating.
+                    ctx.request_repaint();
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    // Sender dropped without sending — task was
+                    // aborted (Cancel pressed) or panicked. Clean up
+                    // silently; the status was already set by
+                    // `cancel_request`.
+                    self.request_in_flight = None;
+                    self.is_loading = false;
+                }
             }
         }
 

@@ -360,23 +360,29 @@ impl ApiClient {
                     let send_pressed =
                         url_edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
 
+                    // The Send button flips to Cancel while a request
+                    // is in flight. `is_loading` stays true for the
+                    // entire duration of the tokio task; clicking
+                    // Cancel calls `abort()` on the JoinHandle and
+                    // drops the connection.
+                    let (label, fill, tooltip) = if self.is_loading {
+                        ("Cancel", C_RED, "Cancel the in-flight request")
+                    } else {
+                        ("Send", C_PURPLE, "Send (⌘/Ctrl + Enter)")
+                    };
                     let send_btn = egui::Button::new(
-                        egui::RichText::new(if self.is_loading {
-                            "Sending..."
-                        } else {
-                            "Send"
-                        })
-                        .size(13.0)
-                        .strong()
-                        .color(egui::Color32::WHITE),
+                        egui::RichText::new(label)
+                            .size(13.0)
+                            .strong()
+                            .color(egui::Color32::WHITE),
                     )
-                    .fill(C_PURPLE)
+                    .fill(fill)
                     .min_size(egui::vec2(80.0, 28.0));
 
                     let send_click = ui
-                        .add_enabled(!self.is_loading, send_btn)
+                        .add(send_btn)
                         .on_hover_cursor(egui::CursorIcon::PointingHand)
-                        .on_hover_text("Send (⌘/Ctrl + Enter)")
+                        .on_hover_text(tooltip)
                         .clicked();
 
                     if ui
@@ -393,7 +399,16 @@ impl ApiClient {
                         self.show_snippet_panel = !self.show_snippet_panel;
                     }
 
-                    if send_click || send_pressed {
+                    // One click handler for both states: Cancel when
+                    // loading, Send otherwise. ⌘/Ctrl+Enter and
+                    // Enter-in-URL-bar always Send (never Cancel).
+                    if send_click {
+                        if self.is_loading {
+                            self.cancel_request();
+                        } else {
+                            self.send_request();
+                        }
+                    } else if send_pressed && !self.is_loading {
                         self.send_request();
                     }
                 });

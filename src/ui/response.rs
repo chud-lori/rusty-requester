@@ -117,7 +117,21 @@ impl ApiClient {
                 let mut view = self.body_view;
                 body_view_pill(ui, &mut view, BodyView::Json, "JSON");
                 body_view_pill(ui, &mut view, BodyView::Tree, "Tree");
+                // The Preview pill only surfaces for HTML responses.
+                // We detect HTML via Content-Type (authoritative) +
+                // body sniff (fallback for header-less responses).
+                let is_html_body =
+                    crate::html_preview::is_html(&self.response_headers, &self.response_text);
+                if is_html_body {
+                    body_view_pill(ui, &mut view, BodyView::Preview, "Preview");
+                }
                 body_view_pill(ui, &mut view, BodyView::Raw, "Raw");
+                // If the user had Preview selected but the new
+                // response isn't HTML, transparently fall back to
+                // Raw so the pane isn't empty.
+                if matches!(view, BodyView::Preview) && !is_html_body {
+                    view = BodyView::Raw;
+                }
                 self.body_view = view;
                 if matches!(self.body_view, BodyView::Tree) && is_json_body {
                     ui.add_space(8.0);
@@ -366,6 +380,29 @@ impl ApiClient {
                                             0,
                                         );
                                     }
+                                }
+                                BodyView::Preview => {
+                                    // Strip scripts/styles + decode
+                                    // entities on every frame. Cheap
+                                    // for typical HTML error pages
+                                    // (< 100 KB); for larger bodies
+                                    // we'd want to cache, but those
+                                    // aren't the common case. Font
+                                    // intentionally proportional (not
+                                    // monospace) — this is the
+                                    // reader-mode view.
+                                    let stripped =
+                                        crate::html_preview::strip_to_text(&self.response_text);
+                                    let mut buf: &str = &stripped;
+                                    ui.add_sized(
+                                        egui::vec2(
+                                            ui.available_width(),
+                                            ui.available_height().max(120.0),
+                                        ),
+                                        egui::TextEdit::multiline(&mut buf)
+                                            .frame(false)
+                                            .desired_width(f32::INFINITY),
+                                    );
                                 }
                                 BodyView::Raw => {
                                     ui.add_sized(

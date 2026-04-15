@@ -111,23 +111,23 @@ pub fn format_request_error(err: &reqwest::Error) -> String {
 }
 
 /// Fire a single HTTP request and return a fully-populated
-/// `ResponseData` — body, headers, status, size breakdown, and phase
-/// timings. Designed to run off the UI thread via
-/// `poll_promise::Promise::spawn_thread`.
+/// `ResponseData`. Async because `ApiClient` now spawns it onto the
+/// long-lived tokio runtime as a `JoinHandle` that can be `.abort()`ed
+/// mid-flight when the user clicks Cancel. Dropping the future mid-
+/// `.await` cancels the underlying reqwest/hyper connection and frees
+/// the resources, so Cancel is immediate (no per-chunk polling).
 ///
-/// Both `client` and `runtime_handle` are shared across calls. The
-/// client is built once from `AppSettings` (see `build_client`); the
-/// runtime is owned by `ApiClient` (see `build_runtime`). Reusing
-/// both saves the per-send cost of spinning a fresh runtime + TCP
-/// connection pool. `max_body_bytes` is the soft cap after which the
-/// body is truncated and a banner is prepended; `0` disables the cap.
-pub fn execute_request(
+/// `client` is built once from `AppSettings` (see `build_client`) and
+/// shared across calls. `max_body_bytes` is the soft cap after which
+/// the body is truncated with a banner; `0` disables the cap.
+pub async fn execute_request_async(
     client: reqwest::Client,
-    runtime_handle: tokio::runtime::Handle,
-    request: &Request,
-    env: Option<&Environment>,
+    request: Request,
+    env: Option<Environment>,
     max_body_bytes: usize,
 ) -> ResponseData {
+    let env = env.as_ref();
+    let request = &request;
     let t_prepare_start = std::time::Instant::now();
 
     // Apply environment substitution to all string fields up-front.
@@ -147,7 +147,11 @@ pub fn execute_request(
         },
     };
 
-    runtime_handle.block_on(async {
+    // Inner block is the former `runtime_handle.block_on(async { … })`
+    // — same body, just unwrapped. The outer fn is async, so the
+    // caller chooses how to execute (tokio::spawn with JoinHandle for
+    // cancel, or block_on if cancellation isn't needed).
+    {
         let final_url_base = ensure_url_scheme(&final_url_base);
         let final_url = curl::build_full_url(&final_url_base, &sub_params);
 
@@ -391,7 +395,7 @@ pub fn execute_request(
                 total_ms: prepare_ms,
             },
         }
-    })
+    }
 }
 
 /// Read a response body into a String, stopping as soon as `max_bytes`

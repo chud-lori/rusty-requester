@@ -466,11 +466,15 @@ pub enum ResponseTab {
 ///     (default, matches Postman's JSON viewer).
 ///   • `Tree` — collapsible tree with keys/leaves; useful for big/deep
 ///     payloads.
+///   • `Preview` — HTML rendered as readable text (script/style
+///     stripped, entities decoded). Only offered when the response
+///     Content-Type is `text/html`.
 ///   • `Raw` — verbatim text, no formatting.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum BodyView {
     Json,
     Tree,
+    Preview,
     Raw,
 }
 
