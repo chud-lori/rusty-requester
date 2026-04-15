@@ -542,49 +542,63 @@ fn first_line(s: &str) -> String {
 /// Error detail pill. Red/amber-tinted rounded bar with an icon,
 /// a bold prefix (`Error:` / `Cancelled:`), then the detail.
 ///
-/// Uses `ui.horizontal` (not `horizontal_wrapped`) so the Frame
-/// hugs its content — otherwise wrapping expands the Frame to the
-/// full available width and `vertical_centered` can't actually
-/// center it (the pill ends up flush-left within a full-width
-/// Frame). The detail text is a single line already (we strip it
-/// to the first meaningful line earlier via `first_line`); if the
-/// detail is very long, we truncate with an ellipsis rather than
-/// wrapping.
+/// Pre-allocates a fixed-width region sized to approximately fit the
+/// text, then renders the Frame inside. Needed because egui's
+/// `ui.horizontal` inside a Frame claims the full available width as
+/// its *allocated* rect — so `vertical_centered` sees a full-width
+/// widget and the visual pill ends up flush-left even though it's
+/// drawing smaller content. Sizing the outer allocation explicitly
+/// lets the parent `vertical_centered` center it correctly.
 fn render_error_pill(ui: &mut egui::Ui, tint: egui::Color32, prefix: &str, detail: &str) {
-    let max_chars = 90; // ~620 px at 12 px monospace, the panel's comfortable width
+    let max_chars = 90;
     let trimmed = if detail.chars().count() > max_chars {
         let cut: String = detail.chars().take(max_chars).collect();
         format!("{}…", cut)
     } else {
         detail.to_string()
     };
-    egui::Frame::none()
-        .fill(tint.linear_multiply(0.22))
-        .stroke(egui::Stroke::new(1.0, tint.linear_multiply(0.55)))
-        .rounding(egui::Rounding::same(6.0))
-        .inner_margin(egui::Margin::symmetric(12.0, 8.0))
-        .show(ui, |ui| {
-            ui.horizontal(|ui| {
-                // Small ⚠-style painter icon so we don't depend on
-                // an emoji font rendering correctly.
-                let (rect, _) =
-                    ui.allocate_exact_size(egui::vec2(18.0, 18.0), egui::Sense::hover());
-                paint_warning_icon(ui.painter(), rect.center(), tint);
-                ui.add_space(4.0);
-                ui.label(
-                    egui::RichText::new(prefix)
-                        .color(tint)
-                        .strong()
-                        .font(egui::FontId::monospace(12.5)),
-                );
-                ui.add_space(4.0);
-                ui.label(
-                    egui::RichText::new(&trimmed)
-                        .color(C_TEXT)
-                        .font(egui::FontId::monospace(12.0)),
-                );
-            });
-        });
+    // Rough width estimate — icon + spacings + glyph widths at
+    // 12 px monospace (≈7 px per char) + Frame margins. Caps at the
+    // panel's usable width so very long errors still fit on screen.
+    let approx_chars = prefix.chars().count() + 1 + trimmed.chars().count();
+    let pill_w = (18.0 + 8.0 + approx_chars as f32 * 7.3 + 24.0)
+        .min(ui.available_width() - 32.0);
+
+    ui.allocate_ui_with_layout(
+        egui::vec2(pill_w, 0.0),
+        egui::Layout::top_down(egui::Align::Center),
+        |ui| {
+            egui::Frame::none()
+                .fill(tint.linear_multiply(0.22))
+                .stroke(egui::Stroke::new(1.0, tint.linear_multiply(0.55)))
+                .rounding(egui::Rounding::same(6.0))
+                .inner_margin(egui::Margin::symmetric(12.0, 8.0))
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        // Small ⚠-style painter icon so we don't
+                        // depend on an emoji font rendering correctly.
+                        let (rect, _) = ui.allocate_exact_size(
+                            egui::vec2(18.0, 18.0),
+                            egui::Sense::hover(),
+                        );
+                        paint_warning_icon(ui.painter(), rect.center(), tint);
+                        ui.add_space(4.0);
+                        ui.label(
+                            egui::RichText::new(prefix)
+                                .color(tint)
+                                .strong()
+                                .font(egui::FontId::monospace(12.5)),
+                        );
+                        ui.add_space(4.0);
+                        ui.label(
+                            egui::RichText::new(&trimmed)
+                                .color(C_TEXT)
+                                .font(egui::FontId::monospace(12.0)),
+                        );
+                    });
+                });
+        },
+    );
 }
 
 /// Draw a simple "unplugged cable" illustration centered at the
