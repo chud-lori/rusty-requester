@@ -561,8 +561,7 @@ fn render_error_pill(ui: &mut egui::Ui, tint: egui::Color32, prefix: &str, detai
     // 12 px monospace (≈7 px per char) + Frame margins. Caps at the
     // panel's usable width so very long errors still fit on screen.
     let approx_chars = prefix.chars().count() + 1 + trimmed.chars().count();
-    let pill_w = (18.0 + 8.0 + approx_chars as f32 * 7.3 + 24.0)
-        .min(ui.available_width() - 32.0);
+    let pill_w = (18.0 + 8.0 + approx_chars as f32 * 7.3 + 24.0).min(ui.available_width() - 32.0);
 
     ui.allocate_ui_with_layout(
         egui::vec2(pill_w, 0.0),
@@ -577,10 +576,8 @@ fn render_error_pill(ui: &mut egui::Ui, tint: egui::Color32, prefix: &str, detai
                     ui.horizontal(|ui| {
                         // Small ⚠-style painter icon so we don't
                         // depend on an emoji font rendering correctly.
-                        let (rect, _) = ui.allocate_exact_size(
-                            egui::vec2(18.0, 18.0),
-                            egui::Sense::hover(),
-                        );
+                        let (rect, _) =
+                            ui.allocate_exact_size(egui::vec2(18.0, 18.0), egui::Sense::hover());
                         paint_warning_icon(ui.painter(), rect.center(), tint);
                         ui.add_space(4.0);
                         ui.label(
