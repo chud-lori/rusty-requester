@@ -82,6 +82,71 @@ impl ApiClient {
             });
     }
 
+    /// Error / cancel state — replaces the code editor with a
+    /// centered illustration, status headline, error detail pill,
+    /// and a helper hint line. Modeled after Postman's "Could not
+    /// send request" screen. `cancelled` toggles the wording +
+    /// color (amber for user cancel, red for network/DNS/TLS
+    /// failure).
+    fn render_failed_state(&mut self, ui: &mut egui::Ui, cancelled: bool) {
+        let full_w = ui.available_width();
+        let full_h = ui.available_height().max(160.0);
+        egui::Frame::none()
+            .fill(C_PANEL_DARK)
+            .inner_margin(16.0)
+            .rounding(10.0)
+            .stroke(egui::Stroke::new(1.0, C_BORDER))
+            .show(ui, |ui| {
+                let margin = 32.0;
+                ui.set_width(full_w - margin);
+                ui.set_min_height(full_h - margin);
+                let inner_h = ui.available_height();
+
+                // Headline wording flips between "Cancelled" and the
+                // generic "Could not send request" (Postman parity).
+                let headline = if cancelled {
+                    "Request cancelled"
+                } else {
+                    "Could not send request"
+                };
+                // Error tint: amber for user-initiated cancel, red
+                // for network failure. Amber reads as "you did this
+                // on purpose" so it doesn't alarm.
+                let tint = if cancelled { C_ORANGE } else { C_RED };
+
+                ui.vertical_centered(|ui| {
+                    ui.add_space((inner_h * 0.18).max(24.0));
+                    // Illustration — a simple unplugged-plug icon
+                    // drawn with primitives (keeps the project's
+                    // no-image-asset ethos).
+                    paint_unplugged_plug(ui, 120.0, tint);
+                    ui.add_space(14.0);
+
+                    ui.label(egui::RichText::new(headline).size(14.5).color(C_MUTED));
+                    ui.add_space(12.0);
+
+                    // Error detail pill: red-tinted bar with the
+                    // leading line of `response_text` (which holds
+                    // reqwest's flattened error chain for failures
+                    // and our own message for cancels).
+                    let detail = first_line(&self.response_text);
+                    let prefix = if cancelled { "Cancelled:" } else { "Error:" };
+                    render_error_pill(ui, tint, prefix, &detail);
+
+                    ui.add_space(14.0);
+                    // Quiet hint line. Different suggestions per
+                    // cause — a cancel doesn't need "check the URL",
+                    // but a failure does.
+                    let hint = if cancelled {
+                        "Press Send to try again."
+                    } else {
+                        "Double-check the URL, host reachability, TLS, and your proxy."
+                    };
+                    ui.label(egui::RichText::new(hint).size(11.5).color(C_MUTED));
+                });
+            });
+    }
+
     pub(crate) fn render_response(&mut self, ui: &mut egui::Ui) {
         ui.add_space(2.0);
         // One unified toolbar row — Body / Headers tabs on the left,
@@ -307,6 +372,18 @@ impl ApiClient {
             return;
         }
 
+        // Dedicated panel for request failures (network error, DNS,
+        // TLS, timeout) and user cancellation. Replaces the code
+        // editor — showing a red pill with the error on a centered
+        // illustration is far more scannable than "Error: builder
+        // error… caused by…" rendered as plain text.
+        let is_failed = self.response_status == "Failed";
+        let is_cancelled = self.response_status == "Cancelled";
+        if is_failed || is_cancelled {
+            self.render_failed_state(ui, is_cancelled);
+            return;
+        }
+
         let full_w = ui.available_width();
         let full_h = ui.available_height().max(120.0);
         egui::Frame::none()
@@ -446,4 +523,159 @@ impl ApiClient {
             });
         let _ = remaining_height;
     }
+}
+
+/// Pull the first non-empty line from a multi-line error chain. The
+/// rest of the text still renders elsewhere if the user wants it
+/// (e.g. in the Headers tab or via Raw view); the pill only needs
+/// the human-readable summary line.
+fn first_line(s: &str) -> String {
+    s.lines()
+        .find(|l| !l.trim().is_empty())
+        .unwrap_or(s)
+        .trim_start_matches("Error:")
+        .trim_start_matches("error sending request for url")
+        .trim()
+        .to_string()
+}
+
+/// Error detail pill. Red/amber-tinted rounded bar with an icon,
+/// a bold prefix (`Error:` / `Cancelled:`), then the detail. Width
+/// capped so long messages wrap rather than pushing the layout.
+fn render_error_pill(ui: &mut egui::Ui, tint: egui::Color32, prefix: &str, detail: &str) {
+    let max_w = 620.0_f32.min(ui.available_width() - 32.0);
+    egui::Frame::none()
+        .fill(tint.linear_multiply(0.22))
+        .stroke(egui::Stroke::new(1.0, tint.linear_multiply(0.55)))
+        .rounding(egui::Rounding::same(6.0))
+        .inner_margin(egui::Margin::symmetric(12.0, 8.0))
+        .show(ui, |ui| {
+            ui.set_max_width(max_w);
+            ui.horizontal_wrapped(|ui| {
+                // Small ⚠-style painter icon so we don't depend on
+                // an emoji font rendering correctly.
+                let (rect, _) =
+                    ui.allocate_exact_size(egui::vec2(18.0, 18.0), egui::Sense::hover());
+                paint_warning_icon(ui.painter(), rect.center(), tint);
+                ui.add_space(4.0);
+                ui.label(
+                    egui::RichText::new(prefix)
+                        .color(tint)
+                        .strong()
+                        .font(egui::FontId::monospace(12.5)),
+                );
+                ui.add_space(4.0);
+                ui.label(
+                    egui::RichText::new(detail)
+                        .color(C_TEXT)
+                        .font(egui::FontId::monospace(12.0)),
+                );
+            });
+        });
+}
+
+/// Draw a simple "unplugged cable" illustration centered at the
+/// current cursor position. A rounded plug on one side, a socket
+/// on the other, with a loose cable between them. Uses the same
+/// painter primitives the rest of the app does, so the file-size
+/// cost is zero.
+fn paint_unplugged_plug(ui: &mut egui::Ui, size: f32, tint: egui::Color32) {
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(size, size * 0.7), egui::Sense::hover());
+    let painter = ui.painter();
+    let line_stroke = egui::Stroke::new(1.8, C_MUTED);
+    let cx = rect.center().x;
+    let cy = rect.center().y;
+    let scale = size / 120.0;
+    let s = |v: f32| v * scale;
+
+    // Left side — socket (box with two holes).
+    let socket =
+        egui::Rect::from_center_size(egui::pos2(cx - s(36.0), cy), egui::vec2(s(24.0), s(34.0)));
+    painter.rect_stroke(socket, egui::Rounding::same(s(3.0)), line_stroke);
+    // Two socket holes.
+    painter.circle_filled(
+        egui::pos2(socket.center().x - s(4.0), socket.center().y),
+        s(1.8),
+        C_MUTED,
+    );
+    painter.circle_filled(
+        egui::pos2(socket.center().x + s(4.0), socket.center().y),
+        s(1.8),
+        C_MUTED,
+    );
+
+    // Right side — plug head with two prongs.
+    let plug = egui::Rect::from_center_size(
+        egui::pos2(cx + s(36.0), cy + s(4.0)),
+        egui::vec2(s(22.0), s(30.0)),
+    );
+    painter.rect_stroke(plug, egui::Rounding::same(s(3.0)), line_stroke);
+    // Prongs on the left face of the plug.
+    painter.line_segment(
+        [
+            egui::pos2(plug.left(), plug.center().y - s(6.0)),
+            egui::pos2(plug.left() - s(7.0), plug.center().y - s(6.0)),
+        ],
+        line_stroke,
+    );
+    painter.line_segment(
+        [
+            egui::pos2(plug.left(), plug.center().y + s(6.0)),
+            egui::pos2(plug.left() - s(7.0), plug.center().y + s(6.0)),
+        ],
+        line_stroke,
+    );
+
+    // Cable — two short arcs, drooping to imply the plug is loose.
+    // Rendered as short line segments approximating a curve (no
+    // bezier math needed at this scale).
+    let cable_start = egui::pos2(plug.right(), plug.center().y);
+    let cable_end = egui::pos2(cx + s(50.0), cy - s(18.0));
+    painter.line_segment(
+        [cable_start, egui::pos2(cx + s(54.0), cy + s(6.0))],
+        line_stroke,
+    );
+    painter.line_segment(
+        [egui::pos2(cx + s(54.0), cy + s(6.0)), cable_end],
+        line_stroke,
+    );
+
+    // Status dot in the tint colour on top of the socket — signals
+    // "attention here" (Postman uses an orange dot the same way).
+    painter.circle_filled(
+        egui::pos2(socket.center().x, socket.top() - s(6.0)),
+        s(3.0),
+        tint,
+    );
+    painter.line_segment(
+        [
+            egui::pos2(socket.center().x, socket.top() - s(3.0)),
+            egui::pos2(socket.center().x, socket.top()),
+        ],
+        egui::Stroke::new(1.5, C_MUTED),
+    );
+}
+
+/// Warning triangle with an exclamation mark — tiny (18×18). Used
+/// inside the error pill next to the `Error:` / `Cancelled:` label.
+fn paint_warning_icon(painter: &egui::Painter, center: egui::Pos2, tint: egui::Color32) {
+    let r = 7.0;
+    let top = egui::pos2(center.x, center.y - r);
+    let bl = egui::pos2(center.x - r * 0.9, center.y + r * 0.75);
+    let br = egui::pos2(center.x + r * 0.9, center.y + r * 0.75);
+    painter.add(egui::Shape::convex_polygon(
+        vec![top, br, bl],
+        tint.linear_multiply(0.3),
+        egui::Stroke::new(1.3, tint),
+    ));
+    // Exclamation mark stem.
+    painter.line_segment(
+        [
+            egui::pos2(center.x, center.y - 2.0),
+            egui::pos2(center.x, center.y + 2.0),
+        ],
+        egui::Stroke::new(1.4, tint),
+    );
+    // Dot.
+    painter.circle_filled(egui::pos2(center.x, center.y + 4.0), 1.0, tint);
 }
