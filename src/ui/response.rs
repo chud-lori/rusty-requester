@@ -540,18 +540,31 @@ fn first_line(s: &str) -> String {
 }
 
 /// Error detail pill. Red/amber-tinted rounded bar with an icon,
-/// a bold prefix (`Error:` / `Cancelled:`), then the detail. Width
-/// capped so long messages wrap rather than pushing the layout.
+/// a bold prefix (`Error:` / `Cancelled:`), then the detail.
+///
+/// Uses `ui.horizontal` (not `horizontal_wrapped`) so the Frame
+/// hugs its content — otherwise wrapping expands the Frame to the
+/// full available width and `vertical_centered` can't actually
+/// center it (the pill ends up flush-left within a full-width
+/// Frame). The detail text is a single line already (we strip it
+/// to the first meaningful line earlier via `first_line`); if the
+/// detail is very long, we truncate with an ellipsis rather than
+/// wrapping.
 fn render_error_pill(ui: &mut egui::Ui, tint: egui::Color32, prefix: &str, detail: &str) {
-    let max_w = 620.0_f32.min(ui.available_width() - 32.0);
+    let max_chars = 90; // ~620 px at 12 px monospace, the panel's comfortable width
+    let trimmed = if detail.chars().count() > max_chars {
+        let cut: String = detail.chars().take(max_chars).collect();
+        format!("{}…", cut)
+    } else {
+        detail.to_string()
+    };
     egui::Frame::none()
         .fill(tint.linear_multiply(0.22))
         .stroke(egui::Stroke::new(1.0, tint.linear_multiply(0.55)))
         .rounding(egui::Rounding::same(6.0))
         .inner_margin(egui::Margin::symmetric(12.0, 8.0))
         .show(ui, |ui| {
-            ui.set_max_width(max_w);
-            ui.horizontal_wrapped(|ui| {
+            ui.horizontal(|ui| {
                 // Small ⚠-style painter icon so we don't depend on
                 // an emoji font rendering correctly.
                 let (rect, _) =
@@ -566,7 +579,7 @@ fn render_error_pill(ui: &mut egui::Ui, tint: egui::Color32, prefix: &str, detai
                 );
                 ui.add_space(4.0);
                 ui.label(
-                    egui::RichText::new(detail)
+                    egui::RichText::new(&trimmed)
                         .color(C_TEXT)
                         .font(egui::FontId::monospace(12.0)),
                 );
