@@ -9,6 +9,7 @@ mod macos_menu;
 mod model;
 mod net;
 mod snippet;
+mod sse;
 mod theme;
 mod ui;
 mod widgets;
@@ -25,7 +26,7 @@ use model::*;
 /// also drops the underlying hyper connection.
 struct InFlightRequest {
     handle: tokio::task::JoinHandle<()>,
-    rx: std::sync::mpsc::Receiver<ResponseData>,
+    rx: std::sync::mpsc::Receiver<net::RequestUpdate>,
 }
 use snippet::SnippetLang;
 use std::fs;
@@ -79,6 +80,10 @@ struct ApiClient {
     /// `abort()` on Cancel, and a `mpsc::Receiver` to pick up the
     /// `ResponseData` once the task completes. `None` when idle.
     request_in_flight: Option<InFlightRequest>,
+    /// Accumulated SSE events for the current response, if the last
+    /// (or in-flight) request has an `text/event-stream` body. Empty
+    /// for non-SSE responses. Powers the Events body-view mode.
+    streaming_events: Vec<crate::sse::SseEvent>,
 
     renaming_folder_id: Option<String>,
     rename_folder_text: String,
@@ -251,6 +256,7 @@ impl Default for ApiClient {
             editing_request_id_for_history: None,
             storage_path,
             request_in_flight: None,
+            streaming_events: Vec::new(),
             renaming_folder_id: None,
             rename_folder_text: String::new(),
             request_tab: RequestTab::Params,
@@ -438,21 +444,51 @@ impl ApiClient {
             self.response_status = "Sending request...".to_string();
             self.response_time = String::new();
             self.response_headers.clear();
+            self.streaming_events.clear();
 
             let client = self.http_client.clone();
             let max_body_bytes =
                 (self.state.settings.max_body_mb as usize).saturating_mul(1024 * 1024);
-            let (tx, rx) = std::sync::mpsc::channel::<ResponseData>();
+            let (tx, rx) = std::sync::mpsc::channel::<net::RequestUpdate>();
             // Spawn on our long-lived runtime so Cancel can abort
             // the JoinHandle; dropping the future also drops the
             // in-flight hyper connection. Result flows back via a
-            // std::sync::mpsc::channel that `update()` polls.
+            // std::sync::mpsc::channel that `update()` polls. For
+            // SSE responses the task emits a Progress update per
+            // event and a Final at the end; non-SSE just sends one
+            // Final.
+            let tx_progress = tx.clone();
             let handle = self.http_runtime.spawn(async move {
-                let r = net::execute_request_async(client, request, env, max_body_bytes).await;
-                let _ = tx.send(r);
+                let r = net::execute_request_async(
+                    client,
+                    request,
+                    env,
+                    max_body_bytes,
+                    Some(tx_progress),
+                )
+                .await;
+                let _ = tx.send(net::RequestUpdate::Final(r));
             });
             self.request_in_flight = Some(InFlightRequest { handle, rx });
         }
+    }
+
+    /// Copy a ResponseData snapshot into the ApiClient's response
+    /// fields. Shared by both Progress (streaming SSE) and Final
+    /// (terminal) updates — so the UI sees the same flow regardless.
+    fn apply_response_snapshot(&mut self, r: &ResponseData) {
+        self.response_text = r.body.clone();
+        self.response_status = r.status.clone();
+        self.response_time = r.time.clone();
+        self.response_headers = r.headers.clone();
+        self.response_headers_bytes = r.response_headers_bytes;
+        self.response_body_bytes = r.response_body_bytes;
+        self.request_headers_bytes = r.request_headers_bytes;
+        self.request_body_bytes = r.request_body_bytes;
+        self.response_prepare_ms = r.prepare_ms;
+        self.response_waiting_ms = r.waiting_ms;
+        self.response_download_ms = r.download_ms;
+        self.response_total_ms = r.total_ms;
     }
 
     /// Abort the in-flight request (if any). Drops the tokio task so
@@ -1319,42 +1355,49 @@ impl eframe::App for ApiClient {
         }
 
         // Poll the in-flight send. `try_recv` is non-blocking; the
-        // tokio task `send(r)`s the result when done. We keep
-        // requesting a repaint so we tick until it lands.
-        if let Some(f) = &self.request_in_flight {
-            match f.rx.try_recv() {
-                Ok(r) => {
-                    self.response_text = r.body.clone();
-                    self.response_status = r.status.clone();
-                    self.response_time = r.time.clone();
-                    self.response_headers = r.headers.clone();
-                    self.response_headers_bytes = r.response_headers_bytes;
-                    self.response_body_bytes = r.response_body_bytes;
-                    self.request_headers_bytes = r.request_headers_bytes;
-                    self.request_body_bytes = r.request_body_bytes;
-                    self.response_prepare_ms = r.prepare_ms;
-                    self.response_waiting_ms = r.waiting_ms;
-                    self.response_download_ms = r.download_ms;
-                    self.response_total_ms = r.total_ms;
-                    self.is_loading = false;
-                    let cookies_to_merge = r.set_cookies.clone();
-                    self.request_in_flight = None;
-                    self.merge_cookies_into_env(cookies_to_merge);
-                    self.push_history_entry();
-                    self.apply_response_extractors();
-                    self.apply_response_assertions();
-                }
-                Err(std::sync::mpsc::TryRecvError::Empty) => {
-                    // Still in flight — keep the UI animating.
-                    ctx.request_repaint();
-                }
-                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                    // Sender dropped without sending — task was
-                    // aborted (Cancel pressed) or panicked. Clean up
-                    // silently; the status was already set by
-                    // `cancel_request`.
-                    self.request_in_flight = None;
-                    self.is_loading = false;
+        // tokio task sends RequestUpdate messages (Progress during SSE
+        // streaming, Final at the end). We drain all pending messages
+        // per frame so the latest state always wins.
+        if self.request_in_flight.is_some() {
+            loop {
+                let Some(f) = &self.request_in_flight else {
+                    break;
+                };
+                match f.rx.try_recv() {
+                    Ok(net::RequestUpdate::Progress {
+                        snapshot,
+                        new_events,
+                    }) => {
+                        self.apply_response_snapshot(&snapshot);
+                        self.streaming_events.extend(new_events);
+                        // Keep animating; don't clear is_loading — the
+                        // stream is still live.
+                        ctx.request_repaint();
+                    }
+                    Ok(net::RequestUpdate::Final(r)) => {
+                        self.apply_response_snapshot(&r);
+                        self.is_loading = false;
+                        let cookies_to_merge = r.set_cookies.clone();
+                        self.request_in_flight = None;
+                        self.merge_cookies_into_env(cookies_to_merge);
+                        self.push_history_entry();
+                        self.apply_response_extractors();
+                        self.apply_response_assertions();
+                        break;
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Empty) => {
+                        // Still in flight — keep the UI animating.
+                        ctx.request_repaint();
+                        break;
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        // Sender dropped without a Final — task was
+                        // aborted (Cancel) or panicked. Clean up
+                        // silently; status was already set by cancel.
+                        self.request_in_flight = None;
+                        self.is_loading = false;
+                        break;
+                    }
                 }
             }
         }

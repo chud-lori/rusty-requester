@@ -473,12 +473,16 @@ pub enum ResponseTab {
 ///   • `Preview` — HTML rendered as readable text (script/style
 ///     stripped, entities decoded). Only offered when the response
 ///     Content-Type is `text/html`.
+///   • `Events` — structured SSE event log with per-event rows.
+///     Only offered when the response Content-Type is
+///     `text/event-stream`.
 ///   • `Raw` — verbatim text, no formatting.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum BodyView {
     Json,
     Tree,
     Preview,
+    Events,
     Raw,
 }
 

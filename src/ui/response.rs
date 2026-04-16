@@ -82,6 +82,57 @@ impl ApiClient {
             });
     }
 
+    /// Structured SSE event log — one expandable row per event. Newest
+    /// event auto-scrolled into view while the stream is live so users
+    /// don't have to scroll manually to watch incoming data.
+    fn render_events_view(&mut self, ui: &mut egui::Ui) {
+        if self.streaming_events.is_empty() {
+            ui.vertical_centered(|ui| {
+                ui.add_space(40.0);
+                ui.label(
+                    egui::RichText::new(egui_phosphor::regular::BROADCAST)
+                        .size(48.0)
+                        .color(C_MUTED.linear_multiply(0.6)),
+                );
+                ui.add_space(10.0);
+                ui.label(
+                    egui::RichText::new(if self.is_loading {
+                        "Waiting for events…"
+                    } else {
+                        "No events received."
+                    })
+                    .size(13.0)
+                    .color(C_MUTED),
+                );
+            });
+            return;
+        }
+
+        let total = self.streaming_events.len();
+        let live = self.is_loading;
+        egui::ScrollArea::vertical()
+            .auto_shrink([false, false])
+            .stick_to_bottom(live)
+            .show(ui, |ui| {
+                ui.spacing_mut().item_spacing.y = 4.0;
+                for (idx, ev) in self.streaming_events.iter().enumerate() {
+                    render_event_row(ui, idx, ev, total);
+                }
+                if live {
+                    ui.add_space(4.0);
+                    ui.horizontal(|ui| {
+                        let time = ui.ctx().input(|i| i.time);
+                        let pulse = ((time * 2.0).sin() * 0.5 + 0.5) as f32;
+                        let dot = C_ACCENT.linear_multiply(0.4 + 0.6 * pulse);
+                        let (rect, _) =
+                            ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
+                        ui.painter().circle_filled(rect.center(), 4.0, dot);
+                        ui.label(egui::RichText::new("Listening…").size(11.5).color(C_MUTED));
+                    });
+                }
+            });
+    }
+
     /// Error / cancel state — replaces the code editor with a
     /// centered illustration, status headline, error detail pill,
     /// and a helper hint line. Modeled after Postman's "Could not
@@ -186,8 +237,24 @@ impl ApiClient {
             if body_active {
                 ui.add_space(18.0);
                 let mut view = self.body_view;
-                body_view_pill(ui, &mut view, BodyView::Json, "JSON");
-                body_view_pill(ui, &mut view, BodyView::Tree, "Tree");
+                // The Events pill is exclusive to SSE responses —
+                // when present we auto-select it and hide the generic
+                // JSON/Tree pills (the per-event body is already
+                // pretty-printed). Streamed SSE bodies aren't JSON-
+                // parseable anyway.
+                let is_sse_body = crate::sse::is_event_stream(&self.response_headers)
+                    || !self.streaming_events.is_empty();
+                if is_sse_body {
+                    body_view_pill(
+                        ui,
+                        &mut view,
+                        BodyView::Events,
+                        &format!("Events ({})", self.streaming_events.len()),
+                    );
+                } else {
+                    body_view_pill(ui, &mut view, BodyView::Json, "JSON");
+                    body_view_pill(ui, &mut view, BodyView::Tree, "Tree");
+                }
                 // The Preview pill only surfaces for HTML responses.
                 // We detect HTML via Content-Type (authoritative) +
                 // body sniff (fallback for header-less responses).
@@ -197,11 +264,17 @@ impl ApiClient {
                     body_view_pill(ui, &mut view, BodyView::Preview, "Preview");
                 }
                 body_view_pill(ui, &mut view, BodyView::Raw, "Raw");
-                // If the user had Preview selected but the new
-                // response isn't HTML, transparently fall back to
-                // Raw so the pane isn't empty.
+                // If the user had a pill selected that no longer
+                // applies to this response, fall back to a sensible
+                // default.
                 if matches!(view, BodyView::Preview) && !is_html_body {
                     view = BodyView::Raw;
+                }
+                if matches!(view, BodyView::Events) && !is_sse_body {
+                    view = BodyView::Raw;
+                }
+                if is_sse_body && matches!(view, BodyView::Json | BodyView::Tree) {
+                    view = BodyView::Events;
                 }
                 self.body_view = view;
                 if matches!(self.body_view, BodyView::Tree) && is_json_body {
@@ -497,6 +570,9 @@ impl ApiClient {
                                             .desired_width(f32::INFINITY),
                                     );
                                 }
+                                BodyView::Events => {
+                                    self.render_events_view(ui);
+                                }
                                 BodyView::Raw => {
                                     ui.add_sized(
                                         egui::vec2(
@@ -539,6 +615,92 @@ impl ApiClient {
             });
         let _ = remaining_height;
     }
+}
+
+/// Render one SSE event as a collapsible row: a chip header with
+/// `#N event-type · time · ids` and the data payload beneath. JSON
+/// payloads get pretty-printed with monospace formatting; other text
+/// renders verbatim. Expanded by default for the latest event.
+fn render_event_row(ui: &mut egui::Ui, idx: usize, ev: &crate::sse::SseEvent, total: usize) {
+    let event_label = ev.event_type.as_deref().unwrap_or("message");
+    let default_open = idx + 1 == total; // latest is expanded
+    let id = egui::Id::new(("sse_event", idx, ev.timestamp_ms));
+
+    egui::Frame::none()
+        .fill(C_PANEL_DARK)
+        .rounding(egui::Rounding::same(4.0))
+        .inner_margin(egui::Margin::symmetric(10.0, 6.0))
+        .stroke(egui::Stroke::new(1.0, C_BORDER))
+        .show(ui, |ui| {
+            egui::CollapsingHeader::new(header_richtext(idx + 1, event_label, ev))
+                .id_salt(id)
+                .default_open(default_open)
+                .show(ui, |ui| {
+                    ui.add_space(2.0);
+                    if let Some(id_val) = &ev.id {
+                        ui.label(
+                            egui::RichText::new(format!("id: {}", id_val))
+                                .color(C_MUTED)
+                                .size(11.0)
+                                .monospace(),
+                        );
+                    }
+                    if let Some(retry) = ev.retry_ms {
+                        ui.label(
+                            egui::RichText::new(format!("retry: {} ms", retry))
+                                .color(C_MUTED)
+                                .size(11.0)
+                                .monospace(),
+                        );
+                    }
+                    let data_pretty = match serde_json::from_str::<serde_json::Value>(&ev.data) {
+                        Ok(v) => {
+                            serde_json::to_string_pretty(&v).unwrap_or_else(|_| ev.data.clone())
+                        }
+                        Err(_) => ev.data.clone(),
+                    };
+                    let mut data_ref: &str = &data_pretty;
+                    let h = data_pretty.lines().count().clamp(1, 14) as f32 * 16.0 + 10.0;
+                    ui.add_sized(
+                        egui::vec2(ui.available_width(), h),
+                        egui::TextEdit::multiline(&mut data_ref)
+                            .frame(false)
+                            .desired_width(f32::INFINITY)
+                            .font(egui::TextStyle::Monospace),
+                    );
+                    ui.horizontal(|ui| {
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            let copy = ui
+                                .small_button(
+                                    egui::RichText::new("Copy data").size(11.0).color(C_MUTED),
+                                )
+                                .on_hover_cursor(egui::CursorIcon::PointingHand);
+                            if copy.clicked() {
+                                ui.ctx().copy_text(ev.data.clone());
+                            }
+                        });
+                    });
+                });
+        });
+}
+
+/// Collapsing-header label for an SSE event row: `#12 event-type ·
+/// HH:MM:SS.mmm`. The event type is accent-colored so streams with
+/// mixed events (e.g. `message` vs `error`) are scannable at a glance.
+fn header_richtext(n: usize, event_type: &str, ev: &crate::sse::SseEvent) -> egui::RichText {
+    let ts = format_event_ts(ev.timestamp_ms);
+    egui::RichText::new(format!("#{}  {}  ·  {}", n, event_type, ts))
+        .size(12.5)
+        .color(C_TEXT)
+}
+
+fn format_event_ts(ms: u64) -> String {
+    let secs = (ms / 1000) % 86400;
+    let h = secs / 3600;
+    let m = (secs % 3600) / 60;
+    let s = secs % 60;
+    let millis = ms % 1000;
+    format!("{:02}:{:02}:{:02}.{:03}", h, m, s, millis)
 }
 
 /// Pull the first non-empty line from a multi-line error chain. The
