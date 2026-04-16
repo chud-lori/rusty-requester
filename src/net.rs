@@ -4,9 +4,25 @@
 
 use crate::io::curl;
 use crate::model::{AppSettings, Auth, BodyExt, Environment, HttpMethod, Request, ResponseData};
+use crate::sse::{self, SseEvent, SseParser};
 use crate::widgets::{substitute_kvs, substitute_vars};
 use base64::Engine;
 use std::time::Duration;
+
+/// One update from the send task. `Progress` is emitted while
+/// streaming an SSE response — each time new events arrive the
+/// task sends a fresh snapshot plus the newly-parsed events (so the
+/// UI can accumulate them into a structured Events view, separate
+/// from the Raw text body). `Final` is the terminal message;
+/// extractors/assertions/history only run on `Final`, and
+/// `is_loading` clears there.
+pub enum RequestUpdate {
+    Progress {
+        snapshot: ResponseData,
+        new_events: Vec<SseEvent>,
+    },
+    Final(ResponseData),
+}
 
 /// Build a `reqwest::Client` from the current app settings. Called at
 /// startup and whenever the user tweaks the Settings modal — never per
@@ -126,6 +142,7 @@ pub async fn execute_request_async(
     request: Request,
     env: Option<Environment>,
     max_body_bytes: usize,
+    progress: Option<std::sync::mpsc::Sender<RequestUpdate>>,
 ) -> ResponseData {
     let env = env.as_ref();
     let request = &request;
@@ -339,6 +356,31 @@ pub async fn execute_request_async(
                     .filter_map(|s| crate::cookies::parse_set_cookie(s, &url_host))
                     .collect();
 
+                // SSE fork: if Content-Type is text/event-stream, parse
+                // incoming chunks as SSE events and emit a Progress
+                // update per event. Reader still honors max_body_bytes
+                // as a hard safety cap on accumulated event-log size.
+                if sse::is_event_stream(&headers) {
+                    if let Some(ref prog) = progress {
+                        return stream_sse_response(
+                            response,
+                            headers,
+                            set_cookies,
+                            status,
+                            response_headers_bytes,
+                            request_headers_bytes,
+                            request_body_bytes,
+                            prepare_ms,
+                            waiting_ms,
+                            t_prepare_start,
+                            t_headers,
+                            max_body_bytes,
+                            prog,
+                        )
+                        .await;
+                    }
+                }
+
                 // Stream body with a size cap so a multi-GB payload
                 // doesn't OOM the app. We read chunks until we hit
                 // `max_body_bytes`, then stop and prepend a banner.
@@ -396,6 +438,127 @@ pub async fn execute_request_async(
                 total_ms: prepare_ms,
             },
         }
+    }
+}
+
+/// Stream an SSE response, emitting a Progress update each time a
+/// full event arrives. Returns a Final ResponseData when the stream
+/// ends (server closed, cancel via abort, or max_body_bytes hit).
+#[allow(clippy::too_many_arguments)]
+async fn stream_sse_response(
+    mut response: reqwest::Response,
+    headers: Vec<(String, String)>,
+    set_cookies: Vec<crate::model::StoredCookie>,
+    status: String,
+    response_headers_bytes: usize,
+    request_headers_bytes: usize,
+    request_body_bytes: usize,
+    prepare_ms: u64,
+    waiting_ms: u64,
+    t_prepare_start: std::time::Instant,
+    t_headers: std::time::Instant,
+    max_body_bytes: usize,
+    progress: &std::sync::mpsc::Sender<RequestUpdate>,
+) -> ResponseData {
+    let mut parser = SseParser::new();
+    let mut event_log = String::new();
+    event_log.push_str("# Streaming SSE — events will appear as they arrive.\n\n");
+    let mut event_count: usize = 0;
+    let mut body_bytes_seen: usize = 0;
+    let mut truncated = false;
+
+    // Send an initial Progress so the UI flips out of "Loading..." as
+    // soon as the stream connects.
+    let _ = progress.send(RequestUpdate::Progress {
+        snapshot: ResponseData {
+            body: event_log.clone(),
+            status: status.clone(),
+            time: format!("{} ms", waiting_ms),
+            headers: headers.clone(),
+            set_cookies: set_cookies.clone(),
+            response_headers_bytes,
+            response_body_bytes: 0,
+            request_headers_bytes,
+            request_body_bytes,
+            prepare_ms,
+            waiting_ms,
+            download_ms: 0,
+            total_ms: waiting_ms + prepare_ms,
+        },
+        new_events: Vec::new(),
+    });
+
+    loop {
+        match response.chunk().await {
+            Ok(Some(bytes)) => {
+                body_bytes_seen += bytes.len();
+                if max_body_bytes > 0 && body_bytes_seen > max_body_bytes {
+                    truncated = true;
+                    break;
+                }
+                let events = parser.feed(&bytes);
+                if events.is_empty() {
+                    continue;
+                }
+                for ev in &events {
+                    event_count += 1;
+                    event_log.push_str(&sse::format_event(ev, event_count));
+                }
+                let elapsed = t_prepare_start.elapsed().as_millis() as u64;
+                let _ = progress.send(RequestUpdate::Progress {
+                    snapshot: ResponseData {
+                        body: event_log.clone(),
+                        status: status.clone(),
+                        time: format!("{} ms · {} events", elapsed, event_count),
+                        headers: headers.clone(),
+                        set_cookies: set_cookies.clone(),
+                        response_headers_bytes,
+                        response_body_bytes: body_bytes_seen,
+                        request_headers_bytes,
+                        request_body_bytes,
+                        prepare_ms,
+                        waiting_ms,
+                        download_ms: elapsed.saturating_sub(prepare_ms + waiting_ms),
+                        total_ms: elapsed,
+                    },
+                    new_events: events,
+                });
+            }
+            Ok(None) => break, // server closed stream cleanly
+            Err(e) => {
+                event_log.push_str(&format!("\n── stream error ──\n{}\n", e));
+                break;
+            }
+        }
+    }
+
+    if truncated {
+        let cap_mb = max_body_bytes as f64 / (1024.0 * 1024.0);
+        event_log.push_str(&format!(
+            "\n── truncated ──\nEvent log exceeded {:.1} MB (see Settings → Max body).\n",
+            cap_mb
+        ));
+    }
+
+    let t_done = std::time::Instant::now();
+    let download_ms = t_done.saturating_duration_since(t_headers).as_millis() as u64;
+    let total_ms = t_done
+        .saturating_duration_since(t_prepare_start)
+        .as_millis() as u64;
+    ResponseData {
+        body: event_log,
+        status,
+        time: format!("{} ms · {} events", total_ms, event_count),
+        headers,
+        set_cookies,
+        response_headers_bytes,
+        response_body_bytes: body_bytes_seen,
+        request_headers_bytes,
+        request_body_bytes,
+        prepare_ms,
+        waiting_ms,
+        download_ms,
+        total_ms,
     }
 }
 
