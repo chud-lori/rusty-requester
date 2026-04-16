@@ -1871,46 +1871,41 @@ impl eframe::App for ApiClient {
         // tokio task sends RequestUpdate messages (Progress during SSE
         // streaming, Final at the end). We drain all pending messages
         // per frame so the latest state always wins.
-        if self.request_in_flight.is_some() {
-            loop {
-                let Some(f) = &self.request_in_flight else {
+        while let Some(f) = &self.request_in_flight {
+            match f.rx.try_recv() {
+                Ok(net::RequestUpdate::Progress {
+                    snapshot,
+                    new_events,
+                }) => {
+                    self.apply_response_snapshot(&snapshot);
+                    self.streaming_events.extend(new_events);
+                    // Keep animating; don't clear is_loading — the
+                    // stream is still live.
+                    ctx.request_repaint();
+                }
+                Ok(net::RequestUpdate::Final(r)) => {
+                    self.apply_response_snapshot(&r);
+                    self.is_loading = false;
+                    let cookies_to_merge = r.set_cookies.clone();
+                    self.request_in_flight = None;
+                    self.merge_cookies_into_env(cookies_to_merge);
+                    self.push_history_entry();
+                    self.apply_response_extractors();
+                    self.apply_response_assertions();
                     break;
-                };
-                match f.rx.try_recv() {
-                    Ok(net::RequestUpdate::Progress {
-                        snapshot,
-                        new_events,
-                    }) => {
-                        self.apply_response_snapshot(&snapshot);
-                        self.streaming_events.extend(new_events);
-                        // Keep animating; don't clear is_loading — the
-                        // stream is still live.
-                        ctx.request_repaint();
-                    }
-                    Ok(net::RequestUpdate::Final(r)) => {
-                        self.apply_response_snapshot(&r);
-                        self.is_loading = false;
-                        let cookies_to_merge = r.set_cookies.clone();
-                        self.request_in_flight = None;
-                        self.merge_cookies_into_env(cookies_to_merge);
-                        self.push_history_entry();
-                        self.apply_response_extractors();
-                        self.apply_response_assertions();
-                        break;
-                    }
-                    Err(std::sync::mpsc::TryRecvError::Empty) => {
-                        // Still in flight — keep the UI animating.
-                        ctx.request_repaint();
-                        break;
-                    }
-                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                        // Sender dropped without a Final — task was
-                        // aborted (Cancel) or panicked. Clean up
-                        // silently; status was already set by cancel.
-                        self.request_in_flight = None;
-                        self.is_loading = false;
-                        break;
-                    }
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {
+                    // Still in flight — keep the UI animating.
+                    ctx.request_repaint();
+                    break;
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    // Sender dropped without a Final — task was
+                    // aborted (Cancel) or panicked. Clean up
+                    // silently; status was already set by cancel.
+                    self.request_in_flight = None;
+                    self.is_loading = false;
+                    break;
                 }
             }
         }

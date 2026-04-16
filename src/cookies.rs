@@ -51,10 +51,8 @@ pub fn parse_set_cookie(header_value: &str, request_host: &str) -> Option<Stored
                     cookie.domain = d;
                 }
             }
-            "path" => {
-                if !v.is_empty() {
-                    cookie.path = v.to_string();
-                }
+            "path" if !v.is_empty() => {
+                cookie.path = v.to_string();
             }
             "expires" => {
                 if let Some(ts) = parse_http_date(v) {
