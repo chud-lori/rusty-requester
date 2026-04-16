@@ -133,6 +133,101 @@ impl ApiClient {
             });
     }
 
+    /// Response diff view — unified `+/-` line-diff between the
+    /// previous response body and the current one. Added lines are
+    /// green with a `+` gutter, removed lines red with `-`, same
+    /// lines muted. Header summary shows `+A −B`.
+    fn render_diff_view(&mut self, ui: &mut egui::Ui) {
+        let Some(before) = self.previous_response_text.as_deref() else {
+            ui.vertical_centered(|ui| {
+                ui.add_space(40.0);
+                ui.label(
+                    egui::RichText::new(
+                        "Send the request again to see a diff against this response.",
+                    )
+                    .size(13.0)
+                    .color(C_MUTED),
+                );
+            });
+            return;
+        };
+        let after = self.response_text.as_str();
+        let d = crate::diff::diff_lines(before, after);
+        let (added, removed) = crate::diff::summarize(&d);
+
+        ui.horizontal(|ui| {
+            ui.label(
+                egui::RichText::new(format!("+{}", added))
+                    .color(C_GREEN)
+                    .strong()
+                    .monospace()
+                    .size(12.0),
+            );
+            ui.add_space(6.0);
+            ui.label(
+                egui::RichText::new(format!("−{}", removed))
+                    .color(C_RED)
+                    .strong()
+                    .monospace()
+                    .size(12.0),
+            );
+            ui.add_space(12.0);
+            ui.label(
+                egui::RichText::new("vs previous response")
+                    .color(C_MUTED)
+                    .size(11.0),
+            );
+        });
+        ui.add_space(4.0);
+
+        if added == 0 && removed == 0 {
+            ui.label(
+                egui::RichText::new("No differences — the response bodies are identical.")
+                    .color(C_MUTED)
+                    .size(12.0),
+            );
+            return;
+        }
+
+        let font = egui::FontId::monospace(12.0);
+        egui::ScrollArea::vertical()
+            .id_salt("diff_scroll")
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                for line in &d {
+                    let (prefix, fg, bg) = match line.op {
+                        crate::diff::Op::Same => (" ", C_TEXT, egui::Color32::TRANSPARENT),
+                        crate::diff::Op::Added => ("+", C_GREEN, C_GREEN.linear_multiply(0.12)),
+                        crate::diff::Op::Removed => ("−", C_RED, C_RED.linear_multiply(0.12)),
+                    };
+                    let row_h = 16.0;
+                    let (rect, _) = ui.allocate_exact_size(
+                        egui::vec2(ui.available_width(), row_h),
+                        egui::Sense::hover(),
+                    );
+                    if ui.is_rect_visible(rect) {
+                        if bg != egui::Color32::TRANSPARENT {
+                            ui.painter().rect_filled(rect, egui::Rounding::ZERO, bg);
+                        }
+                        ui.painter().text(
+                            egui::pos2(rect.left() + 4.0, rect.center().y),
+                            egui::Align2::LEFT_CENTER,
+                            prefix,
+                            font.clone(),
+                            fg,
+                        );
+                        ui.painter().text(
+                            egui::pos2(rect.left() + 18.0, rect.center().y),
+                            egui::Align2::LEFT_CENTER,
+                            &line.text,
+                            font.clone(),
+                            fg,
+                        );
+                    }
+                }
+            });
+    }
+
     /// Error / cancel state — replaces the code editor with a
     /// centered illustration, status headline, error detail pill,
     /// and a helper hint line. Modeled after Postman's "Could not
@@ -263,6 +358,11 @@ impl ApiClient {
                 if is_html_body {
                     body_view_pill(ui, &mut view, BodyView::Preview, "Preview");
                 }
+                // Diff pill surfaces only when a prior response exists.
+                let has_diff_snapshot = self.previous_response_text.is_some();
+                if has_diff_snapshot {
+                    body_view_pill(ui, &mut view, BodyView::Diff, "Diff");
+                }
                 body_view_pill(ui, &mut view, BodyView::Raw, "Raw");
                 // If the user had a pill selected that no longer
                 // applies to this response, fall back to a sensible
@@ -275,6 +375,9 @@ impl ApiClient {
                 }
                 if is_sse_body && matches!(view, BodyView::Json | BodyView::Tree) {
                     view = BodyView::Events;
+                }
+                if matches!(view, BodyView::Diff) && !has_diff_snapshot {
+                    view = BodyView::Raw;
                 }
                 self.body_view = view;
                 if matches!(self.body_view, BodyView::Tree) && is_json_body {
@@ -572,6 +675,9 @@ impl ApiClient {
                                 }
                                 BodyView::Events => {
                                     self.render_events_view(ui);
+                                }
+                                BodyView::Diff => {
+                                    self.render_diff_view(ui);
                                 }
                                 BodyView::Raw => {
                                     ui.add_sized(

@@ -299,7 +299,7 @@ pub struct Folder {
     pub subfolders: Vec<Folder>,
     /// Free-text description shown on the collection/folder overview
     /// page. Multiline; can be empty.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub description: String,
 }
 
@@ -395,7 +395,7 @@ pub struct StoredCookie {
     pub value: String,
     /// Lowercase host match — "example.com" matches "api.example.com"
     /// and "example.com" itself. Empty = match the request's exact host.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub domain: String,
     /// URL-prefix match, default "/".
     #[serde(default = "default_cookie_path")]
@@ -406,10 +406,15 @@ pub struct StoredCookie {
     pub expires: Option<i64>,
     /// Whether the cookie was marked `Secure` — we still send it on
     /// plain http (dev APIs), but we track the flag.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub secure: bool,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub http_only: bool,
+}
+
+#[inline]
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 fn default_cookie_path() -> String {
@@ -439,7 +444,7 @@ pub struct OpenTab {
     pub request_id: String,
     /// Pinned tabs are skipped by ⌘W and "Close others" / "Close all"
     /// so they can be kept around as persistent references.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub pinned: bool,
 }
 
@@ -476,6 +481,8 @@ pub enum ResponseTab {
 ///   • `Events` — structured SSE event log with per-event rows.
 ///     Only offered when the response Content-Type is
 ///     `text/event-stream`.
+///   • `Diff` — line-diff against the previous response body. Only
+///     offered when a prior response exists for the same request.
 ///   • `Raw` — verbatim text, no formatting.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum BodyView {
@@ -483,6 +490,7 @@ pub enum BodyView {
     Tree,
     Preview,
     Events,
+    Diff,
     Raw,
 }
 
