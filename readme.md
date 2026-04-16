@@ -126,7 +126,7 @@ make help       # list all targets
 ```
 
 Or use Cargo directly: `cargo run`, `cargo build --release`, `cargo test`.
-Requires **Rust 1.70+** — install via [rustup.rs](https://rustup.rs).
+Requires **Rust 1.73+** — install via [rustup.rs](https://rustup.rs).
 
 ---
 

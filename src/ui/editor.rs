@@ -1022,18 +1022,13 @@ impl ApiClient {
                 let (status_text, status_color) = if s.access_token.is_empty() {
                     ("No token yet — click Get New Token", C_MUTED)
                 } else if let Some(exp) = s.expires_at {
-                    if exp <= now {
+                    let secs_left = exp - now;
+                    if secs_left <= 0 {
                         ("Access token expired — click Get New Token", C_RED)
+                    } else if secs_left < 60 {
+                        ("Access token expires in <1 min", C_ORANGE)
                     } else {
-                        let secs = exp - now;
-                        let min = secs / 60;
-                        if min > 60 {
-                            ("Access token valid", C_GREEN)
-                        } else if min > 1 {
-                            ("Access token valid (refreshing soon)", C_ORANGE)
-                        } else {
-                            ("Access token valid (<1 min left)", C_ORANGE)
-                        }
+                        ("Access token valid", C_GREEN)
                     }
                 } else {
                     ("Access token stored (no expiry info)", C_GREEN)
