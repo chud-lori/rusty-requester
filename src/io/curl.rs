@@ -269,7 +269,7 @@ fn split_header(s: &str) -> Option<(String, String)> {
     Some((k.trim().to_string(), v.trim().to_string()))
 }
 
-fn split_url(full: &str) -> (String, Vec<KvRow>) {
+pub fn split_url(full: &str) -> (String, Vec<KvRow>) {
     match full.split_once('?') {
         None => (full.to_string(), Vec::new()),
         Some((base, query)) => {

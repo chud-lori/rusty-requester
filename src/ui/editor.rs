@@ -379,13 +379,27 @@ impl ApiClient {
                                     self.show_toast("Imported cURL into request");
                                 }
                                 Err(_) => {
-                                    let url = self.editing_url.clone();
-                                    self.update_current_request(|req| req.url = url);
+                                    let (base, parsed_params) = curl::split_url(&self.editing_url);
+                                    self.editing_params = parsed_params;
+                                    let params = self.editing_params.clone();
+                                    self.update_current_request(|req| {
+                                        req.url = base;
+                                        req.query_params = params;
+                                    });
                                 }
                             }
                         } else {
-                            let url = self.editing_url.clone();
-                            self.update_current_request(|req| req.url = url);
+                            // Postman-style URL↔Params sync: parse
+                            // query params from the URL bar into the
+                            // Params table. editing_url keeps the full
+                            // URL; commit_editing splits it for storage.
+                            let (base, parsed_params) = curl::split_url(&self.editing_url);
+                            self.editing_params = parsed_params;
+                            let params = self.editing_params.clone();
+                            self.update_current_request(|req| {
+                                req.url = base;
+                                req.query_params = params;
+                            });
                         }
                     }
 
@@ -531,6 +545,10 @@ impl ApiClient {
     fn render_params_tab(&mut self, ui: &mut egui::Ui) {
         let changed = render_kv_table(ui, "Query Params", &mut self.editing_params, true);
         if changed {
+            // Reverse sync: rebuild the URL bar's query string from
+            // the table so both views stay in sync (Postman-style).
+            let (base, _) = curl::split_url(&self.editing_url);
+            self.editing_url = curl::build_full_url(&base, &self.editing_params);
             let params = self.editing_params.clone();
             self.update_current_request(|r| r.query_params = params);
         }

@@ -18,6 +18,7 @@ use icon::{
     load_icon_color_image, load_window_icon, set_macos_activation_policy_regular,
     set_macos_app_icon_image, APP_ICON_BYTES,
 };
+use io::curl;
 use model::*;
 /// In-flight send: tokio task + result receiver. `handle.abort()` is
 /// what powers the Cancel button — dropping the future mid-`.await`
@@ -392,7 +393,9 @@ impl ApiClient {
     fn commit_editing(&mut self) {
         let name = self.editing_name.clone();
         let method = self.editing_method.clone();
-        let url = self.editing_url.clone();
+        // editing_url holds the full URL (base + query string);
+        // the model stores base and query_params separately.
+        let (base_url, _) = curl::split_url(&self.editing_url);
         let body = self.editing_body.clone();
         let headers = self.editing_headers.clone();
         let params = self.editing_params.clone();
@@ -404,7 +407,7 @@ impl ApiClient {
         self.update_current_request(|req| {
             req.name = name;
             req.method = method;
-            req.url = url;
+            req.url = base_url;
             req.body = body;
             req.headers = headers;
             req.query_params = params;
@@ -645,7 +648,7 @@ impl ApiClient {
 
     fn load_request_for_editing(&mut self) {
         if let Some(r) = self.get_current_request() {
-            self.editing_url = r.url;
+            self.editing_url = curl::build_full_url(&r.url, &r.query_params);
             self.editing_body = r.body;
             self.editing_name = r.name;
             self.editing_method = r.method.clone();
