@@ -963,6 +963,18 @@ impl ApiClient {
                     });
                     self.save_state();
                 }
+                m::MENU_CLOSE_TAB => {
+                    if let Some(req_id) = &self.selected_request_id {
+                        let idx = self
+                            .state
+                            .open_tabs
+                            .iter()
+                            .position(|t| &t.request_id == req_id);
+                        if let Some(i) = idx {
+                            self.close_tab(i);
+                        }
+                    }
+                }
                 m::MENU_IMPORT => self.pending_import = true,
                 m::MENU_PASTE_CURL => {
                     self.show_paste_modal = true;
@@ -1054,17 +1066,36 @@ impl eframe::App for ApiClient {
             self.do_export_all(io::Format::Yaml);
         }
 
-        let (cmd_enter, cmd_k, cmd_p, cmd_s, f2) = ctx.input(|i| {
+        let (cmd_enter, cmd_k, cmd_p, cmd_s, cmd_n, cmd_w, f2) = ctx.input(|i| {
             (
                 i.modifiers.command && i.key_pressed(egui::Key::Enter),
                 i.modifiers.command && i.key_pressed(egui::Key::K),
                 i.modifiers.command && i.key_pressed(egui::Key::P),
                 i.modifiers.command && i.key_pressed(egui::Key::S),
+                i.modifiers.command && i.key_pressed(egui::Key::N),
+                i.modifiers.command && i.key_pressed(egui::Key::W),
                 i.key_pressed(egui::Key::F2),
             )
         });
         if cmd_enter && self.selected_request_id.is_some() && !self.is_loading {
             self.send_request();
+        }
+        // Cmd+N — new request (cross-platform; macOS also fires via menu accelerator).
+        if cmd_n {
+            self.new_draft_request();
+        }
+        // Cmd+W — close active tab.
+        if cmd_w {
+            if let Some(req_id) = &self.selected_request_id {
+                let idx = self
+                    .state
+                    .open_tabs
+                    .iter()
+                    .position(|t| &t.request_id == req_id);
+                if let Some(i) = idx {
+                    self.close_tab(i);
+                }
+            }
         }
         if cmd_k {
             self.focus_search_next_frame = true;

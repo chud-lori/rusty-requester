@@ -22,6 +22,7 @@ pub const MENU_COMMAND_PALETTE: &str = "command_palette";
 pub const MENU_SEND: &str = "send";
 pub const MENU_SETTINGS: &str = "settings";
 pub const MENU_ENVIRONMENTS: &str = "environments";
+pub const MENU_CLOSE_TAB: &str = "close_tab";
 pub const MENU_ABOUT: &str = "about";
 pub const MENU_GITHUB: &str = "github";
 pub const MENU_REPORT_ISSUE: &str = "report_issue";
@@ -76,9 +77,16 @@ pub fn install() {
             MENU_NEW_REQUEST,
             "New Request",
             true,
-            Some(Accelerator::new(Some(cmd), Code::KeyT)),
+            Some(Accelerator::new(Some(cmd), Code::KeyN)),
         ),
         &MenuItem::with_id(MENU_NEW_COLLECTION, "New Collection", true, None),
+        &PredefinedMenuItem::separator(),
+        &MenuItem::with_id(
+            MENU_CLOSE_TAB,
+            "Close Tab",
+            true,
+            Some(Accelerator::new(Some(cmd), Code::KeyW)),
+        ),
         &PredefinedMenuItem::separator(),
         &MenuItem::with_id(
             MENU_IMPORT,
