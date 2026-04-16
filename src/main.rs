@@ -89,14 +89,6 @@ struct ApiClient {
     /// the first send or after an assertion was added).
     assertion_results: Vec<Option<AssertionResult>>,
     editing_request_id_for_history: Option<String>,
-    /// Snapshot of the request as loaded from its folder. Captured on
-    /// tab switch / request open; unchanged by in-tab edits. Active
-    /// tab is "dirty" when the live `editing_*` fields differ from
-    /// this snapshot — drives the modified dot on the tab strip.
-    /// Saved requests auto-persist every keystroke, so this exists
-    /// purely as a visual signal ("edited since opened"); it has no
-    /// effect on durability.
-    pristine_request: Option<Request>,
 
     storage_path: PathBuf,
 
@@ -329,7 +321,6 @@ impl Default for ApiClient {
             editing_assertions: vec![],
             assertion_results: vec![],
             editing_request_id_for_history: None,
-            pristine_request: None,
             storage_path,
             request_in_flight: None,
             streaming_events: Vec::new(),
@@ -983,11 +974,6 @@ impl ApiClient {
 
     fn load_request_for_editing(&mut self) {
         if let Some(r) = self.get_current_request() {
-            // Snapshot the pristine state BEFORE the fields get split
-            // into editing_*; the live editing_* values get mutated
-            // continuously, so the snapshot is the only source of
-            // truth for "what did this look like when opened."
-            self.pristine_request = Some(r.clone());
             self.editing_url = curl::build_full_url(&r.url, &r.query_params);
             self.editing_body = r.body;
             self.editing_name = r.name;
@@ -1001,41 +987,10 @@ impl ApiClient {
             self.editing_assertions = r.assertions;
             self.assertion_results = vec![None; self.editing_assertions.len()];
             self.editing_request_id_for_history = Some(r.id);
-            // Capture method for history entry too
-            let _ = r.method;
-        } else {
-            self.pristine_request = None;
         }
         // Diff snapshot is request-scoped — don't leak a previous
         // request's body into a different request's Diff view.
         self.previous_response_text = None;
-    }
-
-    /// True when the currently-active saved request has been modified
-    /// since it was opened. Drafts return `false` here — they show
-    /// their own "unsaved draft" dot which has a different semantic.
-    fn active_request_is_dirty(&self) -> bool {
-        let Some(snap) = &self.pristine_request else {
-            return false;
-        };
-        // Drafts never compare against a pristine — the editing_* is
-        // their canonical state and `tab.is_draft()` already paints
-        // the amber dot on the tab strip.
-        if self.selected_folder_path.is_empty() {
-            return false;
-        }
-        let base_url = curl::split_url(&self.editing_url).0;
-        snap.name != self.editing_name
-            || snap.method != self.editing_method
-            || snap.url != base_url
-            || snap.body != self.editing_body
-            || snap.headers != self.editing_headers
-            || snap.query_params != self.editing_params
-            || snap.cookies != self.editing_cookies
-            || snap.body_ext != self.editing_body_ext
-            || snap.auth != self.editing_auth
-            || snap.extractors != self.editing_extractors
-            || snap.assertions != self.editing_assertions
     }
 
     fn show_toast(&mut self, msg: impl Into<String>) {
@@ -1811,12 +1766,9 @@ impl eframe::App for ApiClient {
         }
         // Cmd/Ctrl+S — if the active tab is a draft, open the Save-draft
         // modal to pick a destination collection. Saved requests are
-        // auto-persisted to disk on every edit so this shortcut is a no-op
-        // for them (other than a confirmation toast).
+        // auto-persisted to disk on every edit, so this shortcut is a
+        // no-op for them.
         if cmd_s {
-            // Replaces the old `is_some()` + `unwrap()` pattern with a
-            // proper let-Some so the id is pulled once and we skip
-            // both branches cleanly when nothing is selected.
             if let Some(req_id) = self.selected_request_id.clone() {
                 if self.selected_folder_path.is_empty() {
                     if let Some(idx) = self
@@ -1827,8 +1779,6 @@ impl eframe::App for ApiClient {
                     {
                         self.begin_save_draft(idx);
                     }
-                } else {
-                    self.show_toast("Saved");
                 }
             }
         }

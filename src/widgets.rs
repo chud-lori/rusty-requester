@@ -324,7 +324,6 @@ pub fn render_single_tab(
     is_active: bool,
     is_draft: bool,
     is_pinned: bool,
-    is_dirty: bool,
 ) -> TabAction {
     let tab_height = 32.0;
     let tab_width = 180.0;
@@ -400,10 +399,9 @@ pub fn render_single_tab(
         let name_x = pad_left + method_slot_w;
         let name_color = if is_active { text() } else { muted() };
         let name_font = egui::FontId::new(12.0, egui::FontFamily::Proportional);
-        // Reserve space for close button and (optional) status dot —
-        // drafts get an amber dot, modified saved requests get a
-        // subtler hollow ring. Both need the same 12px slot.
-        let has_indicator = is_draft || is_dirty;
+        // Reserve space for close button plus the optional amber dot
+        // (only drafts show it — saved requests auto-persist).
+        let has_indicator = is_draft;
         let right_reserve: f32 = if has_indicator { 40.0 } else { 28.0 };
         let max_w = (rect.right() - right_reserve) - name_x;
         let display = elide(name, max_w.max(0.0), &name_font, ui);
@@ -415,10 +413,7 @@ pub fn render_single_tab(
             name_color,
         );
 
-        // Single amber dot for either "draft" or "modified saved request" —
-        // the affordance is the same (there are edits worth knowing about);
-        // splitting the two visuals confused the meaning more than it
-        // clarified.
+        // Draft indicator — saved requests auto-persist, so no dot there.
         if has_indicator {
             let dot_x = rect.right() - 30.0;
             ui.painter()
@@ -468,7 +463,6 @@ pub fn render_single_tab(
     let tip_name = name.to_string();
     let tip_url = url.to_string();
     let tip_is_draft = is_draft;
-    let tip_is_dirty = is_dirty;
     resp.clone().on_hover_ui(move |ui| {
         ui.set_max_width(360.0);
         ui.label(
@@ -488,15 +482,10 @@ pub fn render_single_tab(
         } else {
             ui.label(egui::RichText::new(&tip_url).color(muted()).size(11.0));
         }
-        if tip_is_draft || tip_is_dirty {
+        if tip_is_draft {
             ui.add_space(4.0);
-            let label = if tip_is_draft {
-                "● Unsaved draft"
-            } else {
-                "● Modified since opened"
-            };
             ui.label(
-                egui::RichText::new(label)
+                egui::RichText::new("● Unsaved draft")
                     .color(C_ORANGE)
                     .size(11.0)
                     .strong(),

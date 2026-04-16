@@ -195,10 +195,6 @@ impl ApiClient {
                                 .show(ui, |ui| {
                                     ui.horizontal(|ui| {
                                         ui.spacing_mut().item_spacing.x = 4.0;
-                                        // Pre-compute once outside the loop — `is_dirty`
-                                        // only applies to the active tab (we don't track
-                                        // per-tab editing state for backgrounded tabs).
-                                        let active_is_dirty = self.active_request_is_dirty();
                                         let tabs_snapshot = self.state.open_tabs.clone();
                                         for (i, tab) in tabs_snapshot.iter().enumerate() {
                                             let info = find_request_info(
@@ -214,7 +210,6 @@ impl ApiClient {
                                             ));
                                             let is_active = self.selected_request_id.as_deref()
                                                 == Some(tab.request_id.as_str());
-                                            let is_dirty = is_active && active_is_dirty;
 
                                             let action = render_single_tab(
                                                 ui,
@@ -225,7 +220,6 @@ impl ApiClient {
                                                 is_active,
                                                 tab.is_draft(),
                                                 tab.pinned,
-                                                is_dirty,
                                             );
                                             match action {
                                                 TabAction::Activate => activate = Some(i),
