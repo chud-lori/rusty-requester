@@ -1554,14 +1554,45 @@ impl ApiClient {
     }
 }
 
-#[cfg(target_os = "macos")]
+/// Open a URL in the user's default browser. Used by Help → GitHub,
+/// Report an issue, and the OAuth "Get New Token" flow. Shells out
+/// to the platform's native URL handler instead of pulling in the
+/// `webbrowser` crate.
 fn webbrowser_open(url: &str) -> Result<(), std::io::Error> {
-    // Use `open` — ships with every macOS install; avoids adding a
-    // webbrowser crate just for two menu items.
-    std::process::Command::new("open")
-        .arg(url)
-        .spawn()
-        .map(|_| ())
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(url)
+            .spawn()
+            .map(|_| ())
+    }
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(url)
+            .spawn()
+            .map(|_| ())
+    }
+    #[cfg(target_os = "windows")]
+    {
+        // `cmd /c start ""` — the empty "" is the window title
+        // placeholder; without it `start` consumes the URL as the
+        // title and the actual URL becomes the command.
+        std::process::Command::new("cmd")
+            .args(["/c", "start", "", url])
+            .spawn()
+            .map(|_| ())
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+    {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            format!(
+                "no browser-opener known for this platform; URL was: {}",
+                url
+            ),
+        ))
+    }
 }
 
 impl eframe::App for ApiClient {
