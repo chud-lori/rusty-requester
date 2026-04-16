@@ -492,7 +492,15 @@ async fn stream_sse_response(
         match response.chunk().await {
             Ok(Some(bytes)) => {
                 body_bytes_seen += bytes.len();
+                // Two caps: raw-network-bytes (direct user setting)
+                // AND formatted-log-bytes (pretty-printed events can
+                // be 3–4× the network size; defend against runaway
+                // memory if a server streams millions of tiny events).
                 if max_body_bytes > 0 && body_bytes_seen > max_body_bytes {
+                    truncated = true;
+                    break;
+                }
+                if max_body_bytes > 0 && event_log.len() > max_body_bytes.saturating_mul(2) {
                     truncated = true;
                     break;
                 }
