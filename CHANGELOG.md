@@ -11,7 +11,35 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
-## Unreleased — v1.0 prep
+## Unreleased — Hardening for v1.0
+
+### Changed
+- **Atomic state writes.** `save_state` now writes to `data.json.tmp`,
+  `fsync`s, then renames over the real file. Prevents a crash / power
+  cut mid-write from leaving a truncated file the next launch can't
+  parse.
+- **Corruption recovery.** On launch, if `data.json` fails to parse
+  it's renamed to `data.json.broken.<unix-ts>` (preserving the user's
+  data for forensic recovery) and the app starts fresh, surfacing a
+  toast pointing to the backup file. Previously a corrupt file
+  silently reset to empty state.
+- **CI tightened.** `cargo clippy --all-targets -- -D warnings` is now
+  a blocking job (was informational). `cargo-audit` added as a
+  non-blocking informational job so dependency advisories surface on
+  every PR.
+- **Dependency refresh.** `cargo update` resolved 4 vulnerability
+  advisories (`bytes` integer overflow + 3 `rustls-webpki` name /
+  wildcard / CRL issues) by pulling in newer patch releases via
+  transitive updates. Remaining `cargo-audit` warnings are unmaintained-
+  crate notes from `rfd`'s GTK3 bindings — not exploitable.
+
+### Added
+- **Double size cap on SSE streaming.** Beyond the existing raw-network
+  cap, the event log gets a `2 × max_body_mb` ceiling — defends against
+  malicious servers that stream millions of tiny events (where pretty-
+  printed output can be 3–4× the network size).
+
+## [0.11.0] — Docs split + quality of life
 
 ### Added
 - **Actions palette (⇧⌘P)** — fuzzy-find + run any of 16 built-in app
@@ -31,14 +59,13 @@ upgrades read old files cleanly.
   `Folder.description` (empty string), `StoredCookie.domain`,
   `StoredCookie.secure` / `http_only`, and `OpenTab.pinned` (false).
   Reads stay forward-compatible (all fields use `serde(default)`).
-- **README + CHANGELOG overhaul.** README now reflects every v0.6 →
-  v0.10 feature (Cancel, HTML Preview, URL↔Params sync, Phosphor
-  icons, save-draft confirmation, ⌘N / ⌘W / ⌘D / ⇧⌘P shortcuts, SSE,
-  pinned tabs, arrow nav, diff). Architecture section updated to
-  mention `egui-phosphor`, the `RequestUpdate` streaming enum, and
-  the new `sse` / `html_preview` / `actions` / `diff` modules.
-  CHANGELOG filled in entries for v0.6 through v0.10 (previously
-  stuck at v0.5.1).
+- **README split.** The 650-line README became a 217-line hero +
+  install + quickstart + stability page, with `docs/FEATURES.md` (full
+  feature catalog, usage guide, UI conventions, roadmap) and
+  `docs/ARCHITECTURE.md` (dependencies, source layout, design notes,
+  release flow) holding the detail.
+- **CHANGELOG catch-up.** Filled in entries for v0.6 → v0.10
+  (previously stuck at v0.5.1).
 
 ## [0.10.0] — Server-Sent Events
 
