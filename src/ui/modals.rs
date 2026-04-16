@@ -1500,6 +1500,170 @@ impl ApiClient {
         }
     }
 
+    /// Actions palette (⇧⌘P) — the counterpart to `render_command_palette`.
+    /// Same overlay chrome, but the list is `actions::PaletteAction::ALL`
+    /// and Enter dispatches through `run_action` instead of opening a
+    /// request.
+    pub(crate) fn render_actions_palette(&mut self, ctx: &egui::Context) {
+        if !self.show_actions_palette {
+            return;
+        }
+        use crate::actions::PaletteAction;
+        let query_lc = self.actions_palette_query.to_lowercase();
+        let matches: Vec<&PaletteAction> = PaletteAction::ALL
+            .iter()
+            .filter(|a| {
+                if query_lc.is_empty() {
+                    true
+                } else {
+                    fuzzy_contains(&a.haystack_lc(), &query_lc)
+                }
+            })
+            .collect();
+
+        if self.actions_palette_selected >= matches.len() {
+            self.actions_palette_selected = matches.len().saturating_sub(1);
+        }
+
+        let (enter, esc, arrow_up, arrow_down) = ctx.input(|i| {
+            (
+                i.key_pressed(egui::Key::Enter),
+                i.key_pressed(egui::Key::Escape),
+                i.key_pressed(egui::Key::ArrowUp),
+                i.key_pressed(egui::Key::ArrowDown),
+            )
+        });
+        if esc {
+            self.show_actions_palette = false;
+            return;
+        }
+        if arrow_down && !matches.is_empty() {
+            self.actions_palette_selected = (self.actions_palette_selected + 1) % matches.len();
+        }
+        if arrow_up && !matches.is_empty() {
+            self.actions_palette_selected = if self.actions_palette_selected == 0 {
+                matches.len() - 1
+            } else {
+                self.actions_palette_selected - 1
+            };
+        }
+        let mut activate: Option<PaletteAction> = None;
+        if enter {
+            if let Some(a) = matches.get(self.actions_palette_selected) {
+                activate = Some(**a);
+            }
+        }
+
+        // Dim backdrop matches the command palette for visual parity.
+        let screen = ctx.screen_rect();
+        ctx.layer_painter(egui::LayerId::new(
+            egui::Order::Middle,
+            egui::Id::new("actions_palette_backdrop"),
+        ))
+        .rect_filled(
+            screen,
+            egui::Rounding::ZERO,
+            egui::Color32::from_black_alpha(140),
+        );
+
+        let mut open = true;
+        egui::Window::new(
+            egui::RichText::new("ACTIONS")
+                .size(11.0)
+                .strong()
+                .color(C_MUTED),
+        )
+        .open(&mut open)
+        .collapsible(false)
+        .resizable(false)
+        .fixed_size(egui::vec2(560.0, 420.0))
+        .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 80.0))
+        .show(ctx, |ui| {
+            let query_resp = ui.add(
+                egui::TextEdit::singleline(&mut self.actions_palette_query)
+                    .hint_text("Run an action…")
+                    .desired_width(f32::INFINITY)
+                    .font(egui::TextStyle::Body),
+            );
+            if self.actions_palette_focus_pending {
+                self.actions_palette_focus_pending = false;
+                query_resp.request_focus();
+            }
+            ui.add_space(6.0);
+            ui.label(
+                egui::RichText::new(format!(
+                    "{} action{}",
+                    matches.len(),
+                    if matches.len() == 1 { "" } else { "s" }
+                ))
+                .size(10.5)
+                .color(C_MUTED),
+            );
+            ui.separator();
+
+            egui::ScrollArea::vertical()
+                .id_salt("actions_palette_scroll")
+                .max_height(320.0)
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    for (i, a) in matches.iter().enumerate() {
+                        let is_sel = i == self.actions_palette_selected;
+                        let (rect, resp) = ui.allocate_exact_size(
+                            egui::vec2(ui.available_width(), 32.0),
+                            egui::Sense::click(),
+                        );
+                        if ui.is_rect_visible(rect) {
+                            let bg = if is_sel {
+                                C_ACCENT.linear_multiply(0.18)
+                            } else if resp.hovered() {
+                                C_ELEVATED
+                            } else {
+                                egui::Color32::TRANSPARENT
+                            };
+                            ui.painter()
+                                .rect_filled(rect, egui::Rounding::same(5.0), bg);
+                            ui.painter().text(
+                                egui::pos2(rect.left() + 14.0, rect.center().y),
+                                egui::Align2::LEFT_CENTER,
+                                a.label(),
+                                egui::FontId::new(13.0, egui::FontFamily::Proportional),
+                                C_TEXT,
+                            );
+                            if let Some(sc) = a.shortcut() {
+                                ui.painter().text(
+                                    egui::pos2(rect.right() - 14.0, rect.center().y),
+                                    egui::Align2::RIGHT_CENTER,
+                                    sc,
+                                    egui::FontId::new(11.0, egui::FontFamily::Monospace),
+                                    C_MUTED,
+                                );
+                            }
+                        }
+                        let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+                        if resp.clicked() {
+                            activate = Some(**a);
+                        }
+                    }
+                });
+
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new("↑ ↓  navigate    Enter  run    Esc  dismiss")
+                        .size(10.5)
+                        .color(C_MUTED),
+                );
+            });
+        });
+        if !open {
+            self.show_actions_palette = false;
+        }
+        if let Some(action) = activate {
+            self.show_actions_palette = false;
+            self.run_action(action);
+        }
+    }
+
     pub(crate) fn render_toast(&mut self, ctx: &egui::Context) {
         let Some((msg, ttl)) = self.toast.clone() else {
             return;

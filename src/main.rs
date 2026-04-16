@@ -1,5 +1,7 @@
+mod actions;
 mod assertion;
 mod cookies;
+mod diff;
 mod extract;
 mod html_preview;
 mod icon;
@@ -55,6 +57,12 @@ struct ApiClient {
     response_download_ms: u64,
     response_total_ms: u64,
     is_loading: bool,
+
+    /// Previous response body, retained just long enough to power the
+    /// **Diff** view. Snapshot taken right before a new response
+    /// overwrites `response_text`; `None` means there's no prior
+    /// response to compare against.
+    previous_response_text: Option<String>,
 
     editing_url: String,
     editing_body: String,
@@ -124,6 +132,10 @@ struct ApiClient {
     pending_import: bool,
     pending_export_json: bool,
     pending_export_yaml: bool,
+    /// Text to copy to the clipboard at the top of the next frame.
+    /// Used by palette-dispatched actions (e.g. Copy as cURL) that
+    /// don't have direct access to `egui::Context` for `ctx.copy_text`.
+    pending_clipboard: Option<String>,
 
     /// Open "save draft" modal state.
     save_draft_open: bool,
@@ -191,6 +203,16 @@ struct ApiClient {
     palette_query: String,
     palette_selected: usize,
     palette_focus_pending: bool,
+
+    // --- Actions palette (⇧⌘P) ---------------------------------------
+    /// Parallel palette for triggering app actions (toggle snippet
+    /// panel, duplicate tab, clear history, etc.) rather than
+    /// navigating to requests. Shares the same overlay chrome as the
+    /// command palette but dispatches into `run_action` on Enter.
+    show_actions_palette: bool,
+    actions_palette_query: String,
+    actions_palette_selected: usize,
+    actions_palette_focus_pending: bool,
     /// Have we installed the macOS NSMenu yet? We defer the install
     /// to the first `update()` frame because doing it before
     /// `eframe::run_native` lets winit overwrite our menu with its
@@ -239,6 +261,7 @@ impl Default for ApiClient {
             response_waiting_ms: 0,
             response_download_ms: 0,
             response_total_ms: 0,
+            previous_response_text: None,
             response_headers: vec![],
             is_loading: false,
             editing_url: String::new(),
@@ -280,6 +303,7 @@ impl Default for ApiClient {
             pending_import: false,
             pending_export_json: false,
             pending_export_yaml: false,
+            pending_clipboard: None,
             save_draft_open: false,
             save_draft_tab_idx: None,
             save_draft_target_path: Vec::new(),
@@ -300,6 +324,10 @@ impl Default for ApiClient {
             viewing_folder_id: None,
             editing_folder_desc: String::new(),
             show_command_palette: false,
+            show_actions_palette: false,
+            actions_palette_query: String::new(),
+            actions_palette_selected: 0,
+            actions_palette_focus_pending: false,
             palette_query: String::new(),
             palette_selected: 0,
             palette_focus_pending: false,
@@ -439,6 +467,12 @@ impl ApiClient {
         self.commit_editing();
         let env = self.active_environment().cloned();
         if let Some(request) = self.get_current_request() {
+            // Snapshot the previous response body for the Diff view,
+            // but only if it looks like a real response (not the
+            // "Loading..." placeholder or an empty slate).
+            if !self.response_text.is_empty() && self.response_text != "Loading..." {
+                self.previous_response_text = Some(self.response_text.clone());
+            }
             self.is_loading = true;
             self.response_text = "Loading...".to_string();
             self.response_status = "Sending request...".to_string();
@@ -705,6 +739,9 @@ impl ApiClient {
             // Capture method for history entry too
             let _ = r.method;
         }
+        // Diff snapshot is request-scoped — don't leak a previous
+        // request's body into a different request's Diff view.
+        self.previous_response_text = None;
     }
 
     fn show_toast(&mut self, msg: impl Into<String>) {
@@ -954,6 +991,97 @@ impl ApiClient {
         self.load_request_for_editing();
         self.save_state();
         self.show_toast("Tab duplicated");
+    }
+
+    /// Dispatch a `PaletteAction` — the single entry point the
+    /// actions palette uses on Enter/click. Most branches reuse
+    /// existing helpers; a few translate a menu-dispatch event into
+    /// the equivalent state flip.
+    fn run_action(&mut self, action: actions::PaletteAction) {
+        use actions::PaletteAction as A;
+        match action {
+            A::NewRequest => self.new_draft_request(),
+            A::DuplicateTab => {
+                if let Some(idx) = self.active_tab_index() {
+                    self.duplicate_tab(idx);
+                }
+            }
+            A::CloseTab => {
+                if let Some(idx) = self.active_tab_index() {
+                    self.close_tab(idx);
+                }
+            }
+            A::TogglePin => {
+                if let Some(idx) = self.active_tab_index() {
+                    if let Some(tab) = self.state.open_tabs.get_mut(idx) {
+                        tab.pinned = !tab.pinned;
+                        self.save_state();
+                    }
+                }
+            }
+            A::SaveDraft => {
+                if let Some(idx) = self.active_tab_index() {
+                    if self.state.open_tabs[idx].folder_path.is_empty() {
+                        self.begin_save_draft(idx);
+                    } else {
+                        self.show_toast("Already saved");
+                    }
+                }
+            }
+            A::CopyAsCurl => {
+                if let Some(req) = self.get_current_request() {
+                    let s = curl::to_curl(&req);
+                    // egui's Context::copy_text is frame-scoped; show a
+                    // toast and use arboard-like behavior via ctx next
+                    // frame would be ideal, but render_toast is the
+                    // immediate confirmation users expect.
+                    // Use egui's clipboard by writing to the context.
+                    self.pending_clipboard = Some(s);
+                    self.show_toast("Copied cURL to clipboard");
+                }
+            }
+            A::ToggleSnippetPanel => self.show_snippet_panel = !self.show_snippet_panel,
+            A::OpenEnvironments => {
+                self.show_env_modal = true;
+                if self.selected_env_for_edit.is_none() {
+                    self.selected_env_for_edit =
+                        self.state.environments.first().map(|e| e.id.clone());
+                }
+            }
+            A::OpenSettings => {
+                self.editing_settings = self.state.settings.clone();
+                self.show_settings_modal = true;
+            }
+            A::PasteCurl => {
+                self.show_paste_modal = true;
+                self.paste_curl_text.clear();
+                self.paste_error.clear();
+            }
+            A::ImportCollection => self.pending_import = true,
+            A::ExportJson => self.pending_export_json = true,
+            A::ExportYaml => self.pending_export_yaml = true,
+            A::ClearHistory => {
+                self.state.history.clear();
+                self.save_state();
+                self.show_toast("History cleared");
+            }
+            A::ToggleSidebarHistory => {
+                self.sidebar_view = match self.sidebar_view {
+                    SidebarView::Collections => SidebarView::History,
+                    SidebarView::History => SidebarView::Collections,
+                };
+            }
+            A::ShowAbout => self.show_about_modal = true,
+        }
+    }
+
+    /// Tab index of the active tab, or `None` if no request is open.
+    fn active_tab_index(&self) -> Option<usize> {
+        let req_id = self.selected_request_id.as_ref()?;
+        self.state
+            .open_tabs
+            .iter()
+            .position(|t| &t.request_id == req_id)
     }
 
     fn prune_stale_tabs(&mut self) {
@@ -1218,28 +1346,44 @@ impl eframe::App for ApiClient {
             self.pending_export_yaml = false;
             self.do_export_all(io::Format::Yaml);
         }
+        if let Some(text) = self.pending_clipboard.take() {
+            ctx.copy_text(text);
+        }
 
-        let (cmd_enter, cmd_k, cmd_p, cmd_s, cmd_n, cmd_w, cmd_d, f2, arrow_up, arrow_down) = ctx
-            .input(|i| {
-                (
-                    i.modifiers.command && i.key_pressed(egui::Key::Enter),
-                    i.modifiers.command && i.key_pressed(egui::Key::K),
-                    i.modifiers.command && i.key_pressed(egui::Key::P),
-                    i.modifiers.command && i.key_pressed(egui::Key::S),
-                    i.modifiers.command && i.key_pressed(egui::Key::N),
-                    i.modifiers.command && i.key_pressed(egui::Key::W),
-                    i.modifiers.command && i.key_pressed(egui::Key::D),
-                    i.key_pressed(egui::Key::F2),
-                    !i.modifiers.command && !i.modifiers.alt && i.key_pressed(egui::Key::ArrowUp),
-                    !i.modifiers.command && !i.modifiers.alt && i.key_pressed(egui::Key::ArrowDown),
-                )
-            });
+        let (
+            cmd_enter,
+            cmd_k,
+            cmd_p,
+            cmd_shift_p,
+            cmd_s,
+            cmd_n,
+            cmd_w,
+            cmd_d,
+            f2,
+            arrow_up,
+            arrow_down,
+        ) = ctx.input(|i| {
+            (
+                i.modifiers.command && i.key_pressed(egui::Key::Enter),
+                i.modifiers.command && i.key_pressed(egui::Key::K),
+                i.modifiers.command && !i.modifiers.shift && i.key_pressed(egui::Key::P),
+                i.modifiers.command && i.modifiers.shift && i.key_pressed(egui::Key::P),
+                i.modifiers.command && i.key_pressed(egui::Key::S),
+                i.modifiers.command && i.key_pressed(egui::Key::N),
+                i.modifiers.command && i.key_pressed(egui::Key::W),
+                i.modifiers.command && i.key_pressed(egui::Key::D),
+                i.key_pressed(egui::Key::F2),
+                !i.modifiers.command && !i.modifiers.alt && i.key_pressed(egui::Key::ArrowUp),
+                !i.modifiers.command && !i.modifiers.alt && i.key_pressed(egui::Key::ArrowDown),
+            )
+        });
         // Arrow navigation is gated on "no widget wants keyboard
         // input" — so typing in a TextEdit, Body editor, or search
         // box isn't hijacked. When nothing's focused, ↑/↓ step
         // through the flat request list in the sidebar.
         let can_arrow_nav = !ctx.wants_keyboard_input()
             && !self.show_command_palette
+            && !self.show_actions_palette
             && !self.show_env_modal
             && !self.show_settings_modal
             && !self.show_paste_modal
@@ -1295,6 +1439,12 @@ impl eframe::App for ApiClient {
             self.palette_query.clear();
             self.palette_selected = 0;
             self.palette_focus_pending = true;
+        }
+        if cmd_shift_p {
+            self.show_actions_palette = true;
+            self.actions_palette_query.clear();
+            self.actions_palette_selected = 0;
+            self.actions_palette_focus_pending = true;
         }
         // Cmd/Ctrl+S — if the active tab is a draft, open the Save-draft
         // modal to pick a destination collection. Saved requests are
@@ -1435,6 +1585,7 @@ impl eframe::App for ApiClient {
         self.render_confirm_close_draft(ctx);
         self.render_about_modal(ctx);
         self.render_command_palette(ctx);
+        self.render_actions_palette(ctx);
         self.render_toast(ctx);
     }
 }
