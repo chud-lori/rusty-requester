@@ -136,6 +136,10 @@ struct ApiClient {
     /// currently-selected folder (or at root if no folder is selected).
     save_draft_new_folder_name: Option<String>,
 
+    /// "Save changes?" confirmation modal — shown when closing a draft
+    /// (unsaved) tab so the user can save, discard, or cancel.
+    confirm_close_draft_idx: Option<usize>,
+
     /// Drag-resizable vertical split between the request-editor section
     /// (top) and the response section (bottom). Units: logical pixels of
     /// the request-editor section. Clamped at render time.
@@ -276,6 +280,7 @@ impl Default for ApiClient {
             save_draft_name: String::new(),
             save_draft_search: String::new(),
             save_draft_new_folder_name: None,
+            confirm_close_draft_idx: None,
             request_split_px: 320.0,
             body_view: BodyView::Json,
             body_tree_filter: String::new(),
@@ -712,9 +717,33 @@ impl ApiClient {
         if idx >= self.state.open_tabs.len() {
             return;
         }
+        // If it's a draft with content, show the "Save changes?" modal
+        // instead of discarding immediately.
+        if let Some(tab) = self.state.open_tabs.get(idx) {
+            if tab.folder_path.is_empty() {
+                let has_content = self
+                    .state
+                    .drafts
+                    .iter()
+                    .find(|d| d.id == tab.request_id)
+                    .map(|d| !d.url.is_empty() || !d.body.is_empty() || !d.headers.is_empty())
+                    .unwrap_or(false);
+                if has_content {
+                    self.confirm_close_draft_idx = Some(idx);
+                    return;
+                }
+            }
+        }
+        self.close_tab_force(idx);
+    }
+
+    /// Close a tab without any confirmation prompt.
+    fn close_tab_force(&mut self, idx: usize) {
+        if idx >= self.state.open_tabs.len() {
+            return;
+        }
         let closing = self.state.open_tabs.remove(idx);
-        // If it was a draft, discard the draft entirely (user chose to
-        // close without saving).
+        // If it was a draft, discard the draft entirely.
         if closing.folder_path.is_empty() {
             self.state.drafts.retain(|d| d.id != closing.request_id);
         }
@@ -1175,6 +1204,7 @@ impl eframe::App for ApiClient {
         self.render_env_modal(ctx);
         self.render_settings_modal(ctx);
         self.render_save_draft_modal(ctx);
+        self.render_confirm_close_draft(ctx);
         self.render_about_modal(ctx);
         self.render_command_palette(ctx);
         self.render_toast(ctx);

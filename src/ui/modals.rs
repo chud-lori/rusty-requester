@@ -859,6 +859,74 @@ impl ApiClient {
         }
     }
 
+    /// "Save changes?" confirmation when closing a draft (unsaved) tab.
+    pub(crate) fn render_confirm_close_draft(&mut self, ctx: &egui::Context) {
+        let Some(idx) = self.confirm_close_draft_idx else {
+            return;
+        };
+        // Gather info about the draft for the message.
+        let draft_url = self
+            .state
+            .open_tabs
+            .get(idx)
+            .and_then(|tab| self.state.drafts.iter().find(|d| d.id == tab.request_id))
+            .map(|d| d.url.clone())
+            .unwrap_or_default();
+
+        let display_url = if draft_url.is_empty() {
+            "Untitled request".to_string()
+        } else if draft_url.chars().count() > 45 {
+            let cut: String = draft_url.chars().take(45).collect();
+            format!("{}...", cut)
+        } else {
+            draft_url
+        };
+
+        let mut open = true;
+        egui::Window::new("Save changes?")
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .fixed_size([380.0, 0.0])
+            .show(ctx, |ui| {
+                ui.add_space(4.0);
+                ui.label(
+                    egui::RichText::new(format!(
+                        "{} has unsaved changes. Save these changes to avoid losing your work.",
+                        display_url
+                    ))
+                    .color(C_TEXT)
+                    .size(13.0),
+                );
+                ui.add_space(16.0);
+                ui.horizontal(|ui| {
+                    if ui.button("Don't save").clicked() {
+                        self.close_tab_force(idx);
+                        self.confirm_close_draft_idx = None;
+                    }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let save_btn = ui.add(
+                            egui::Button::new(
+                                egui::RichText::new("Save changes").color(egui::Color32::WHITE),
+                            )
+                            .fill(C_ACCENT),
+                        );
+                        if save_btn.clicked() {
+                            self.confirm_close_draft_idx = None;
+                            self.begin_save_draft(idx);
+                        }
+                        if ui.button("Cancel").clicked() {
+                            self.confirm_close_draft_idx = None;
+                        }
+                    });
+                });
+            });
+        if !open {
+            self.confirm_close_draft_idx = None;
+        }
+    }
+
     /// App-wide settings modal — request timeout, body size cap, proxy,
     /// TLS verification. Changes take effect immediately (we rebuild
     /// the shared `reqwest::Client` on save).
