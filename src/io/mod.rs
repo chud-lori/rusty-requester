@@ -529,11 +529,11 @@ mod tests {
         let result = import_from_str(&content, "json");
         match result {
             Ok(folders) => {
-                fn walk(f: &Folder, depth: usize) -> (usize, usize) {
+                fn walk(f: &Folder, _depth: usize) -> (usize, usize) {
                     let mut reqs = f.requests.len();
                     let mut subs = f.subfolders.len();
                     for s in &f.subfolders {
-                        let (r, sub) = walk(s, depth + 1);
+                        let (r, sub) = walk(s, _depth + 1);
                         reqs += r;
                         subs += sub;
                     }
