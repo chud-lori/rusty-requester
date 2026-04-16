@@ -415,21 +415,14 @@ pub fn render_single_tab(
             name_color,
         );
 
-        // Indicator dot between the name and close button, Postman-style.
-        //   - Draft (unsaved request)    → solid amber  (attention)
-        //   - Saved request, modified    → hollow amber (edited since
-        //     opened; has already auto-saved to disk)
-        if is_draft {
+        // Single amber dot for either "draft" or "modified saved request" —
+        // the affordance is the same (there are edits worth knowing about);
+        // splitting the two visuals confused the meaning more than it
+        // clarified.
+        if has_indicator {
             let dot_x = rect.right() - 30.0;
             ui.painter()
                 .circle_filled(egui::pos2(dot_x, mid_y), 3.5, C_ORANGE);
-        } else if is_dirty {
-            let dot_x = rect.right() - 30.0;
-            ui.painter().circle_stroke(
-                egui::pos2(dot_x, mid_y),
-                3.5,
-                egui::Stroke::new(1.5, C_ORANGE),
-            );
         }
     }
 
@@ -495,18 +488,15 @@ pub fn render_single_tab(
         } else {
             ui.label(egui::RichText::new(&tip_url).color(muted()).size(11.0));
         }
-        if tip_is_draft {
+        if tip_is_draft || tip_is_dirty {
             ui.add_space(4.0);
+            let label = if tip_is_draft {
+                "● Unsaved draft"
+            } else {
+                "● Modified since opened"
+            };
             ui.label(
-                egui::RichText::new("● Unsaved draft")
-                    .color(C_ORANGE)
-                    .size(11.0)
-                    .strong(),
-            );
-        } else if tip_is_dirty {
-            ui.add_space(4.0);
-            ui.label(
-                egui::RichText::new("○ Modified since opened")
+                egui::RichText::new(label)
                     .color(C_ORANGE)
                     .size(11.0)
                     .strong(),
