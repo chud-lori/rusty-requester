@@ -1403,16 +1403,11 @@ impl ApiClient {
         }
 
         // Darken the background to draw focus.
-        let screen = ctx.screen_rect();
-        ctx.layer_painter(egui::LayerId::new(
-            egui::Order::Middle,
-            egui::Id::new("palette_backdrop"),
-        ))
-        .rect_filled(
-            screen,
-            egui::Rounding::ZERO,
-            egui::Color32::from_black_alpha(140),
-        );
+        // No dim backdrop — VS Code / Raycast / Spotlight all forgo
+        // one and rely on a shadowed floating panel to imply depth.
+        // Earlier attempts with an `alpha` overlay fought the palette
+        // for the same egui `Order::Middle` layer (dimming its content)
+        // and generally looked heavy.
 
         let mut open = true;
         egui::Window::new(
@@ -1426,7 +1421,7 @@ impl ApiClient {
         .resizable(false)
         .fixed_size(egui::vec2(560.0, 420.0))
         .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 80.0))
-        .frame(palette_frame())
+        .frame(palette_frame(self.state.settings.theme))
         .show(ctx, |ui| {
             let query_resp = ui.add(
                 egui::TextEdit::singleline(&mut self.palette_query)
@@ -1575,16 +1570,7 @@ impl ApiClient {
         }
 
         // Dim backdrop matches the command palette for visual parity.
-        let screen = ctx.screen_rect();
-        ctx.layer_painter(egui::LayerId::new(
-            egui::Order::Middle,
-            egui::Id::new("actions_palette_backdrop"),
-        ))
-        .rect_filled(
-            screen,
-            egui::Rounding::ZERO,
-            egui::Color32::from_black_alpha(140),
-        );
+        // See `render_command_palette` for why there's no backdrop.
 
         let mut open = true;
         egui::Window::new(
@@ -1598,7 +1584,7 @@ impl ApiClient {
         .resizable(false)
         .fixed_size(egui::vec2(560.0, 420.0))
         .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 80.0))
-        .frame(palette_frame())
+        .frame(palette_frame(self.state.settings.theme))
         .show(ctx, |ui| {
             let query_resp = ui.add(
                 egui::TextEdit::singleline(&mut self.actions_palette_query)
@@ -1793,16 +1779,39 @@ fn fuzzy_contains(haystack: &str, needle: &str) -> bool {
 /// instead of the default `C_BG` so the palette visibly floats above
 /// the darkened backdrop — without this they blend into the app
 /// chrome and look "greyed-out" rather than focused.
-fn palette_frame() -> egui::Frame {
+fn palette_frame(theme: Theme) -> egui::Frame {
+    // VS Code / Raycast-style palette frame: sits directly on top of
+    // the unmodified UI (no backdrop), separated only by a slight
+    // elevation + subtle border + punchy drop shadow. Fill is a shade
+    // brighter-than-panel in dark mode, near-white in light.
+    let (fill, border) = match theme {
+        Theme::Dark => (
+            // `#252830` — one notch brighter than `C_ELEVATED` (#2A2D34)
+            // looks muddy against other dark chrome, so we nudge a
+            // touch cooler. This matches VS Code's "Quick Input" bg.
+            egui::Color32::from_rgb(37, 40, 48),
+            egui::Color32::from_rgb(60, 64, 72),
+        ),
+        Theme::Light => (
+            egui::Color32::from_rgb(253, 253, 254),
+            egui::Color32::from_rgb(208, 212, 220),
+        ),
+    };
     egui::Frame::none()
-        .fill(C_ELEVATED)
-        .stroke(egui::Stroke::new(1.0, C_ACCENT.linear_multiply(0.5)))
-        .rounding(egui::Rounding::same(12.0))
+        .fill(fill)
+        .stroke(egui::Stroke::new(1.0, border))
+        .rounding(egui::Rounding::same(8.0))
         .inner_margin(egui::Margin::same(14.0))
         .shadow(egui::epaint::Shadow {
-            offset: egui::vec2(0.0, 8.0),
-            blur: 24.0,
+            offset: egui::vec2(0.0, 10.0),
+            blur: 28.0,
             spread: 0.0,
-            color: egui::Color32::from_black_alpha(120),
+            // Heavier shadow than a regular modal — the palette has
+            // no backdrop so the shadow alone carries the "floating"
+            // read.
+            color: egui::Color32::from_black_alpha(match theme {
+                Theme::Dark => 180,
+                Theme::Light => 80,
+            }),
         })
 }
