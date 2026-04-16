@@ -32,7 +32,7 @@ and of managing a wall of raw <code>curl</code> commands in my terminal.
 ### Request building
 - 🔧 Full HTTP methods: `GET`, `POST`, `PUT`, `DELETE`, `PATCH`, `HEAD`, `OPTIONS`
 - 📝 Tabbed editor: **Params · Headers · Cookies · Body · Auth · Tests**
-- 🔗 Query-param builder with live "final URL" preview and auto-growing "ghost" row (type and a new empty row appears below)
+- 🔗 **Bidirectional URL ↔ Params sync** (Postman-style): type `?foo=bar` in the URL bar → params populate the table; edit the table → URL bar rebuilds. Auto-growing "ghost" row.
 - 🍪 Cookies list (merged into a `Cookie` header on send)
 - 🔐 Auth presets: **No Auth · Bearer Token · Basic Auth** + **JWT decoder** (Bearer tokens auto-decode below the input — header & payload pretty JSON, scope/exp at a glance)
 - 📦 **Body modes**: Raw / `x-www-form-urlencoded` / `multipart/form-data` / **GraphQL** (query + variables, sent as `application/json`)
@@ -46,7 +46,10 @@ and of managing a wall of raw <code>curl</code> commands in my terminal.
 - 📊 Status pill + response time + size rendered inline with the Body/Headers tab row, on the right (Postman-style: `Body  Headers  JSON Tree Raw  [🔍][📋][💾]    200 OK · 54 ms · 434 B`)
 - 🛈 **Size hover tooltip** — breakdown of response headers/body and request headers/body bytes
 - 🛈 **Time hover tooltip** — gantt-style phase breakdown: Prepare · Waiting (TTFB) · Download
-- 🧩 **Body view modes**: **JSON** (syntax-highlighted code editor with line numbers), **Tree** (collapsible JSON tree with filter + right-click "Copy path"), **Raw** (verbatim) — pills are inline with the section tabs and don't scroll away
+- 🧩 **Body view modes**: **JSON** (syntax-highlighted code editor with line numbers), **Tree** (collapsible JSON tree with filter + right-click "Copy path"), **Preview** (HTML rendered as readable text for error pages / login challenges), **Events** (structured log for `text/event-stream` / SSE responses), **Raw** (verbatim) — pills are inline with the section tabs and don't scroll away
+- 📡 **Server-Sent Events (SSE)** — native streaming support for LLM / event-stream APIs. Auto-detected by `Content-Type: text/event-stream`; events flow into a collapsible-per-row Events view with auto-scroll, per-event timestamps, and JSON-pretty-printed data. Cancel aborts the stream instantly.
+- 🛑 **Cancel button** — Send flips to Cancel while a request is in flight. Instantly aborts the tokio task + underlying hyper connection (no per-chunk polling).
+- 🖼 **Failed/cancelled state** — dedicated illustrated screen with status headline + error-detail pill instead of opaque text, for network failures, TLS issues, or user cancels.
 - 🔍 **Find in body** — toolbar search icon highlights all matches inline
 - 📋 **Copy response body** + 💾 **Save response to file** (Content-Type → file extension auto-suggested)
 - 📑 Separate **Body / Headers** tabs; rust-orange accent on header keys
@@ -77,12 +80,20 @@ and of managing a wall of raw <code>curl</code> commands in my terminal.
 - 📥 **Import** JSON, YAML, or **Postman Collection v2.1** files
 - ✏️ Rename via double-click or right-click
 
+### Tabs
+- 📑 **Multi-tab workspace** — open many requests in parallel; tabs persist across quit/relaunch
+- ⚓ **Pinned tabs** — right-click → **Pin tab** keeps a tab around; ⌘W and "Close all" skip pinned tabs (accent-colored pin glyph in the tab strip)
+- 🧬 **Duplicate tab** — **⌘D** (or right-click → Duplicate tab) clones the current request as a new draft with `(copy)` appended to the name
+- 💾 **"Save changes?" confirmation** — closing a draft tab with unsaved content opens a modal (Don't save · Cancel · Save changes)
+
 ### Workflow
 - 🎛 **Settings modal** — request timeout, max body size cap (50 MB default; truncates with banner), proxy URL, TLS verification toggle. All persisted to disk.
 - 🔌 **Reused HTTP client + tokio runtime** — no per-request connection-pool / runtime spinup; faster repeated sends.
 - ⌨️ **⌘P command palette** — fuzzy-find any request across every collection, ↑↓ navigate, Enter to open
-- ⌨️ Standard shortcuts: ⌘⏎ Send · ⌘K focus search · ⌘S save draft · F2 rename · Esc dismiss modals
+- ⌨️ **↑ / ↓ arrow nav** — step through every request across every collection when nothing's focused; wraps at both ends
+- ⌨️ Standard shortcuts: **⌘⏎** Send · **⌘N** New request · **⌘W** Close tab · **⌘D** Duplicate tab · **⌘K** Focus search · **⌘S** Save draft · **⌘P** Command palette · **F2** Rename · **Esc** Dismiss modals
 - 🍎 **Native macOS NSMenu bar** (Rusty Requester · File · View · Request · Help) via `muda`; in-window menu on Linux
+- 🎨 **Phosphor icon font** — 1,200+ tintable icons rendered as font glyphs; crisp at every DPI, zero image assets to ship
 - ℹ **Help → About** opens a custom modal with creator credit + Contribute / Report-issue links
 
 ---
@@ -315,10 +326,17 @@ Type in the **🔎 Search** box in the sidebar. It filters by request name, URL,
 
 - **⌘/Ctrl + Enter** → Send the current request (from anywhere)
 - **Enter** (in URL field) → Send request
+- **⌘/Ctrl + N** → New request tab
+- **⌘/Ctrl + W** → Close active tab (skips pinned; prompts to save on unsaved drafts)
+- **⌘/Ctrl + D** → Duplicate active tab
 - **⌘/Ctrl + K** → Focus the sidebar search
+- **⌘/Ctrl + P** → Command palette (fuzzy request finder)
+- **⌘/Ctrl + S** → Save current draft to a folder
+- **↑ / ↓** → Arrow-nav through every request (when no modal or text field is focused)
 - **F2** → Rename the active request (VS Code / Finder convention)
 - **Double-click a request** in the sidebar → Inline rename
 - **Esc** during rename → Cancel; **Enter** → Save
+- **Right-click a tab** → Save to folder / Duplicate / Pin / Close / Close others / Close all
 - **Right-click a request** → Rename / Duplicate / Delete
 - **Right-click a collection / folder** → Rename / Add subfolder / Export / Delete
 
@@ -359,49 +377,56 @@ The primary UI accent (selected tab, Send button, focus ring) is the brand
 
 ### Collection vs folder
 
-Nested folders render with a small painter-drawn folder glyph (outlined
-silhouette); top-level collections intentionally omit the glyph so users
-can tell the two apart at a glance. The same font-safe approach is used
-for the collapse chevron (painter triangle), search / copy / plus /
-overflow-menu icons, and all UI tooling — no unicode glyphs, so nothing
-renders as a "tofu" square on systems where egui's bundled font lacks
-the character.
+Nested folders render with a small folder glyph; top-level collections
+intentionally omit the glyph so users can tell the two apart at a
+glance. Icons throughout the UI come from the embedded **Phosphor** icon
+font (via `egui-phosphor`) — tintable by color, crisp at every DPI, no
+PNG/SVG assets. The collapse-header chevron is a hand-painted triangle
+because it animates its rotation openness as the folder expands.
 
 ---
 
 ## 🏗️ Architecture
 
 - **`eframe` / `egui`** — immediate-mode native GUI (the whole UI)
+- **`egui-phosphor`** — embedded Phosphor icon font (1,200+ glyphs as typed constants)
 - **`reqwest`** — HTTP client
-- **`tokio`** — async runtime (used for the single send; runs on a background thread via `poll-promise`)
+- **`tokio`** — async runtime. Sends spawn onto a long-lived multi-thread runtime as `JoinHandle`s so **Cancel** can `.abort()` mid-flight; the result flows back through an `mpsc::channel` the UI polls.
 - **`serde` / `serde_json` / `serde_yaml`** — persistence + import / export
+- **`muda`** — native macOS NSMenu bar
 - **`base64`** — Basic auth encoding
 - **`rfd`** — native open / save file dialogs
 - **`uuid`** — stable IDs for folders / requests
 
-Source layout (~10 KLOC across 18 files):
+Source layout:
 
 ```
 src/
   main.rs              # ApiClient struct + core state + fn main + macOS menu dispatch
   model.rs             # Data types — Request, Folder, Auth, HttpMethod, KvRow,
                        #   ResponseExtractor, ResponseAssertion, AppSettings,
-                       #   Environment (with cookie jar), StoredCookie, ...
-  theme.rs             # Rust-forge color constants + global egui style
-  widgets.rs           # Reusable widgets — kv_table, body view pills, icon painters,
+                       #   Environment (with cookie jar), StoredCookie, OpenTab, ...
+  theme.rs             # Rust-forge color constants + global egui style + Phosphor
+                       #   font registration + `hint()` styled-placeholder helper
+  widgets.rs           # Reusable widgets — kv_table, body view pills, icon button,
                        #   JSON tree (with right-click "Copy path"), tooltip panels,
-                       #   tab pills, drag/drop helpers
+                       #   tab strip (with pin/duplicate/close actions), animated
+                       #   folder chevron
   net.rs               # execute_request + reqwest::Client / tokio::Runtime builders +
-                       #   URL scheme, error formatting (no UI deps; unit-testable)
+                       #   URL scheme, error formatting, RequestUpdate enum for
+                       #   streaming responses (Progress/Final), SSE streaming path
+  sse.rs               # SSE wire-format parser + event formatter (8 tests, zero deps)
   snippet.rs           # Code-snippet generators + syntax highlighters (cURL / JSON /
-                       #   Python / JS) with line-number gutter
+                       #   Python / JS / HTTPie) with line-number gutter
+  html_preview.rs      # Minimal HTML → readable-text renderer for the Preview body
+                       #   view (strips script/style, decodes entities; 5 tests)
   extract.rs           # Dot/bracket JSON-path evaluator for extractors (5 tests)
   assertion.rs         # Assertion evaluator (status/header/body × 7 ops) +
                        #   tiny regex engine (no `regex` crate dep) (7 tests)
   cookies.rs           # RFC 6265-ish cookie jar — parse Set-Cookie, host/path
                        #   matching, expiry pruning (8 tests)
   macos_menu.rs        # Native NSMenu via muda — App / File / View / Request /
-                       #   Help submenus + ⌘P / ⌘⏎ / ⇧⌘C accelerators
+                       #   Help submenus + ⌘N / ⌘W / ⌘P / ⌘⏎ / ⇧⌘C accelerators
   icon.rs              # App icon loading (texture + window icon + macOS dock icon)
   io/
     mod.rs             # JSON / YAML export + Postman v2.1 import       (unit-tested)
@@ -410,14 +435,16 @@ src/
     mod.rs             # submodule wiring
     sidebar.rs         # left panel — collections tree, env picker, history, folder
                        #   row drag-to-reorder, search box
-    editor.rs          # central panel — tabs bar, URL bar, request-editor tabs
+    editor.rs          # central panel — tab strip, URL bar, request-editor tabs
                        #   (Params/Headers/Cookies/Body/Auth/Tests), collection
                        #   overview page, JWT decoder
     response.rs        # response panel — inline status chips, body toolbar
-                       #   (JSON/Tree/Raw), search, copy, save, headers grid,
-                       #   loading spinner, empty state
-    modals.rs          # env mgr, save-draft folder picker, cURL paste, snippet
-                       #   panel, settings, About modal, command palette (⌘P), toast
+                       #   (JSON/Tree/Preview/Events/Raw), search, copy, save,
+                       #   headers grid, loading spinner, illustrated failed state,
+                       #   structured SSE Events log
+    modals.rs          # env mgr, save-draft folder picker, "Save changes?" confirm,
+                       #   cURL paste, snippet panel, settings, About modal,
+                       #   command palette (⌘P), toast
 
 assets/
   icon.png             # 512×512 generated by scripts/generate_icon.py
@@ -429,8 +456,8 @@ scripts/
 install.sh             # macOS + Linux one-line installer
 ```
 
-29 unit tests across `extract`, `assertion`, `cookies`, `io`, `io::curl`. Run
-`cargo test` to verify everything builds + passes.
+44 unit tests across `extract`, `assertion`, `cookies`, `io`, `io::curl`,
+`html_preview`, and `sse`. Run `cargo test` to verify everything builds + passes.
 
 ---
 
@@ -497,14 +524,14 @@ Applications and you're done.
 
 ## 🗺️ Roadmap
 
-**Shipped through v0.5:**
+**Shipped through v0.10:**
 
 Foundations
 - [x] Full HTTP methods, tabbed editor (Params / Headers / Cookies / Body / Auth / Tests)
 - [x] cURL import (paste in URL bar) / export (right-side code panel: cURL, Python, JS, HTTPie) with syntax-highlighted line-numbered code view
 - [x] Postman Collection v2.1 import
 - [x] JSON / YAML export & import
-- [x] Query parameter builder + auto-growing ghost row pattern for all KV tables
+- [x] Bidirectional **URL ↔ Params sync** — type `?k=v` in URL, table populates; edit table, URL rebuilds
 - [x] Bearer / Basic auth presets + **JWT decoder** for Bearer tokens
 - [x] Body modes: Raw / form-urlencoded / multipart / GraphQL
 - [x] Environment variables — `{{var}}` substitution with active env selector + manage modal
@@ -512,14 +539,20 @@ Foundations
 
 Workflow
 - [x] Postman-style request tabs (open multiple requests, switch with one click) with hover preview
+- [x] **Duplicate tab (⌘D) and pinned tabs** — pinned tabs skip ⌘W / "Close all"
+- [x] **"Save changes?" confirmation** — closing a draft with unsaved content prompts (Don't save / Cancel / Save)
 - [x] Inline rename via double-click; F2 shortcut
 - [x] Subfolders; collection overview page; inline folder `+`/`⋯` toolbar; duplicate folder recursively; save-draft folder picker with inline "New folder"
 - [x] Drag-to-reorder requests within a folder
 - [x] Search across requests, URLs, methods, folder names (⌘K)
 - [x] **⌘P command palette** — fuzzy-find any request and jump
+- [x] **↑/↓ arrow navigation** through every request in the sidebar
 
 Response viewing
-- [x] **Body view modes**: JSON (syntax-highlighted code, line numbers), Tree (collapsible JSON tree with **right-click "Copy path"**), Raw
+- [x] **Body view modes**: JSON (syntax-highlighted code, line numbers), Tree (collapsible JSON tree with **right-click "Copy path"**), **Preview** (HTML rendered as readable text), **Events** (structured SSE log), Raw
+- [x] **Server-Sent Events (SSE)** — streaming support for LLM / event-stream APIs with live Events view (auto-scroll, per-event timestamps, JSON pretty-print)
+- [x] **Cancel button** — Send flips to Cancel while in flight; instantly aborts the tokio task
+- [x] **Illustrated failed/cancelled state** — network failure / TLS / cancel screens with detail pill instead of raw text
 - [x] Find-in-body, copy-body, **save-response-to-file**
 - [x] Response info chips (status / time / size) **inline** with the Body/Headers tab row; tooltips for size & time breakdowns
 - [x] Loading spinner; readable error chains (no more opaque "builder error")
@@ -534,29 +567,33 @@ Networking & safety
 - [x] **Reused `reqwest::Client` + `tokio::Runtime`** across sends — no per-request spinup cost
 - [x] **Cookie jar (per-environment)** — `Set-Cookie` parsed, host/path-matched on next send, expiry-aware
 
+UI
+- [x] **Phosphor icon font** — 1,200+ tintable icons rendered as font glyphs (replaces every hand-drawn painter icon)
+- [x] **Styled hint text** — dim, italic-free placeholders in all TextEdits so `Key`/`Value`/`Description` no longer look like real data
+
 Platform
 - [x] macOS + Linux one-line installer (`install.sh`); auto-detects platform
 - [x] Universal macOS DMG (Apple Silicon + Intel) and Linux x86_64 tarball built by GitHub Actions
-- [x] **Native macOS NSMenu bar** (App / File / View / Request / Help) with ⌘P, ⌘⏎, ⇧⌘C accelerators
+- [x] **Native macOS NSMenu bar** (App / File / View / Request / Help) with ⌘N, ⌘W, ⌘P, ⌘⏎, ⇧⌘C accelerators
 - [x] Custom **About modal** with creator credit + Contribute / Report-issue links
 
-**In progress / planned:**
+**On the v1.0 pathway:**
 
-- [ ] **WebSocket testing** — needs a separate connection lifecycle and message-log UI;
-      plan is to add a `RequestKind::WebSocket` mode using `tokio-tungstenite` with a
-      send box + scrolling message log per request.
 - [ ] **OAuth 2.0** flows (Authorization Code + PKCE, Client Credentials, refresh
-      token). Probably the highest-impact next addition for users hitting auth-gated
-      APIs; tokens would slot directly into the existing env / extractor system.
-- [ ] **Pre-request scripts** — full JS-style scripts via Rhai or Boa; the lightweight
-      post-response extractors + assertions cover ~80% of what users reach for, but
-      pre-request transformations need an embedded scripting engine.
-- [ ] **Server-Sent Events (SSE)** support — handy for the LLM-streaming endpoints
-      that have become common.
-- [ ] **Response diff** — "send twice, diff me" between two recent responses; useful
-      regression-test feature unique to this app.
-- [ ] **Light theme** — the dark theme is opinionated; a parallel light palette would
-      be straightforward but require touching every color constant.
+      token). Highest-impact remaining feature; tokens slot directly into the env
+      system.
+- [ ] **Light theme** — parallel palette behind a Settings toggle. The dark default
+      stays unchanged.
+- [ ] **Response diff** — "send twice, diff me" between two recent responses.
+- [ ] **⇧⌘P actions palette** — ⌘P finds requests; ⇧⌘P triggers app actions
+      (toggle snippet panel, duplicate tab, clear history, etc.).
+
+**Post-1.0:**
+
+- [ ] **WebSocket testing** — separate connection lifecycle + per-request message log.
+- [ ] **Pre-request scripts** — Rhai/Boa scripting engine for transformations before send.
+- [ ] **Windows builds** — CI + installer parity with macOS/Linux.
+- [ ] **Collection runner** — run a folder as a sequence, pass extracted vars forward.
 
 ---
 
@@ -585,8 +622,9 @@ with a documented migration path:
   `install.sh` (`VERSION`, `SKIP_QUARANTINE_STRIP`, `RUSTY_REPO`).
 - **Import / export formats** — JSON / YAML round-trip, Postman
   Collection v2.1 import.
-- **Public macOS menu shortcuts** — `⌘⏎` Send, `⌘P` Command palette,
-  `⌘K` Sidebar search, `⇧⌘C` toggle snippet panel.
+- **Public macOS menu shortcuts** — `⌘⏎` Send, `⌘N` New request,
+  `⌘W` Close tab, `⌘D` Duplicate tab, `⌘P` Command palette,
+  `⌘K` Sidebar search, `⌘S` Save draft, `⇧⌘C` toggle snippet panel.
 
 Anything *not* in this list (UI layout, internal module structure, exact
 binary size, theme colors, syntax-highlight palette, behind-the-scenes

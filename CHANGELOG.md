@@ -11,9 +11,89 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
-## Unreleased
+## Unreleased — v1.0 prep
 
-- _placeholder for the next release_
+### Added
+- _see 1.0 pathway items in the Roadmap section of the README._
+
+## [0.10.0] — Server-Sent Events
+
+### Added
+- **Server-Sent Events (SSE)** support. Responses with Content-Type
+  `text/event-stream` are auto-detected and stream into a structured
+  **Events** body-view — one collapsible row per event with
+  `#N event-type · HH:MM:SS.mmm` headers, per-event JSON pretty-print,
+  id / retry fields, and Copy-data button. Auto-scrolls while live,
+  pulsing "Listening…" indicator at the bottom.
+- New `src/sse.rs` module (8 unit tests, zero deps) — incremental
+  line-oriented parser handling multi-line data, CRLF, comments,
+  chunked splits.
+- `RequestUpdate::Progress { snapshot, new_events }` / `Final`
+  enum so the send task can emit multiple updates through the existing
+  `mpsc::channel` without changing cancel semantics. Cancel still
+  instantly aborts the stream via `JoinHandle::abort()`.
+
+## [0.9.1] — Quick wins
+
+### Added
+- **Duplicate tab (⌘D)** and **Pinned tabs** — right-click menu gains
+  "Duplicate tab" and "Pin tab" / "Unpin tab". Pinned tabs skip ⌘W,
+  "Close others", and "Close all". Accent-colored pin glyph in the tab
+  strip.
+- **↑ / ↓ arrow-key navigation** through every request in the sidebar
+  (wraps at both ends). Gated on `ctx.wants_keyboard_input()` so
+  text-field cursor movement isn't hijacked.
+
+### Removed
+- Redundant "→ http" scheme indicator next to the URL bar (now that
+  we always prepend http, the hint added no information).
+
+## [0.9.0] — Icon font
+
+### Added
+- Replaced every hand-drawn painter icon (search, X, save, plus,
+  three-dots, copy, folder, unplugged-plug, warning) with
+  **Phosphor icon font glyphs** via the `egui-phosphor` crate.
+  Crisp at every DPI, tintable via `RichText::color()`,
+  zero image assets.
+- `theme::hint()` helper rendering dim-colored placeholder text —
+  fixes the "Key / Value / Description" placeholders looking like
+  real data in KV tables and the URL hint.
+
+## [0.8.0] — Draft-close confirmation
+
+### Added
+- **"Save changes?" modal** when closing a draft tab that has
+  unsaved content (URL / body / headers filled in). Options:
+  Don't save · Cancel · Save changes. Empty drafts still close
+  silently.
+- **⌘N** (new request) and **⌘W** (close tab) keyboard shortcuts
+  (menu accelerators on macOS, egui input on Linux/Windows).
+
+## [0.7.0–0.7.4] — Streaming, cancel, HTML preview, URL↔Params sync
+
+### Added
+- **Cancel button** — Send flips to Cancel while a request is in
+  flight. Aborts the tokio task; dropping the future mid-`.await`
+  also drops the hyper connection, so cancel is immediate.
+- **HTML Preview** body view — strips `<script>`/`<style>`, replaces
+  block tags with newlines, decodes entities. Pill only surfaces for
+  `text/html` responses.
+- **Illustrated failed / cancelled state** replacing the plain error
+  text: large Phosphor icon (WIFI_SLASH / PROHIBIT), headline pill,
+  error-detail chip, context hint line.
+- **Bidirectional URL ↔ Params sync** (Postman-style): typing
+  `?foo=bar` in the URL populates the Params tab; editing the table
+  rebuilds the URL bar.
+- Stable `id_source("url_bar_edit")` on the URL TextEdit so its undo
+  buffer survives widget re-creation.
+- Code snippets (cURL / Python / JS / HTTPie) now apply the same
+  `ensure_url_scheme` as the send path — the displayed command
+  matches what's actually sent.
+
+## [0.6.0–0.6.2] — Tier 3 polish
+
+(See individual release tags for per-patch detail.)
 
 ## [0.5.1] — Tier 3 wrap + CI fix
 
