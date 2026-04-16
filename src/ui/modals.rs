@@ -1017,6 +1017,25 @@ impl ApiClient {
                 .color(C_MUTED),
             );
 
+            ui.add_space(10.0);
+            // Theme — Dark (default) / Light.
+            ui.label(egui::RichText::new("Theme").size(11.0).color(C_MUTED));
+            ui.horizontal(|ui| {
+                let mut t = self.editing_settings.theme;
+                ui.selectable_value(&mut t, Theme::Dark, "Dark");
+                ui.selectable_value(&mut t, Theme::Light, "Light");
+                self.editing_settings.theme = t;
+            });
+            ui.label(
+                egui::RichText::new(
+                    "Light theme flips egui's chrome (panels, text, borders). \
+                         HTTP method colors and status pills stay the same across \
+                         themes.",
+                )
+                .size(10.5)
+                .color(C_MUTED),
+            );
+
             ui.add_space(14.0);
             ui.separator();
             ui.add_space(6.0);
