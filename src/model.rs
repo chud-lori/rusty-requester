@@ -202,6 +202,62 @@ pub enum Auth {
         username: String,
         password: String,
     },
+    /// OAuth 2.0 Authorization Code + PKCE flow. Holds the user's
+    /// provider config plus the cached access / refresh tokens from
+    /// the last successful flow. Boxed to keep the `Auth` enum small
+    /// — OAuth config adds ~10 strings worth of payload compared to
+    /// Bearer's single token.
+    #[serde(rename = "OAuth2")]
+    OAuth2(Box<OAuth2State>),
+}
+
+/// Cached OAuth2 state — config (stable) + tokens (refreshed per
+/// flow). Persisted in `data.json` the same way other `Auth` data is.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Default)]
+pub struct OAuth2State {
+    pub config: OAuth2Config,
+    /// Access token from the last successful flow. Empty until the
+    /// user clicks "Get New Token" and completes the browser dance.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub access_token: String,
+    /// Refresh token, if the provider returned one. Not used yet by
+    /// the request path (scope: v0.15 ships manual re-auth only);
+    /// persisted so a future auto-refresh can pick it up without a
+    /// schema change.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub refresh_token: String,
+    /// Unix epoch seconds when the access token expires. `None` =
+    /// no expiry info returned (long-lived token, or provider
+    /// omitted `expires_in`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<i64>,
+}
+
+/// User-editable OAuth2 provider config. All fields are free-form
+/// strings so users can point at any RFC 6749-compliant provider.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Default)]
+pub struct OAuth2Config {
+    pub auth_url: String,
+    pub token_url: String,
+    pub client_id: String,
+    /// Empty for public clients (the common case for a native app —
+    /// PKCE replaces the secret). Some providers require it anyway
+    /// for "confidential" apps; we send it if non-empty.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub client_secret: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub scope: String,
+    /// Registered redirect URI. Must match what's configured on the
+    /// provider side. We always listen on a random 127.0.0.1 port
+    /// unless the user overrides — the usual setup is to register
+    /// something like `http://127.0.0.1/callback` (many providers
+    /// allow any 127.0.0.1 port for PKCE clients).
+    #[serde(default = "default_redirect_uri")]
+    pub redirect_uri: String,
+}
+
+fn default_redirect_uri() -> String {
+    "http://127.0.0.1/callback".to_string()
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -209,6 +265,7 @@ pub enum AuthKind {
     None,
     Bearer,
     Basic,
+    OAuth2,
 }
 
 impl From<&Auth> for AuthKind {
@@ -217,6 +274,7 @@ impl From<&Auth> for AuthKind {
             Auth::None => AuthKind::None,
             Auth::Bearer { .. } => AuthKind::Bearer,
             Auth::Basic { .. } => AuthKind::Basic,
+            Auth::OAuth2(_) => AuthKind::OAuth2,
         }
     }
 }
