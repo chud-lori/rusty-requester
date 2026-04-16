@@ -136,6 +136,11 @@ struct ApiClient {
     /// Used by palette-dispatched actions (e.g. Copy as cURL) that
     /// don't have direct access to `egui::Context` for `ctx.copy_text`.
     pending_clipboard: Option<String>,
+    /// One-shot toast shown on the first `update()` frame when the
+    /// startup state-load flagged something the user should know —
+    /// e.g. "`data.json` was corrupted — backed up to …". Cleared
+    /// after it fires.
+    startup_warning: Option<String>,
 
     /// Open "save draft" modal state.
     save_draft_open: bool,
@@ -228,22 +233,31 @@ impl Default for ApiClient {
             .join("rusty-requester")
             .join("data.json");
 
-        let state = Self::load_state(&storage_path).unwrap_or_else(|| AppState {
-            folders: vec![Folder {
-                id: Uuid::new_v4().to_string(),
-                name: "My Requests".to_string(),
-                requests: vec![],
-                subfolders: vec![],
-                description: String::new(),
-            }],
-            environments: vec![],
-            active_env_id: None,
-            history: vec![],
-            drafts: vec![],
-            open_tabs: vec![],
-            active_tab_id: None,
-            settings: AppSettings::default(),
-        });
+        // Load outcome distinguishes first-launch from corrupted-file.
+        // A corrupted file has already been renamed to a `.broken.<ts>`
+        // backup by `load_state`; we surface the path via
+        // `startup_warning` so the user sees a toast on first frame.
+        let (state, startup_warning) = match Self::load_state(&storage_path) {
+            LoadOutcome::Ok(s) => (s, None),
+            LoadOutcome::Fresh => (Self::fresh_state(), None),
+            LoadOutcome::Corrupted { backup_path, error } => {
+                eprintln!(
+                    "rusty-requester: data.json was corrupted ({}). Backed up to {}.",
+                    error,
+                    backup_path.display()
+                );
+                (
+                    Self::fresh_state(),
+                    Some(format!(
+                        "data.json was corrupted — backed up to {}",
+                        backup_path
+                            .file_name()
+                            .and_then(|s| s.to_str())
+                            .unwrap_or("a .broken.* file")
+                    )),
+                )
+            }
+        };
 
         let mut this = Self {
             state,
@@ -304,6 +318,7 @@ impl Default for ApiClient {
             pending_export_json: false,
             pending_export_yaml: false,
             pending_clipboard: None,
+            startup_warning: None,
             save_draft_open: false,
             save_draft_tab_idx: None,
             save_draft_target_path: Vec::new(),
@@ -334,6 +349,9 @@ impl Default for ApiClient {
             #[cfg(target_os = "macos")]
             macos_menu_installed: false,
         };
+        // Attach the startup warning (if any). Consumed by the first
+        // `update()` call via `show_toast`.
+        this.startup_warning = startup_warning;
         // Rebuild the HTTP client from the deserialized settings — the
         // initial one above was a placeholder, because we couldn't read
         // `state.settings` before `state` was moved into `this`.
@@ -360,22 +378,96 @@ impl Default for ApiClient {
     }
 }
 
+/// Outcome of loading `data.json` at startup. `Fresh` means the file
+/// didn't exist yet (first launch); `Corrupted` means it existed but
+/// couldn't be parsed and has been sidelined to a backup file — the
+/// caller should surface the backup path so the user knows where
+/// their old data went.
+enum LoadOutcome {
+    Ok(AppState),
+    Fresh,
+    Corrupted { backup_path: PathBuf, error: String },
+}
+
 impl ApiClient {
-    fn load_state(path: &PathBuf) -> Option<AppState> {
-        let data = fs::read_to_string(path).ok()?;
-        serde_json::from_str(&data).ok()
+    /// Default empty state for first launch (no `data.json` yet) or
+    /// after a corrupted-file recovery. One starter collection so the
+    /// sidebar isn't a blank void.
+    fn fresh_state() -> AppState {
+        AppState {
+            folders: vec![Folder {
+                id: Uuid::new_v4().to_string(),
+                name: "My Requests".to_string(),
+                requests: vec![],
+                subfolders: vec![],
+                description: String::new(),
+            }],
+            environments: vec![],
+            active_env_id: None,
+            history: vec![],
+            drafts: vec![],
+            open_tabs: vec![],
+            active_tab_id: None,
+            settings: AppSettings::default(),
+        }
     }
 
+    fn load_state(path: &PathBuf) -> LoadOutcome {
+        let data = match fs::read_to_string(path) {
+            Ok(d) => d,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return LoadOutcome::Fresh,
+            Err(_) => return LoadOutcome::Fresh, // treat other IO errors as fresh; worst case is an empty workspace
+        };
+        match serde_json::from_str::<AppState>(&data) {
+            Ok(state) => LoadOutcome::Ok(state),
+            Err(e) => {
+                // Move the broken file aside so we never silently clobber
+                // the user's data on the next save. Timestamped so
+                // repeated corruptions don't overwrite each other.
+                let ts = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0);
+                let backup = path.with_extension(format!("json.broken.{}", ts));
+                let _ = fs::rename(path, &backup);
+                LoadOutcome::Corrupted {
+                    backup_path: backup,
+                    error: e.to_string(),
+                }
+            }
+        }
+    }
+
+    /// Atomic write: serialize → write to `<path>.tmp` → `fsync` → rename
+    /// over the real file. This prevents a crash / power cut mid-write
+    /// from leaving a truncated `data.json` the next launch can't parse.
+    /// Rename is atomic on POSIX; on Windows it's close enough for our
+    /// needs since `rename` there uses `MoveFileEx` with replace-existing.
     fn save_state(&mut self) {
+        use std::io::Write;
         // Sync the active-tab id into state so the workspace restores to
         // this tab on next launch.
         self.state.active_tab_id = self.selected_request_id.clone();
         if let Some(parent) = self.storage_path.parent() {
             let _ = fs::create_dir_all(parent);
         }
-        if let Ok(json) = serde_json::to_string_pretty(&self.state) {
-            let _ = fs::write(&self.storage_path, json);
+        let Ok(json) = serde_json::to_string_pretty(&self.state) else {
+            return;
+        };
+        let tmp = self.storage_path.with_extension("json.tmp");
+        let Ok(mut f) = fs::File::create(&tmp) else {
+            return;
+        };
+        if f.write_all(json.as_bytes()).is_err() {
+            let _ = fs::remove_file(&tmp);
+            return;
         }
+        // fsync so the rename target's data is durable on disk before
+        // we swap it into place. Without this, a crash after the rename
+        // can still leave a zero-length file.
+        let _ = f.sync_all();
+        drop(f);
+        let _ = fs::rename(&tmp, &self.storage_path);
     }
 
     fn get_current_folder_mut(&mut self) -> Option<&mut Folder> {
@@ -1315,6 +1407,13 @@ fn webbrowser_open(url: &str) -> Result<(), std::io::Error> {
 
 impl eframe::App for ApiClient {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Fire the startup warning (if any) exactly once. Using a
+        // toast means the user sees it but doesn't need to dismiss a
+        // modal just to start working.
+        if let Some(msg) = self.startup_warning.take() {
+            self.show_toast(msg);
+        }
+
         // Install the macOS menu bar on the first frame (after winit
         // has wired up NSApp). See `macos_menu_installed` doc comment
         // for why this can't run in `main()`.
