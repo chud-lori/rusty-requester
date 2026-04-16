@@ -163,6 +163,11 @@ pub async fn execute_request_async(
             username: substitute_vars(username, env),
             password: substitute_vars(password, env),
         },
+        // OAuth2 passes through unchanged — the access token comes
+        // from the stored flow state, not from env-var substitution.
+        // (Users who want env-var tokens should use Bearer auth; OAuth
+        // is for the full authorize-redirect flow.)
+        Auth::OAuth2(s) => Auth::OAuth2(s.clone()),
     };
 
     // Inner block is the former `runtime_handle.block_on(async { … })`
@@ -228,6 +233,15 @@ pub async fn execute_request_async(
         match &sub_auth {
             Auth::Bearer { token } if !token.is_empty() => {
                 req_builder = req_builder.header("Authorization", format!("Bearer {}", token));
+            }
+            Auth::OAuth2(s) if !s.access_token.is_empty() => {
+                // Send the cached access token as a Bearer header.
+                // Expiry is checked by the UI (shows a warning pill
+                // in the Auth tab) so the user can re-run the flow
+                // before the send; this layer trusts the token it's
+                // handed and lets the provider reject it if stale.
+                req_builder =
+                    req_builder.header("Authorization", format!("Bearer {}", s.access_token));
             }
             Auth::Basic { username, password } if !username.is_empty() => {
                 let encoded = base64::engine::general_purpose::STANDARD

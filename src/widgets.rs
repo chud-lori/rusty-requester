@@ -1128,3 +1128,17 @@ pub fn sanitize_filename(name: &str) -> Option<String> {
         Some(trimmed)
     }
 }
+
+/// Mask a secret token for display — shows first 8 and last 8 chars,
+/// with a "···" separator. Strings under 20 chars render as a
+/// row of asterisks so nothing leaks.
+pub fn mask_token(token: &str) -> String {
+    let n = token.chars().count();
+    if n <= 20 {
+        return "*".repeat(n.min(16));
+    }
+    let start: String = token.chars().take(8).collect();
+    let end: String = token.chars().rev().take(8).collect();
+    let end: String = end.chars().rev().collect();
+    format!("{} ··· {}", start, end)
+}
