@@ -2,6 +2,27 @@
 name = "rusty-requester"
 version = "0.15.0"
 edition = "2021"
+rust-version = "1.70"
+description = "A native, offline, lightweight Postman alternative built with Rust and egui — full HTTP client, Postman Collection v2.1 import, SSE streaming, OAuth 2.0, cookie jar, assertions, extractors, and a command palette."
+readme = "readme.md"
+repository = "https://github.com/chud-lori/rusty-requester"
+homepage = "https://github.com/chud-lori/rusty-requester"
+license = "MIT"
+keywords = ["postman", "http", "api", "rest", "curl"]
+categories = ["development-tools", "web-programming::http-client"]
+# Ship only what's needed to build the bin from crates.io. Everything
+# else (release binaries, DMG artifacts, screenshot gifs, bundle
+# scripts) lives on GitHub Releases, not in the crate tarball.
+exclude = [
+    "target/*",
+    "**/target/*",
+    ".github/**",
+    "scripts/**",
+    "install.sh",
+    "Makefile",
+    "*.dmg",
+    "assets/dmg_background.png",
+]
 
 [dependencies]
 eframe = "0.29"
