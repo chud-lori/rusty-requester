@@ -1407,6 +1407,7 @@ impl ApiClient {
         .resizable(false)
         .fixed_size(egui::vec2(560.0, 420.0))
         .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 80.0))
+        .frame(palette_frame())
         .show(ctx, |ui| {
             let query_resp = ui.add(
                 egui::TextEdit::singleline(&mut self.palette_query)
@@ -1578,6 +1579,7 @@ impl ApiClient {
         .resizable(false)
         .fixed_size(egui::vec2(560.0, 420.0))
         .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 80.0))
+        .frame(palette_frame())
         .show(ctx, |ui| {
             let query_resp = ui.add(
                 egui::TextEdit::singleline(&mut self.actions_palette_query)
@@ -1766,4 +1768,22 @@ fn fuzzy_contains(haystack: &str, needle: &str) -> bool {
         }
     }
     false
+}
+
+/// Frame styling for ⌘P / ⇧⌘P palette windows. Uses `C_ELEVATED`
+/// instead of the default `C_BG` so the palette visibly floats above
+/// the darkened backdrop — without this they blend into the app
+/// chrome and look "greyed-out" rather than focused.
+fn palette_frame() -> egui::Frame {
+    egui::Frame::none()
+        .fill(C_ELEVATED)
+        .stroke(egui::Stroke::new(1.0, C_ACCENT.linear_multiply(0.5)))
+        .rounding(egui::Rounding::same(12.0))
+        .inner_margin(egui::Margin::same(14.0))
+        .shadow(egui::epaint::Shadow {
+            offset: egui::vec2(0.0, 8.0),
+            blur: 24.0,
+            spread: 0.0,
+            color: egui::Color32::from_black_alpha(120),
+        })
 }

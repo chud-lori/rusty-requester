@@ -141,6 +141,14 @@ struct ApiClient {
     /// e.g. "`data.json` was corrupted — backed up to …". Cleared
     /// after it fires.
     startup_warning: Option<String>,
+    /// Background update-check receiver. Set on startup via
+    /// `spawn_update_check`; drained on each `update()` frame.
+    /// `Some(version)` when a newer GitHub release is available.
+    update_check_rx: Option<std::sync::mpsc::Receiver<String>>,
+    /// Latest version string found by the update check, cached so the
+    /// banner stays visible across frames. `None` = no update / not
+    /// checked yet / current version is latest.
+    update_available: Option<String>,
 
     /// Open "save draft" modal state.
     save_draft_open: bool,
@@ -319,6 +327,8 @@ impl Default for ApiClient {
             pending_export_yaml: false,
             pending_clipboard: None,
             startup_warning: None,
+            update_check_rx: None,
+            update_available: None,
             save_draft_open: false,
             save_draft_tab_idx: None,
             save_draft_target_path: Vec::new(),
@@ -356,6 +366,11 @@ impl Default for ApiClient {
         // initial one above was a placeholder, because we couldn't read
         // `state.settings` before `state` was moved into `this`.
         this.http_client = net::build_client(&this.state.settings);
+        // Fire a background check against GitHub's latest-release API.
+        // One HTTP call per launch; silent failure if offline or if
+        // GitHub rate-limits us — an API client crashing on startup
+        // because its update check hiccuped would be absurd.
+        this.update_check_rx = Some(spawn_update_check(&this.http_runtime));
         // Restore active tab — if state has a saved `active_tab_id`,
         // activate that tab now. Otherwise fall back to the first open tab.
         let active_tab: Option<OpenTab> = {
@@ -1414,6 +1429,26 @@ impl eframe::App for ApiClient {
             self.show_toast(msg);
         }
 
+        // Drain the update-check channel. Only fires once (the tokio
+        // task sends at most one message then the sender drops);
+        // after that the receiver disconnects and `try_recv` is a
+        // ~no-op until `take()` clears it.
+        if let Some(rx) = &self.update_check_rx {
+            if let Ok(new_version) = rx.try_recv() {
+                self.show_toast(format!(
+                    "Update available: {} — grab it from Releases",
+                    new_version
+                ));
+                self.update_available = Some(new_version);
+                self.update_check_rx = None;
+            } else if matches!(
+                rx.try_recv(),
+                Err(std::sync::mpsc::TryRecvError::Disconnected)
+            ) {
+                self.update_check_rx = None;
+            }
+        }
+
         // Install the macOS menu bar on the first frame (after winit
         // has wired up NSApp). See `macos_menu_installed` doc comment
         // for why this can't run in `main()`.
@@ -1825,6 +1860,109 @@ fn collect_flat_requests(
     path.pop();
 }
 
+/// Hit GitHub's latest-release API once at startup. Sends the new
+/// version string (e.g. `"v0.13.0"`) through the returned channel if
+/// it's newer than the running build; stays silent otherwise
+/// (including any network / parse / rate-limit failures — an update
+/// check that noisily fails on offline machines would be worse than
+/// no check at all).
+fn spawn_update_check(rt: &tokio::runtime::Runtime) -> std::sync::mpsc::Receiver<String> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    let current = env!("CARGO_PKG_VERSION").to_string();
+    rt.spawn(async move {
+        // Small dedicated client, 5s timeout. Don't use the app's
+        // shared `reqwest::Client` — it's tuned with the user's proxy
+        // / TLS settings, which shouldn't affect GitHub API reachability.
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(5))
+            .user_agent(format!("rusty-requester/{}", current))
+            .build();
+        let Ok(client) = client else { return };
+        let resp = client
+            .get("https://api.github.com/repos/chud-lori/rusty-requester/releases/latest")
+            .header("Accept", "application/vnd.github+json")
+            .send()
+            .await;
+        let Ok(resp) = resp else { return };
+        if !resp.status().is_success() {
+            return;
+        }
+        let Ok(json) = resp.json::<serde_json::Value>().await else {
+            return;
+        };
+        let Some(tag) = json.get("tag_name").and_then(|v| v.as_str()) else {
+            return;
+        };
+        // `tag_name` is `v0.13.0`; strip the `v` to compare with
+        // `CARGO_PKG_VERSION`.
+        let latest = tag.trim_start_matches('v');
+        if is_newer_semver(latest, &current) {
+            let _ = tx.send(tag.to_string());
+        }
+    });
+    rx
+}
+
+/// Compare two `X.Y.Z` version strings. Returns true when `a` is
+/// strictly newer than `b`. Unparseable components are treated as 0
+/// — good enough for tag comparison; never used for security checks.
+fn is_newer_semver(a: &str, b: &str) -> bool {
+    let parse = |s: &str| -> (u64, u64, u64) {
+        let mut parts = s.split('.');
+        let major = parts.next().and_then(|x| x.parse().ok()).unwrap_or(0);
+        let minor = parts.next().and_then(|x| x.parse().ok()).unwrap_or(0);
+        // Patch may have a pre-release tag glued on — strip it.
+        let patch_raw = parts.next().unwrap_or("0");
+        let patch = patch_raw
+            .split(|c: char| !c.is_ascii_digit())
+            .next()
+            .and_then(|x| x.parse().ok())
+            .unwrap_or(0);
+        (major, minor, patch)
+    };
+    parse(a) > parse(b)
+}
+
+/// Write panic info to a log file next to `data.json` so users can
+/// attach it to a bug report. Chains to the default panic hook so the
+/// usual stderr output + process-exit behavior still happens.
+fn install_panic_hook() {
+    let prev = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let log_path = dirs::data_local_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("rusty-requester")
+            .join("panic.log");
+        let _ = std::fs::create_dir_all(log_path.parent().unwrap_or(&log_path));
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let payload = format!(
+            "=== rusty-requester panic @ unix-ts {} ===\n\
+             version: {}\n\
+             info: {}\n\
+             backtrace:\n{}\n\n",
+            ts,
+            env!("CARGO_PKG_VERSION"),
+            info,
+            std::backtrace::Backtrace::force_capture()
+        );
+        // Append, never overwrite — multiple crashes in a session
+        // should all land in the same file in order.
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_path)
+        {
+            use std::io::Write;
+            let _ = f.write_all(payload.as_bytes());
+        }
+        eprintln!("rusty-requester: panic logged to {}", log_path.display());
+        prev(info);
+    }));
+}
+
 fn main() -> Result<(), eframe::Error> {
     // Cheap `--version` / `-V` flag so anyone (user or `install.sh`)
     // can confirm which build is actually on disk without opening the
@@ -1839,6 +1977,14 @@ fn main() -> Result<(), eframe::Error> {
             _ => {}
         }
     }
+
+    // Postmortem panic log — on any panic anywhere in the app, append
+    // location + message + backtrace to a file next to `data.json` so
+    // users can share it on a bug report. `save_state` runs on every
+    // edit, so the user's workspace is already persisted; this hook
+    // covers the diagnostic gap. Cheap (~0 overhead until a panic
+    // actually fires).
+    install_panic_hook();
 
     // Force NSApp into Regular activation policy BEFORE eframe starts the
     // macOS run loop. Once NSApp.run has begun processing events, macOS
