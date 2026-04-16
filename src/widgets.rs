@@ -324,6 +324,7 @@ pub fn render_single_tab(
     is_active: bool,
     is_draft: bool,
     is_pinned: bool,
+    is_dirty: bool,
 ) -> TabAction {
     let tab_height = 32.0;
     let tab_width = 180.0;
@@ -399,8 +400,11 @@ pub fn render_single_tab(
         let name_x = pad_left + method_slot_w;
         let name_color = if is_active { text() } else { muted() };
         let name_font = egui::FontId::new(12.0, egui::FontFamily::Proportional);
-        // Reserve space for close button and (optional) unsaved dot.
-        let right_reserve: f32 = if is_draft { 40.0 } else { 28.0 };
+        // Reserve space for close button and (optional) status dot —
+        // drafts get an amber dot, modified saved requests get a
+        // subtler hollow ring. Both need the same 12px slot.
+        let has_indicator = is_draft || is_dirty;
+        let right_reserve: f32 = if has_indicator { 40.0 } else { 28.0 };
         let max_w = (rect.right() - right_reserve) - name_x;
         let display = elide(name, max_w.max(0.0), &name_font, ui);
         ui.painter().text(
@@ -411,12 +415,21 @@ pub fn render_single_tab(
             name_color,
         );
 
-        // Draft / unsaved indicator — small amber dot between the name
-        // and the close button, matching the Postman convention.
+        // Indicator dot between the name and close button, Postman-style.
+        //   - Draft (unsaved request)    → solid amber  (attention)
+        //   - Saved request, modified    → hollow amber (edited since
+        //     opened; has already auto-saved to disk)
         if is_draft {
             let dot_x = rect.right() - 30.0;
             ui.painter()
                 .circle_filled(egui::pos2(dot_x, mid_y), 3.5, C_ORANGE);
+        } else if is_dirty {
+            let dot_x = rect.right() - 30.0;
+            ui.painter().circle_stroke(
+                egui::pos2(dot_x, mid_y),
+                3.5,
+                egui::Stroke::new(1.5, C_ORANGE),
+            );
         }
     }
 
@@ -462,6 +475,7 @@ pub fn render_single_tab(
     let tip_name = name.to_string();
     let tip_url = url.to_string();
     let tip_is_draft = is_draft;
+    let tip_is_dirty = is_dirty;
     resp.clone().on_hover_ui(move |ui| {
         ui.set_max_width(360.0);
         ui.label(
@@ -485,6 +499,14 @@ pub fn render_single_tab(
             ui.add_space(4.0);
             ui.label(
                 egui::RichText::new("● Unsaved draft")
+                    .color(C_ORANGE)
+                    .size(11.0)
+                    .strong(),
+            );
+        } else if tip_is_dirty {
+            ui.add_space(4.0);
+            ui.label(
+                egui::RichText::new("○ Modified since opened")
                     .color(C_ORANGE)
                     .size(11.0)
                     .strong(),
