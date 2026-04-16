@@ -143,6 +143,16 @@ All edits auto-save to a single local JSON file — nothing leaves your machine:
 - **Linux:** `~/.local/share/rusty-requester/data.json`
 - **Windows:** `%LOCALAPPDATA%\rusty-requester\data.json`
 
+> **Security note:** `data.json` is a plaintext file holding your
+> requests **and any tokens / passwords you put into Auth or
+> Environment variables**. Rusty Requester trusts local disk
+> permissions to protect it — `0600` on Unix by default because it
+> lives under your home directory. Don't commit `data.json` to a
+> repo, don't share it with anyone you wouldn't share your tokens
+> with, and consider symlinking it onto an encrypted volume if your
+> setup warrants it. Native-keychain integration is on the post-1.0
+> roadmap.
+
 ### Useful shortcuts
 
 **⌘⏎** Send · **⌘N** New request · **⌘W** Close tab · **⌘D** Duplicate tab · **⌘K** Focus search · **⌘P** Command palette · **⇧⌘P** Actions palette · **F2** Rename · **Esc** Dismiss modals
