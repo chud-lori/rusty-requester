@@ -55,7 +55,7 @@ impl ApiClient {
                                 egui::RichText::new("Rusty Requester")
                                     .size(22.0)
                                     .strong()
-                                    .color(C_TEXT),
+                                    .color(text()),
                             );
                             ui.add_space(4.0);
                             ui.label(
@@ -63,7 +63,7 @@ impl ApiClient {
                                     "Pick a request from the sidebar, or create a new one.",
                                 )
                                 .size(13.0)
-                                .color(C_MUTED),
+                                .color(muted()),
                             );
                         });
                     });
@@ -74,7 +74,7 @@ impl ApiClient {
                     .inner_margin(egui::Margin {
                         // Tight left margin — sidebar ends here, we want central
                         // content to start right after without a visible dead
-                        // zone. The background layer paints C_BG underneath so
+                        // zone. The background layer paints bg() underneath so
                         // the tiny sliver between panels is invisible.
                         left: 10.0,
                         right: 16.0,
@@ -118,7 +118,7 @@ impl ApiClient {
                             let line_color = if handle_resp.hovered() || handle_resp.dragged() {
                                 C_ACCENT
                             } else {
-                                C_BORDER
+                                border()
                             };
                             ui.painter().line_segment(
                                 [
@@ -143,13 +143,20 @@ impl ApiClient {
     fn render_tabs_bar(&mut self, ui: &mut egui::Ui) {
         // Always render the tabs bar — the "+" button lives here so users
         // can create a new unsaved draft request at any time.
+        //
+        // Bg matches the page (not `panel_dark`) — Postman-style flat
+        // chrome. Active tab fill alone signals "selected", no darker
+        // horizontal seam between the tab strip and the content below.
         let bar_height = 38.0;
         egui::Frame::none()
-            .fill(C_PANEL_DARK)
+            .fill(crate::theme::bg())
             .inner_margin(egui::Margin {
                 left: 10.0,
                 right: 10.0,
-                top: 4.0,
+                // macOS: extra top padding so the tab strip clears the
+                // traffic-light window controls when the title bar is
+                // merged into the chrome.
+                top: if cfg!(target_os = "macos") { 28.0 } else { 4.0 },
                 bottom: 0.0,
             })
             .show(ui, |ui| {
@@ -167,86 +174,102 @@ impl ApiClient {
 
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 4.0;
-                    egui::ScrollArea::horizontal()
-                        .id_salt("tabs_bar_scroll")
-                        .auto_shrink([false, false])
-                        .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
-                        .show(ui, |ui| {
-                            ui.horizontal(|ui| {
-                                ui.spacing_mut().item_spacing.x = 4.0;
-                                let tabs_snapshot = self.state.open_tabs.clone();
-                                for (i, tab) in tabs_snapshot.iter().enumerate() {
-                                    let info = find_request_info(
-                                        &self.state.folders,
-                                        &self.state.drafts,
-                                        &tab.folder_path,
-                                        &tab.request_id,
-                                    );
-                                    let (method, name, url) = info.clone().unwrap_or((
-                                        HttpMethod::GET,
-                                        "(missing)".to_string(),
-                                        String::new(),
-                                    ));
-                                    let is_active = self.selected_request_id.as_deref()
-                                        == Some(tab.request_id.as_str());
+                    // Reserve the right-side slot for a pinned `+` button
+                    // so it's always visible, even when tabs overflow.
+                    // The tab ScrollArea takes `available_width - plus_slot`
+                    // and scrolls within that; the `+` sits outside the
+                    // scroll area. Natural affordance that tabs scroll
+                    // past the pinned button, no gradient needed.
+                    let plus_slot = 36.0;
+                    let scroll_width = (ui.available_width() - plus_slot).max(80.0);
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(scroll_width, bar_height),
+                        egui::Layout::left_to_right(egui::Align::Center),
+                        |ui| {
+                            egui::ScrollArea::horizontal()
+                                .id_salt("tabs_bar_scroll")
+                                .auto_shrink([false, false])
+                                .scroll_bar_visibility(
+                                    egui::scroll_area::ScrollBarVisibility::AlwaysHidden,
+                                )
+                                .show(ui, |ui| {
+                                    ui.horizontal(|ui| {
+                                        ui.spacing_mut().item_spacing.x = 4.0;
+                                        let tabs_snapshot = self.state.open_tabs.clone();
+                                        for (i, tab) in tabs_snapshot.iter().enumerate() {
+                                            let info = find_request_info(
+                                                &self.state.folders,
+                                                &self.state.drafts,
+                                                &tab.folder_path,
+                                                &tab.request_id,
+                                            );
+                                            let (method, name, url) = info.clone().unwrap_or((
+                                                HttpMethod::GET,
+                                                "(missing)".to_string(),
+                                                String::new(),
+                                            ));
+                                            let is_active = self.selected_request_id.as_deref()
+                                                == Some(tab.request_id.as_str());
 
-                                    let action = render_single_tab(
-                                        ui,
-                                        i,
-                                        &method,
-                                        &name,
-                                        &url,
-                                        is_active,
-                                        tab.is_draft(),
-                                        tab.pinned,
-                                    );
-                                    match action {
-                                        TabAction::Activate => activate = Some(i),
-                                        TabAction::Close => close = Some(i),
-                                        TabAction::CloseOthers => close_others = Some(i),
-                                        TabAction::CloseAll => close_all = true,
-                                        TabAction::SaveDraft => save_draft = Some(i),
-                                        TabAction::Duplicate => duplicate = Some(i),
-                                        TabAction::TogglePin => toggle_pin = Some(i),
-                                        TabAction::None => {}
-                                    }
-                                }
+                                            let action = render_single_tab(
+                                                ui,
+                                                i,
+                                                &method,
+                                                &name,
+                                                &url,
+                                                is_active,
+                                                tab.is_draft(),
+                                                tab.pinned,
+                                            );
+                                            match action {
+                                                TabAction::Activate => activate = Some(i),
+                                                TabAction::Close => close = Some(i),
+                                                TabAction::CloseOthers => close_others = Some(i),
+                                                TabAction::CloseAll => close_all = true,
+                                                TabAction::SaveDraft => save_draft = Some(i),
+                                                TabAction::Duplicate => duplicate = Some(i),
+                                                TabAction::TogglePin => toggle_pin = Some(i),
+                                                TabAction::None => {}
+                                            }
+                                        }
+                                    });
+                                });
+                        },
+                    );
 
-                                // "+" button — creates a new Untitled draft.
-                                ui.add_space(2.0);
-                                let (plus_rect, plus_resp) = ui.allocate_exact_size(
-                                    egui::vec2(30.0, 28.0),
-                                    egui::Sense::click(),
-                                );
-                                if ui.is_rect_visible(plus_rect) {
-                                    let hovered = plus_resp.hovered();
-                                    // Neutral hover — subtle elevated grey,
-                                    // matching Postman's "new tab" button.
-                                    if hovered {
-                                        ui.painter().rect_filled(
-                                            plus_rect,
-                                            egui::Rounding::same(4.0),
-                                            C_ELEVATED,
-                                        );
-                                    }
-                                    let color = if hovered { C_TEXT } else { C_MUTED };
-                                    ui.painter().text(
-                                        plus_rect.center(),
-                                        egui::Align2::CENTER_CENTER,
-                                        "+",
-                                        egui::FontId::new(18.0, egui::FontFamily::Proportional),
-                                        color,
-                                    );
-                                }
-                                if plus_resp
-                                    .on_hover_cursor(egui::CursorIcon::PointingHand)
-                                    .on_hover_text("New request (unsaved)")
-                                    .clicked()
-                                {
-                                    new_draft = true;
-                                }
-                            });
-                        });
+                    // Pinned `+` outside the ScrollArea — always visible
+                    // regardless of how many tabs are open.
+                    let (plus_rect, plus_resp) =
+                        ui.allocate_exact_size(egui::vec2(30.0, 28.0), egui::Sense::click());
+                    if ui.is_rect_visible(plus_rect) {
+                        let hovered = plus_resp.hovered();
+                        if hovered {
+                            ui.painter().rect_filled(
+                                plus_rect,
+                                egui::Rounding::same(4.0),
+                                crate::theme::elevated(),
+                            );
+                        }
+                        let color = if hovered {
+                            crate::theme::text()
+                        } else {
+                            crate::theme::muted()
+                        };
+                        ui.painter().text(
+                            plus_rect.center(),
+                            egui::Align2::CENTER_CENTER,
+                            "+",
+                            egui::FontId::new(18.0, egui::FontFamily::Proportional),
+                            color,
+                        );
+                    }
+                    if plus_resp
+                        .on_hover_cursor(egui::CursorIcon::PointingHand)
+                        .on_hover_text("New request (unsaved)")
+                        .clicked()
+                    {
+                        new_draft = true;
+                    }
                 });
 
                 if let Some(i) = activate {
@@ -290,10 +313,10 @@ impl ApiClient {
     /// Open the "Save to folder" modal for the draft at tab index `idx`.
     fn render_url_bar(&mut self, ui: &mut egui::Ui) {
         egui::Frame::none()
-            .fill(C_PANEL)
+            .fill(bg())
             .inner_margin(12.0)
             .rounding(10.0)
-            .stroke(egui::Stroke::new(1.0, C_BORDER))
+            .stroke(egui::Stroke::new(1.0, border()))
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
                     let mc = method_color(&self.editing_method);
@@ -420,7 +443,7 @@ impl ApiClient {
                     if ui
                         .add(
                             egui::Button::new(egui::RichText::new("</> Code").size(12.0))
-                                .fill(C_BORDER)
+                                .fill(border())
                                 .min_size(egui::vec2(74.0, 28.0)),
                         )
                         .on_hover_cursor(egui::CursorIcon::PointingHand)
@@ -508,10 +531,10 @@ impl ApiClient {
         // (render_central allocates the request section with a fixed
         // height so the user can drag-resize the split).
         egui::Frame::none()
-            .fill(C_PANEL)
+            .fill(bg())
             .inner_margin(12.0)
             .rounding(10.0)
-            .stroke(egui::Stroke::new(1.0, C_BORDER))
+            .stroke(egui::Stroke::new(1.0, border()))
             .show(ui, |ui| {
                 let avail = ui.available_height();
                 egui::ScrollArea::vertical()
@@ -558,7 +581,7 @@ impl ApiClient {
         };
         let mut new_mode = current_mode;
         ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("Body type").size(11.0).color(C_MUTED));
+            ui.label(egui::RichText::new("Body type").size(11.0).color(muted()));
             for &m in &[
                 BodyMode::Raw,
                 BodyMode::FormUrlEncoded,
@@ -607,7 +630,7 @@ impl ApiClient {
                 }
                 ui.add_space(8.0);
                 if ui
-                    .link(egui::RichText::new("Minify").size(11.5).color(C_MUTED))
+                    .link(egui::RichText::new("Minify").size(11.5).color(muted()))
                     .on_hover_cursor(egui::CursorIcon::PointingHand)
                     .on_hover_text("Collapse JSON to one line")
                     .clicked()
@@ -620,7 +643,7 @@ impl ApiClient {
                 } else {
                     format!("{} bytes", self.editing_body.len())
                 };
-                ui.label(egui::RichText::new(size_label).size(11.0).color(C_MUTED))
+                ui.label(egui::RichText::new(size_label).size(11.0).color(muted()))
                     .on_hover_text(
                         "Size in UTF-8 bytes — exactly what goes on the wire.\n\
                      ASCII chars are 1 byte each; accented / non-Latin chars \
@@ -710,7 +733,7 @@ impl ApiClient {
                 "x-www-form-urlencoded fields"
             })
             .size(11.0)
-            .color(C_MUTED),
+            .color(muted()),
         );
         ui.add_space(4.0);
         // Take ownership of the inner Vec<KvRow>, render the table, write back.
@@ -737,7 +760,7 @@ impl ApiClient {
         ui.label(
             egui::RichText::new("Sent as JSON `{ query, variables }` with application/json.")
                 .size(11.0)
-                .color(C_MUTED),
+                .color(muted()),
         );
         ui.add_space(4.0);
 
@@ -749,7 +772,7 @@ impl ApiClient {
             egui::RichText::new("Query")
                 .size(11.0)
                 .strong()
-                .color(C_TEXT),
+                .color(text()),
         );
         if ui
             .add_sized(
@@ -770,7 +793,7 @@ impl ApiClient {
             egui::RichText::new("Variables (JSON)")
                 .size(11.0)
                 .strong()
-                .color(C_TEXT),
+                .color(text()),
         );
         let mut vars = match &self.editing_body_ext {
             Some(BodyExt::GraphQL { variables }) => variables.clone(),
@@ -796,7 +819,7 @@ impl ApiClient {
         ui.label(
             egui::RichText::new("Cookies are merged into a Cookie header on send.")
                 .size(11.0)
-                .color(C_MUTED),
+                .color(muted()),
         );
         ui.add_space(4.0);
         let changed = render_kv_table(ui, "Cookies", &mut self.editing_cookies, false);
@@ -860,7 +883,7 @@ impl ApiClient {
             Auth::None => {
                 ui.label(
                     egui::RichText::new("No authentication will be sent.")
-                        .color(C_MUTED)
+                        .color(muted())
                         .size(12.0),
                 );
             }
@@ -886,11 +909,11 @@ impl ApiClient {
                         egui::RichText::new("Decoded JWT")
                             .size(11.0)
                             .strong()
-                            .color(C_MUTED),
+                            .color(muted()),
                     );
                     ui.add_space(4.0);
                     egui::CollapsingHeader::new(
-                        egui::RichText::new("Header").color(C_TEXT).size(12.5),
+                        egui::RichText::new("Header").color(text()).size(12.5),
                     )
                     .default_open(true)
                     .show(ui, |ui| {
@@ -904,7 +927,7 @@ impl ApiClient {
                         );
                     });
                     egui::CollapsingHeader::new(
-                        egui::RichText::new("Payload").color(C_TEXT).size(12.5),
+                        egui::RichText::new("Payload").color(text()).size(12.5),
                     )
                     .default_open(true)
                     .show(ui, |ui| {
@@ -922,7 +945,7 @@ impl ApiClient {
                             "Signature is not verified — we just base64-decode the header and payload.",
                         )
                         .size(10.5)
-                        .color(C_MUTED),
+                        .color(muted()),
                     );
                 }
             }
@@ -1020,7 +1043,7 @@ impl ApiClient {
                     .map(|d| d.as_secs() as i64)
                     .unwrap_or(0);
                 let (status_text, status_color) = if s.access_token.is_empty() {
-                    ("No token yet — click Get New Token", C_MUTED)
+                    ("No token yet — click Get New Token", muted())
                 } else if let Some(exp) = s.expires_at {
                     let secs_left = exp - now;
                     if secs_left <= 0 {
@@ -1073,7 +1096,7 @@ impl ApiClient {
                 }
                 if let Some(msg) = flow_status {
                     ui.add_space(4.0);
-                    ui.label(egui::RichText::new(msg).color(C_MUTED).size(11.0));
+                    ui.label(egui::RichText::new(msg).color(muted()).size(11.0));
                 }
                 // `start_flow` is handled after the match ends (below)
                 // so we don't hold `&mut self.editing_auth` across the
@@ -1087,14 +1110,14 @@ impl ApiClient {
                     ui.label(
                         egui::RichText::new("Access token (stored in data.json)")
                             .size(10.5)
-                            .color(C_MUTED),
+                            .color(muted()),
                     );
                     // Masked preview — show first + last 8 chars.
                     let preview = mask_token(&s.access_token);
                     ui.label(
                         egui::RichText::new(preview)
                             .font(egui::FontId::monospace(11.5))
-                            .color(C_TEXT),
+                            .color(text()),
                     );
                 }
             }
@@ -1117,13 +1140,13 @@ impl ApiClient {
             egui::RichText::new("EXTRACTORS")
                 .size(10.5)
                 .strong()
-                .color(C_MUTED),
+                .color(muted()),
         );
         ui.add_space(3.0);
         ui.label(
             egui::RichText::new("Pull values from the response into environment variables.")
                 .size(11.5)
-                .color(C_MUTED),
+                .color(muted()),
         );
         ui.add_space(2.0);
         ui.label(
@@ -1131,7 +1154,7 @@ impl ApiClient {
                 "Body path: dot + bracket syntax, e.g. `data.token` or `items[0].id`.",
             )
             .size(11.0)
-            .color(C_MUTED),
+            .color(muted()),
         );
         ui.add_space(8.0);
 
@@ -1161,11 +1184,11 @@ impl ApiClient {
 
         ui.horizontal(|ui| {
             ui.add_space(cb_w + pad);
-            ui.label(egui::RichText::new("VARIABLE").size(10.0).color(C_MUTED));
+            ui.label(egui::RichText::new("VARIABLE").size(10.0).color(muted()));
             ui.add_space(var_w - 46.0);
-            ui.label(egui::RichText::new("SOURCE").size(10.0).color(C_MUTED));
+            ui.label(egui::RichText::new("SOURCE").size(10.0).color(muted()));
             ui.add_space(src_w - 36.0);
-            ui.label(egui::RichText::new("EXPRESSION").size(10.0).color(C_MUTED));
+            ui.label(egui::RichText::new("EXPRESSION").size(10.0).color(muted()));
         });
         ui.add_space(2.0);
         ui.separator();
@@ -1185,7 +1208,7 @@ impl ApiClient {
                 }
                 ui.add_space(pad);
 
-                let color = if ex.enabled { C_TEXT } else { C_MUTED };
+                let color = if ex.enabled { text() } else { muted() };
                 if ui
                     .add_sized(
                         [var_w, row_h],
@@ -1285,7 +1308,7 @@ impl ApiClient {
             egui::RichText::new("ASSERTIONS")
                 .size(10.5)
                 .strong()
-                .color(C_MUTED),
+                .color(muted()),
         );
         ui.add_space(3.0);
         ui.label(
@@ -1294,7 +1317,7 @@ impl ApiClient {
                  same dot/bracket path as Extractors.",
             )
             .size(11.5)
-            .color(C_MUTED),
+            .color(muted()),
         );
         ui.add_space(8.0);
 
@@ -1337,13 +1360,13 @@ impl ApiClient {
 
         ui.horizontal(|ui| {
             ui.add_space(dot_w + cb_w + pad * 2.0);
-            ui.label(egui::RichText::new("SOURCE").size(10.0).color(C_MUTED));
+            ui.label(egui::RichText::new("SOURCE").size(10.0).color(muted()));
             ui.add_space(src_w - 36.0);
-            ui.label(egui::RichText::new("EXPRESSION").size(10.0).color(C_MUTED));
+            ui.label(egui::RichText::new("EXPRESSION").size(10.0).color(muted()));
             ui.add_space(expr_w - 60.0);
-            ui.label(egui::RichText::new("OP").size(10.0).color(C_MUTED));
+            ui.label(egui::RichText::new("OP").size(10.0).color(muted()));
             ui.add_space(op_w - 6.0);
-            ui.label(egui::RichText::new("EXPECTED").size(10.0).color(C_MUTED));
+            ui.label(egui::RichText::new("EXPECTED").size(10.0).color(muted()));
         });
         ui.add_space(2.0);
         ui.separator();
@@ -1367,7 +1390,7 @@ impl ApiClient {
                         Some(AssertionResult::Pass) => egui::Color32::from_rgb(130, 200, 120),
                         Some(AssertionResult::Fail(_)) => C_RED,
                         Some(AssertionResult::Error(_)) => C_ORANGE,
-                        None => C_BORDER,
+                        None => border(),
                     };
                     ui.painter().circle_filled(rect.center(), 4.0, color);
                     if let Some(r) = &result {
@@ -1389,7 +1412,7 @@ impl ApiClient {
                 }
                 ui.add_space(pad);
 
-                let color = if asr.enabled { C_TEXT } else { C_MUTED };
+                let color = if asr.enabled { text() } else { muted() };
 
                 // Source picker
                 egui::ComboBox::from_id_salt(id_salt.with((i, "src")))
@@ -1538,7 +1561,7 @@ impl ApiClient {
                             egui::RichText::new(&folder_snapshot.name)
                                 .size(26.0)
                                 .strong()
-                                .color(C_TEXT),
+                                .color(text()),
                         );
                         ui.add_space(6.0);
 
@@ -1550,7 +1573,7 @@ impl ApiClient {
                             sub_count,
                             if sub_count == 1 { "" } else { "s" },
                         );
-                        ui.label(egui::RichText::new(stats).size(12.5).color(C_MUTED));
+                        ui.label(egui::RichText::new(stats).size(12.5).color(muted()));
                         ui.add_space(16.0);
 
                         // Description — editable multiline field. Auto-
@@ -1559,7 +1582,7 @@ impl ApiClient {
                             egui::RichText::new("DESCRIPTION")
                                 .size(10.5)
                                 .strong()
-                                .color(C_MUTED),
+                                .color(muted()),
                         );
                         ui.add_space(4.0);
                         let desc_resp = ui.add(
@@ -1589,7 +1612,7 @@ impl ApiClient {
                                 egui::RichText::new("REQUESTS")
                                     .size(10.5)
                                     .strong()
-                                    .color(C_MUTED),
+                                    .color(muted()),
                             );
                             ui.add_space(6.0);
                             let path = folder_path_from_root(&self.state.folders, &folder_id)
@@ -1605,7 +1628,7 @@ impl ApiClient {
                                         ui.painter().rect_filled(
                                             rect,
                                             egui::Rounding::same(5.0),
-                                            C_ELEVATED,
+                                            elevated(),
                                         );
                                     }
                                     ui.painter().text(
@@ -1620,7 +1643,7 @@ impl ApiClient {
                                         egui::Align2::LEFT_CENTER,
                                         &req.name,
                                         egui::FontId::new(12.5, egui::FontFamily::Proportional),
-                                        C_TEXT,
+                                        text(),
                                     );
                                 }
                                 let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
@@ -1635,7 +1658,7 @@ impl ApiClient {
                                      Right-click it in the sidebar to add one.",
                                 )
                                 .size(12.0)
-                                .color(C_MUTED)
+                                .color(muted())
                                 .italics(),
                             );
                         }

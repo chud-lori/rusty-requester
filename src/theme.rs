@@ -9,7 +9,6 @@ use eframe::egui;
 // visible seam between them. `C_PANEL_DARK` stays a shade lower for
 // sunken surfaces (response body frame, code editors).
 pub const C_BG: egui::Color32 = egui::Color32::from_rgb(22, 24, 29); // #16181D app bg
-pub const C_PANEL: egui::Color32 = egui::Color32::from_rgb(22, 24, 29); // == C_BG, on purpose
 pub const C_PANEL_DARK: egui::Color32 = egui::Color32::from_rgb(15, 16, 20); // #0F1014 sunken
 pub const C_ELEVATED: egui::Color32 = egui::Color32::from_rgb(42, 45, 52); // #2A2D34 hover / active row
 pub const C_BORDER: egui::Color32 = egui::Color32::from_rgb(52, 55, 63); // #34373F subtle divider
@@ -19,7 +18,7 @@ pub const C_GREEN: egui::Color32 = egui::Color32::from_rgb(134, 172, 113); // #8
 pub const C_ORANGE: egui::Color32 = egui::Color32::from_rgb(245, 158, 11); // #F59E0B amber — POST
 pub const C_PINK: egui::Color32 = egui::Color32::from_rgb(183, 65, 14); // #B7410E deep rust — PUT
 pub const C_RED: egui::Color32 = egui::Color32::from_rgb(220, 38, 38); // #DC2626 crimson — DELETE / errors
-pub const C_MUTED: egui::Color32 = egui::Color32::from_rgb(126, 131, 145); // #7E8391 neutral muted text
+pub const C_MUTED: egui::Color32 = egui::Color32::from_rgb(143, 148, 162); // #8F94A2 neutral muted text (WCAG AA ~5.3:1 on C_BG)
 pub const C_TEXT: egui::Color32 = egui::Color32::from_rgb(224, 226, 232); // #E0E2E8 neutral light
 pub const C_HINT: egui::Color32 = egui::Color32::from_rgb(80, 84, 95); // #50545F dim placeholder
 
@@ -29,26 +28,82 @@ pub fn hint(text: &str) -> egui::RichText {
     egui::RichText::new(text).color(C_HINT)
 }
 
+/// Light-mode versions of the method colors, picked for ~4.5:1+
+/// contrast against the light palette bg (#F6F7F9). The dark-mode
+/// originals are ~2–3:1 on a light surface and unreadable; these
+/// darker variants stay chromatically similar (green stays green,
+/// amber stays amber, etc.) but readable. Matches the pattern
+/// Postman uses in its light theme.
+const C_GREEN_LIGHT: egui::Color32 = egui::Color32::from_rgb(47, 110, 61); //  #2F6E3D
+const C_ORANGE_LIGHT: egui::Color32 = egui::Color32::from_rgb(166, 98, 12); //  #A6620C
+const C_PINK_LIGHT: egui::Color32 = egui::Color32::from_rgb(147, 55, 18); //  #933712
+const C_RED_LIGHT: egui::Color32 = egui::Color32::from_rgb(168, 31, 31); //  #A81F1F
+const C_PURPLE_LIGHT: egui::Color32 = egui::Color32::from_rgb(130, 82, 40); //  #825228
+
 pub fn method_color(m: &HttpMethod) -> egui::Color32 {
+    let dark_mode = matches!(ACTIVE_THEME.load(std::sync::atomic::Ordering::Relaxed), 0);
     match m {
-        HttpMethod::GET => C_GREEN,    // patina green — safe read
-        HttpMethod::POST => C_ORANGE,  // amber gold — create
-        HttpMethod::PUT => C_PINK,     // deep rust — update
-        HttpMethod::DELETE => C_RED,   // crimson — destructive
-        HttpMethod::PATCH => C_PURPLE, // burnt sienna — partial
-        _ => C_MUTED,                  // warm grey — HEAD / OPTIONS
+        HttpMethod::GET => {
+            if dark_mode {
+                C_GREEN
+            } else {
+                C_GREEN_LIGHT
+            }
+        }
+        HttpMethod::POST => {
+            if dark_mode {
+                C_ORANGE
+            } else {
+                C_ORANGE_LIGHT
+            }
+        }
+        HttpMethod::PUT => {
+            if dark_mode {
+                C_PINK
+            } else {
+                C_PINK_LIGHT
+            }
+        }
+        HttpMethod::DELETE => {
+            if dark_mode {
+                C_RED
+            } else {
+                C_RED_LIGHT
+            }
+        }
+        HttpMethod::PATCH => {
+            if dark_mode {
+                C_PURPLE
+            } else {
+                C_PURPLE_LIGHT
+            }
+        }
+        _ => muted(), // theme-aware neutral for HEAD / OPTIONS
     }
 }
 
 pub fn status_color(status: &str) -> egui::Color32 {
+    let dark_mode = matches!(ACTIVE_THEME.load(std::sync::atomic::Ordering::Relaxed), 0);
     if status.starts_with('2') {
-        C_GREEN
+        if dark_mode {
+            C_GREEN
+        } else {
+            C_GREEN_LIGHT
+        }
     } else if status.starts_with('3') {
-        C_ORANGE
+        if dark_mode {
+            C_ORANGE
+        } else {
+            C_ORANGE_LIGHT
+        }
     } else if status.starts_with('4') || status.starts_with('5') {
-        C_RED
+        if dark_mode {
+            C_RED
+        } else {
+            C_RED_LIGHT
+        }
     } else {
-        C_MUTED
+        muted()
     }
 }
 
@@ -83,16 +138,22 @@ pub const DARK_PALETTE: Palette = Palette {
     muted: C_MUTED,
 };
 
-/// Light palette — inverted L-values of the dark palette, tuned for
-/// readability. Off-white background (`#F6F7F9`) instead of pure
-/// white to avoid harshness; muted grey text (`#2E3138`) for body.
+/// Light palette — warm gray canvas (no pure whites). Initial
+/// `#F6F7F9` was too bright and clinical; `#EBEDF1` keeps surfaces
+/// obviously light but doesn't glare in a dim room.
+///   * `bg`         #EBEDF1 — app canvas
+///   * `panel_dark` #E0E3E9 — slightly sunken (response body, code)
+///   * `elevated`   #D1D6DE — inputs / hover / active rows
+///   * `border`     #BEC4CE — divider lines
+///   * `text`       #2E3138 — body text, ~11:1 contrast on bg
+///   * `muted`      #5C6270 — secondary labels, ~5.3:1 on bg
 pub const LIGHT_PALETTE: Palette = Palette {
-    bg: egui::Color32::from_rgb(246, 247, 249),
-    panel_dark: egui::Color32::from_rgb(237, 239, 243),
-    elevated: egui::Color32::from_rgb(225, 228, 234),
-    border: egui::Color32::from_rgb(200, 204, 212),
+    bg: egui::Color32::from_rgb(235, 237, 241),
+    panel_dark: egui::Color32::from_rgb(224, 227, 233),
+    elevated: egui::Color32::from_rgb(209, 214, 222),
+    border: egui::Color32::from_rgb(190, 196, 206),
     text: egui::Color32::from_rgb(46, 49, 56),
-    muted: egui::Color32::from_rgb(103, 107, 115),
+    muted: egui::Color32::from_rgb(92, 98, 112),
 };
 
 pub fn palette_for(theme: Theme) -> Palette {
@@ -102,8 +163,79 @@ pub fn palette_for(theme: Theme) -> Palette {
     }
 }
 
+/// Active theme tracker — updated on every `apply_style` call,
+/// read by `active_palette()` so widgets can pull theme-aware
+/// colors without threading a `Theme` arg through every function.
+/// `0` = `Theme::Dark`, `1` = `Theme::Light` (default 0).
+///
+/// Why an atomic instead of passing `&Palette` everywhere: hundreds
+/// of widget call sites use `C_TEXT`/`C_MUTED`/`C_ELEVATED`
+/// directly. Threading theme through every render function would
+/// touch every file in `src/ui/`. A global read is O(1) atomic load,
+/// trivially correct, and keeps the call-site diff to one-token
+/// renames (`C_TEXT` → `text()`).
+static ACTIVE_THEME: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
+fn set_active_theme(theme: Theme) {
+    let val = match theme {
+        Theme::Dark => 0u8,
+        Theme::Light => 1u8,
+    };
+    ACTIVE_THEME.store(val, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn active_palette() -> Palette {
+    match ACTIVE_THEME.load(std::sync::atomic::Ordering::Relaxed) {
+        1 => LIGHT_PALETTE,
+        _ => DARK_PALETTE,
+    }
+}
+
+/// Theme-aware "text" color — the replacement for `C_TEXT` at call
+/// sites that should flip between themes.
+pub fn text() -> egui::Color32 {
+    active_palette().text
+}
+
+/// Theme-aware "muted" color — the replacement for `C_MUTED` at
+/// call sites that should flip between themes.
+pub fn muted() -> egui::Color32 {
+    active_palette().muted
+}
+
+/// Theme-aware panel / surface color. Replaces `C_BG` at sites
+/// that paint their own surface. Currently only used at a small
+/// number of sites (main panel floor, central panel); the `#[allow]`
+/// lets us keep the palette API shaped even when callers haven't
+/// migrated yet.
+#[allow(dead_code)]
+pub fn bg() -> egui::Color32 {
+    active_palette().bg
+}
+
+/// Theme-aware elevated-surface color (inputs, chips, hover rects).
+/// Replaces `C_ELEVATED` where the darker elevated surface should
+/// flip to a lighter one in light mode.
+pub fn elevated() -> egui::Color32 {
+    active_palette().elevated
+}
+
+/// Theme-aware border color. Replaces `C_BORDER`.
+pub fn border() -> egui::Color32 {
+    active_palette().border
+}
+
+/// Theme-aware sunken-surface color (code editor, response body
+/// frame). Replaces `C_PANEL_DARK`.
+pub fn panel_dark() -> egui::Color32 {
+    active_palette().panel_dark
+}
+
 pub fn apply_style(ctx: &egui::Context, theme: Theme) {
     use egui::{FontFamily, FontId, TextStyle};
+    // Record the active theme so widget code can pull theme-aware
+    // colors via `active_palette()` without threading `Theme` args.
+    set_active_theme(theme);
     let p = palette_for(theme);
     let mut style = (*ctx.style()).clone();
     style.visuals.window_fill = p.bg;
@@ -138,7 +270,12 @@ pub fn apply_style(ctx: &egui::Context, theme: Theme) {
     style.visuals.widgets.active.weak_bg_fill = p.border;
     style.visuals.widgets.active.bg_stroke = egui::Stroke::new(1.0, C_ACCENT);
     style.visuals.widgets.active.rounding = egui::Rounding::same(8.0);
-    style.visuals.widgets.open.bg_fill = p.border;
+    // `widgets.open.bg_fill` is what egui uses for the title-bar
+    // band on open Windows. Previously set to `p.border` which made
+    // the band darker than the window body — looked like a separate
+    // "header section" in light mode. Keep it aligned with the
+    // window body so the modal reads as a single surface.
+    style.visuals.widgets.open.bg_fill = p.bg;
     style.visuals.widgets.open.rounding = egui::Rounding::same(8.0);
     style.visuals.menu_rounding = egui::Rounding::same(10.0);
     style.visuals.window_rounding = egui::Rounding::same(12.0);

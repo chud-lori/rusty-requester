@@ -40,7 +40,7 @@ pub fn close_x_button(ui: &mut egui::Ui, hover_text: &str) -> egui::Response {
             ui.painter()
                 .rect_filled(rect, egui::Rounding::same(4.0), C_RED.linear_multiply(0.35));
         }
-        let color = if hovered { C_RED } else { C_MUTED };
+        let color = if hovered { C_RED } else { muted() };
         ui.painter().text(
             rect.center(),
             egui::Align2::CENTER_CENTER,
@@ -55,22 +55,17 @@ pub fn close_x_button(ui: &mut egui::Ui, hover_text: &str) -> egui::Response {
 
 pub fn tab_button<T: PartialEq + Copy>(ui: &mut egui::Ui, current: &mut T, value: T, label: &str) {
     let selected = *current == value;
-    let (text_color, text) = if selected {
-        (
-            C_ACCENT,
-            egui::RichText::new(label)
-                .color(C_ACCENT)
-                .strong()
-                .size(13.0),
-        )
+    // Active tab: brighter text (theme-aware) — not the accent. The
+    // accent goes on the underline only. Tinting text AND underline
+    // with the accent was at ~4:1 contrast on dark bg (below WCAG AA)
+    // and consistently felt cramped to users. VS Code / GitHub / Linear
+    // all leave active-tab text plain + colored indicator.
+    let rich = if selected {
+        egui::RichText::new(label).color(text()).strong().size(13.0)
     } else {
-        (
-            C_MUTED,
-            egui::RichText::new(label).color(C_MUTED).size(13.0),
-        )
+        egui::RichText::new(label).color(muted()).size(13.0)
     };
-    let _ = text_color;
-    let btn = egui::Button::new(text)
+    let btn = egui::Button::new(rich)
         .fill(egui::Color32::TRANSPARENT)
         .stroke(egui::Stroke::NONE)
         .rounding(egui::Rounding::same(6.0))
@@ -157,7 +152,7 @@ pub fn render_kv_table(
         egui::RichText::new(title)
             .size(11.0)
             .strong()
-            .color(C_MUTED),
+            .color(muted()),
     );
     ui.add_space(4.0);
 
@@ -185,12 +180,12 @@ pub fn render_kv_table(
 
     ui.horizontal(|ui| {
         ui.add_space(cb_w + cell_pad);
-        ui.label(egui::RichText::new("KEY").size(10.0).color(C_MUTED));
+        ui.label(egui::RichText::new("KEY").size(10.0).color(muted()));
         ui.add_space(key_w - 20.0);
-        ui.label(egui::RichText::new("VALUE").size(10.0).color(C_MUTED));
+        ui.label(egui::RichText::new("VALUE").size(10.0).color(muted()));
         if show_description {
             ui.add_space(val_w - 30.0);
-            ui.label(egui::RichText::new("DESCRIPTION").size(10.0).color(C_MUTED));
+            ui.label(egui::RichText::new("DESCRIPTION").size(10.0).color(muted()));
         }
     });
     ui.add_space(2.0);
@@ -199,7 +194,7 @@ pub fn render_kv_table(
             egui::pos2(ui.cursor().left(), ui.cursor().top()),
             egui::pos2(ui.cursor().left() + ui.available_width(), ui.cursor().top()),
         ],
-        egui::Stroke::new(1.0, C_BORDER.linear_multiply(0.6)),
+        egui::Stroke::new(1.0, border().linear_multiply(0.6)),
     );
     ui.add_space(4.0);
 
@@ -216,7 +211,7 @@ pub fn render_kv_table(
         let is_blank = row.is_blank();
         let is_last_blank = is_blank && i == row_count - 1;
         let bg = if is_last_blank {
-            C_PANEL_DARK.linear_multiply(0.6)
+            panel_dark().linear_multiply(0.6)
         } else {
             egui::Color32::TRANSPARENT
         };
@@ -236,7 +231,7 @@ pub fn render_kv_table(
                     }
                     ui.add_space(cell_pad);
 
-                    let text_color = if row.enabled { C_TEXT } else { C_MUTED };
+                    let text_color = if row.enabled { text() } else { muted() };
 
                     let key_resp = ui.add_sized(
                         [key_w, row_h],
@@ -339,12 +334,17 @@ pub fn render_single_tab(
     let mut action = TabAction::None;
 
     if ui.is_rect_visible(rect) {
-        let bg = if is_active {
-            C_BG
+        // Active tab has an elevated fill so it visibly "lifts" out
+        // of the flat tab strip (strip and content share `bg()`).
+        // Hovered inactives get a faint elevation too, but less
+        // saturated. Inactive = transparent so the strip bg shows
+        // through (matches Postman's flat chrome).
+        let tab_bg = if is_active {
+            elevated()
         } else if resp.hovered() {
-            C_ELEVATED
+            elevated().linear_multiply(0.5)
         } else {
-            C_PANEL
+            egui::Color32::TRANSPARENT
         };
         let rounding = egui::Rounding {
             nw: 8.0,
@@ -352,7 +352,7 @@ pub fn render_single_tab(
             sw: 0.0,
             se: 0.0,
         };
-        ui.painter().rect_filled(rect, rounding, bg);
+        ui.painter().rect_filled(rect, rounding, tab_bg);
 
         if is_active {
             let top = egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), 2.0));
@@ -397,7 +397,7 @@ pub fn render_single_tab(
         }
 
         let name_x = pad_left + method_slot_w;
-        let name_color = if is_active { C_TEXT } else { C_MUTED };
+        let name_color = if is_active { text() } else { muted() };
         let name_font = egui::FontId::new(12.0, egui::FontFamily::Proportional);
         // Reserve space for close button and (optional) unsaved dot.
         let right_reserve: f32 = if is_draft { 40.0 } else { 28.0 };
@@ -438,7 +438,7 @@ pub fn render_single_tab(
                 C_RED.linear_multiply(0.35),
             );
         }
-        let color = if hovered { C_RED } else { C_MUTED };
+        let color = if hovered { C_RED } else { muted() };
         ui.painter().text(
             close_rect.center(),
             egui::Align2::CENTER_CENTER,
@@ -468,18 +468,18 @@ pub fn render_single_tab(
             egui::RichText::new(&tip_name)
                 .size(13.0)
                 .strong()
-                .color(C_TEXT),
+                .color(text()),
         );
         ui.add_space(4.0);
         if tip_url.is_empty() {
             ui.label(
                 egui::RichText::new("(no URL)")
-                    .color(C_MUTED)
+                    .color(muted())
                     .size(11.0)
                     .italics(),
             );
         } else {
-            ui.label(egui::RichText::new(&tip_url).color(C_MUTED).size(11.0));
+            ui.label(egui::RichText::new(&tip_url).color(muted()).size(11.0));
         }
         if tip_is_draft {
             ui.add_space(4.0);
@@ -545,7 +545,7 @@ pub fn paint_folder_chevron(ui: &mut egui::Ui, openness: f32, response: &egui::R
     let p2 = center + rot(egui::vec2(r, 0.0));
     ui.painter().add(egui::Shape::convex_polygon(
         vec![p0, p1, p2],
-        C_MUTED,
+        muted(),
         egui::Stroke::NONE,
     ));
 }
@@ -574,10 +574,10 @@ pub fn icon_btn(ui: &mut egui::Ui, icon: &str, hover_text: &str) -> egui::Respon
     let size = egui::vec2(22.0, 20.0);
     let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::click());
     if ui.is_rect_visible(rect) {
-        let color = if resp.hovered() { C_TEXT } else { C_MUTED };
+        let color = if resp.hovered() { text() } else { muted() };
         if resp.hovered() {
             ui.painter()
-                .rect_filled(rect, egui::Rounding::same(4.0), C_ELEVATED);
+                .rect_filled(rect, egui::Rounding::same(4.0), elevated());
         }
         ui.painter().text(
             rect.center(),
@@ -633,7 +633,9 @@ pub fn count_matches(folders: &[Folder], q: &str) -> usize {
 /// than a chunky pill, scans as a tabbed toggle).
 pub fn body_view_pill(ui: &mut egui::Ui, current: &mut BodyView, value: BodyView, label: &str) {
     let is_active = *current == value;
-    let fg = if is_active { C_ACCENT } else { C_MUTED };
+    // Same rationale as `tab_button`: accent on underline only, text
+    // stays readable at full contrast.
+    let fg = if is_active { text() } else { muted() };
     let resp = ui
         .add(
             egui::Button::new(egui::RichText::new(label).size(11.5).color(fg).strong())
@@ -739,7 +741,7 @@ fn render_json_tree_inner(
             if ui.is_rect_visible(rect) {
                 if resp.hovered() {
                     ui.painter()
-                        .rect_filled(rect, egui::Rounding::same(3.0), C_ELEVATED);
+                        .rect_filled(rect, egui::Rounding::same(3.0), elevated());
                 }
                 let mut x = rect.left() + 16.0 * depth as f32 + 18.0;
                 let y = rect.center().y;
@@ -807,7 +809,7 @@ fn json_header_with_menu(
         };
         let head = egui::CollapsingHeader::new(
             egui::RichText::new(header_text)
-                .color(if key.is_empty() { C_MUTED } else { C_TEXT })
+                .color(if key.is_empty() { muted() } else { text() })
                 .font(egui::FontId::monospace(12.5)),
         )
         .id_salt(id)
@@ -866,7 +868,7 @@ fn json_header(
         };
         let head = egui::CollapsingHeader::new(
             egui::RichText::new(header_text)
-                .color(if key.is_empty() { C_MUTED } else { C_TEXT })
+                .color(if key.is_empty() { muted() } else { text() })
                 .font(egui::FontId::monospace(12.5)),
         )
         .id_salt(id)
@@ -881,8 +883,8 @@ fn json_leaf_style(v: &Value) -> (egui::Color32, String) {
         Value::String(s) => (egui::Color32::from_rgb(230, 219, 116), format!("\"{}\"", s)),
         Value::Number(n) => (egui::Color32::from_rgb(174, 129, 255), n.to_string()),
         Value::Bool(b) => (egui::Color32::from_rgb(249, 38, 114), b.to_string()),
-        Value::Null => (C_MUTED, "null".to_string()),
-        _ => (C_TEXT, v.to_string()),
+        Value::Null => (muted(), "null".to_string()),
+        _ => (text(), v.to_string()),
     }
 }
 
@@ -922,14 +924,14 @@ pub fn render_time_breakdown(
         ui.label(
             egui::RichText::new("Response Time")
                 .strong()
-                .color(C_TEXT)
+                .color(text())
                 .size(13.0),
         );
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.label(
                 egui::RichText::new(format!("{} ms", total_ms))
                     .strong()
-                    .color(C_TEXT)
+                    .color(text())
                     .size(13.0),
             );
         });
@@ -943,7 +945,7 @@ pub fn render_time_breakdown(
         ui.horizontal(|ui| {
             ui.add_sized(
                 egui::vec2(130.0, row_h),
-                egui::Label::new(egui::RichText::new(label).color(C_MUTED).size(12.0)),
+                egui::Label::new(egui::RichText::new(label).color(muted()).size(12.0)),
             );
             let (rect, _) =
                 ui.allocate_exact_size(egui::vec2(bar_total_w, row_h), egui::Sense::hover());
@@ -958,7 +960,7 @@ pub fn render_time_breakdown(
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.label(
                     egui::RichText::new(format!("{} ms", dur_ms))
-                        .color(C_MUTED)
+                        .color(muted())
                         .size(12.0),
                 );
             });
@@ -1001,7 +1003,7 @@ pub fn render_time_breakdown(
              high-level client doesn't expose them individually.",
         )
         .size(10.5)
-        .color(C_MUTED),
+        .color(muted()),
     );
 }
 
@@ -1041,12 +1043,12 @@ pub fn render_size_breakdown(
                 egui::Rounding::same(4.0),
                 accent.linear_multiply(0.25),
             );
-            ui.label(egui::RichText::new(title).strong().color(C_TEXT).size(13.0));
+            ui.label(egui::RichText::new(title).strong().color(text()).size(13.0));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.label(
                     egui::RichText::new(format_bytes(total))
                         .strong()
-                        .color(C_TEXT)
+                        .color(text())
                         .size(13.0),
                 );
             });
@@ -1054,22 +1056,22 @@ pub fn render_size_breakdown(
         ui.add_space(2.0);
         ui.horizontal(|ui| {
             ui.add_space(22.0);
-            ui.label(egui::RichText::new("Headers").color(C_MUTED).size(12.0));
+            ui.label(egui::RichText::new("Headers").color(muted()).size(12.0));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.label(
                     egui::RichText::new(format_bytes(headers))
-                        .color(C_MUTED)
+                        .color(muted())
                         .size(12.0),
                 );
             });
         });
         ui.horizontal(|ui| {
             ui.add_space(22.0);
-            ui.label(egui::RichText::new("Body").color(C_MUTED).size(12.0));
+            ui.label(egui::RichText::new("Body").color(muted()).size(12.0));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.label(
                     egui::RichText::new(format_bytes(body))
-                        .color(C_MUTED)
+                        .color(muted())
                         .size(12.0),
                 );
             });

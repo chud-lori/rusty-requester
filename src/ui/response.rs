@@ -19,7 +19,7 @@ impl ApiClient {
         if self.response_status.is_empty() {
             ui.label(
                 egui::RichText::new("No response yet")
-                    .color(C_MUTED)
+                    .color(muted())
                     .size(11.5)
                     .italics(),
             );
@@ -29,7 +29,7 @@ impl ApiClient {
             ui.add_space(4.0);
             ui.label(
                 egui::RichText::new("•")
-                    .color(C_MUTED.linear_multiply(0.7))
+                    .color(muted().linear_multiply(0.7))
                     .size(12.0),
             );
             ui.add_space(4.0);
@@ -44,7 +44,7 @@ impl ApiClient {
             let req_b = self.request_body_bytes;
             ui.label(
                 egui::RichText::new(format_bytes(total_resp_bytes))
-                    .color(C_MUTED)
+                    .color(muted())
                     .size(12.0),
             )
             .on_hover_ui(move |ui| {
@@ -59,7 +59,7 @@ impl ApiClient {
             let total = self.response_total_ms;
             ui.label(
                 egui::RichText::new(self.response_time.clone())
-                    .color(C_MUTED)
+                    .color(muted())
                     .size(12.0),
             )
             .on_hover_ui(move |ui| {
@@ -92,7 +92,7 @@ impl ApiClient {
                 ui.label(
                     egui::RichText::new(egui_phosphor::regular::BROADCAST)
                         .size(48.0)
-                        .color(C_MUTED.linear_multiply(0.6)),
+                        .color(muted().linear_multiply(0.6)),
                 );
                 ui.add_space(10.0);
                 ui.label(
@@ -102,7 +102,7 @@ impl ApiClient {
                         "No events received."
                     })
                     .size(13.0)
-                    .color(C_MUTED),
+                    .color(muted()),
                 );
             });
             return;
@@ -127,7 +127,7 @@ impl ApiClient {
                         let (rect, _) =
                             ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
                         ui.painter().circle_filled(rect.center(), 4.0, dot);
-                        ui.label(egui::RichText::new("Listening…").size(11.5).color(C_MUTED));
+                        ui.label(egui::RichText::new("Listening…").size(11.5).color(muted()));
                     });
                 }
             });
@@ -146,7 +146,7 @@ impl ApiClient {
                         "Send the request again to see a diff against this response.",
                     )
                     .size(13.0)
-                    .color(C_MUTED),
+                    .color(muted()),
                 );
             });
             return;
@@ -174,7 +174,7 @@ impl ApiClient {
             ui.add_space(12.0);
             ui.label(
                 egui::RichText::new("vs previous response")
-                    .color(C_MUTED)
+                    .color(muted())
                     .size(11.0),
             );
         });
@@ -183,7 +183,7 @@ impl ApiClient {
         if added == 0 && removed == 0 {
             ui.label(
                 egui::RichText::new("No differences — the response bodies are identical.")
-                    .color(C_MUTED)
+                    .color(muted())
                     .size(12.0),
             );
             return;
@@ -196,7 +196,7 @@ impl ApiClient {
             .show(ui, |ui| {
                 for line in &d {
                     let (prefix, fg, bg) = match line.op {
-                        crate::diff::Op::Same => (" ", C_TEXT, egui::Color32::TRANSPARENT),
+                        crate::diff::Op::Same => (" ", text(), egui::Color32::TRANSPARENT),
                         crate::diff::Op::Added => ("+", C_GREEN, C_GREEN.linear_multiply(0.12)),
                         crate::diff::Op::Removed => ("−", C_RED, C_RED.linear_multiply(0.12)),
                     };
@@ -238,10 +238,10 @@ impl ApiClient {
         let full_w = ui.available_width();
         let full_h = ui.available_height().max(160.0);
         egui::Frame::none()
-            .fill(C_PANEL_DARK)
+            .fill(panel_dark())
             .inner_margin(16.0)
             .rounding(10.0)
-            .stroke(egui::Stroke::new(1.0, C_BORDER))
+            .stroke(egui::Stroke::new(1.0, border()))
             .show(ui, |ui| {
                 let margin = 32.0;
                 ui.set_width(full_w - margin);
@@ -274,7 +274,7 @@ impl ApiClient {
                     );
                     ui.add_space(14.0);
 
-                    ui.label(egui::RichText::new(headline).size(14.5).color(C_MUTED));
+                    ui.label(egui::RichText::new(headline).size(14.5).color(muted()));
                     ui.add_space(12.0);
 
                     // Error detail pill: red-tinted bar with the
@@ -294,7 +294,7 @@ impl ApiClient {
                     } else {
                         "Double-check the URL, host reachability, TLS, and your proxy."
                     };
-                    ui.label(egui::RichText::new(hint).size(11.5).color(C_MUTED));
+                    ui.label(egui::RichText::new(hint).size(11.5).color(muted()));
                 });
             });
     }
@@ -490,10 +490,10 @@ impl ApiClient {
             let full_w = ui.available_width();
             let full_h = ui.available_height().max(120.0);
             egui::Frame::none()
-                .fill(C_PANEL_DARK)
+                .fill(panel_dark())
                 .inner_margin(16.0)
                 .rounding(10.0)
-                .stroke(egui::Stroke::new(1.0, C_BORDER))
+                .stroke(egui::Stroke::new(1.0, border()))
                 .show(ui, |ui| {
                     let margin = 32.0;
                     ui.set_width(full_w - margin);
@@ -506,13 +506,13 @@ impl ApiClient {
                         ui.label(
                             egui::RichText::new("Sending request…")
                                 .size(13.0)
-                                .color(C_TEXT),
+                                .color(text()),
                         );
                         ui.add_space(4.0);
                         ui.label(
                             egui::RichText::new("Press Esc to stay — response will appear here")
                                 .size(11.5)
-                                .color(C_MUTED),
+                                .color(muted()),
                         );
                     });
                 });
@@ -527,10 +527,10 @@ impl ApiClient {
             let full_w = ui.available_width();
             let full_h = ui.available_height().max(120.0);
             egui::Frame::none()
-                .fill(C_PANEL_DARK)
+                .fill(panel_dark())
                 .inner_margin(16.0)
                 .rounding(10.0)
-                .stroke(egui::Stroke::new(1.0, C_BORDER))
+                .stroke(egui::Stroke::new(1.0, border()))
                 .show(ui, |ui| {
                     // Force the Frame to expand to the full size of the
                     // response panel. Without these, the Frame shrinks to
@@ -545,19 +545,19 @@ impl ApiClient {
                         ui.label(
                             egui::RichText::new("No response yet")
                                 .size(15.0)
-                                .color(C_TEXT),
+                                .color(text()),
                         );
                         ui.add_space(8.0);
                         ui.label(
                             egui::RichText::new("Send a request to see the response here.")
                                 .size(12.5)
-                                .color(C_MUTED),
+                                .color(muted()),
                         );
                         ui.add_space(4.0);
                         ui.label(
                             egui::RichText::new("Shortcut: Cmd / Ctrl + Enter")
                                 .size(12.0)
-                                .color(C_MUTED),
+                                .color(muted()),
                         );
                     });
                 });
@@ -579,10 +579,10 @@ impl ApiClient {
         let full_w = ui.available_width();
         let full_h = ui.available_height().max(120.0);
         egui::Frame::none()
-            .fill(C_PANEL_DARK)
+            .fill(panel_dark())
             .inner_margin(12.0)
             .rounding(10.0)
-            .stroke(egui::Stroke::new(1.0, C_BORDER))
+            .stroke(egui::Stroke::new(1.0, border()))
             .show(ui, |ui| {
                 let margin = 24.0;
                 ui.set_width(full_w - margin);
@@ -696,7 +696,7 @@ impl ApiClient {
                         ResponseTab::Headers => {
                             if self.response_headers.is_empty() {
                                 ui.label(
-                                    egui::RichText::new("No response headers yet.").color(C_MUTED),
+                                    egui::RichText::new("No response headers yet.").color(muted()),
                                 );
                             } else {
                                 egui::Grid::new("resp_headers_grid")
@@ -733,10 +733,10 @@ fn render_event_row(ui: &mut egui::Ui, idx: usize, ev: &crate::sse::SseEvent, to
     let id = egui::Id::new(("sse_event", idx, ev.timestamp_ms));
 
     egui::Frame::none()
-        .fill(C_PANEL_DARK)
+        .fill(panel_dark())
         .rounding(egui::Rounding::same(4.0))
         .inner_margin(egui::Margin::symmetric(10.0, 6.0))
-        .stroke(egui::Stroke::new(1.0, C_BORDER))
+        .stroke(egui::Stroke::new(1.0, border()))
         .show(ui, |ui| {
             egui::CollapsingHeader::new(header_richtext(idx + 1, event_label, ev))
                 .id_salt(id)
@@ -746,7 +746,7 @@ fn render_event_row(ui: &mut egui::Ui, idx: usize, ev: &crate::sse::SseEvent, to
                     if let Some(id_val) = &ev.id {
                         ui.label(
                             egui::RichText::new(format!("id: {}", id_val))
-                                .color(C_MUTED)
+                                .color(muted())
                                 .size(11.0)
                                 .monospace(),
                         );
@@ -754,7 +754,7 @@ fn render_event_row(ui: &mut egui::Ui, idx: usize, ev: &crate::sse::SseEvent, to
                     if let Some(retry) = ev.retry_ms {
                         ui.label(
                             egui::RichText::new(format!("retry: {} ms", retry))
-                                .color(C_MUTED)
+                                .color(muted())
                                 .size(11.0)
                                 .monospace(),
                         );
@@ -778,7 +778,7 @@ fn render_event_row(ui: &mut egui::Ui, idx: usize, ev: &crate::sse::SseEvent, to
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             let copy = ui
                                 .small_button(
-                                    egui::RichText::new("Copy data").size(11.0).color(C_MUTED),
+                                    egui::RichText::new("Copy data").size(11.0).color(muted()),
                                 )
                                 .on_hover_cursor(egui::CursorIcon::PointingHand);
                             if copy.clicked() {
@@ -797,7 +797,7 @@ fn header_richtext(n: usize, event_type: &str, ev: &crate::sse::SseEvent) -> egu
     let ts = format_event_ts(ev.timestamp_ms);
     egui::RichText::new(format!("#{}  {}  ·  {}", n, event_type, ts))
         .size(12.5)
-        .color(C_TEXT)
+        .color(text())
 }
 
 fn format_event_ts(ms: u64) -> String {
@@ -873,7 +873,7 @@ fn render_error_pill(ui: &mut egui::Ui, tint: egui::Color32, prefix: &str, detai
                         ui.add_space(4.0);
                         ui.label(
                             egui::RichText::new(&trimmed)
-                                .color(C_TEXT)
+                                .color(text())
                                 .font(egui::FontId::monospace(12.0)),
                         );
                     });

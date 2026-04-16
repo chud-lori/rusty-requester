@@ -108,6 +108,64 @@ pub fn set_macos_app_icon_image(bytes: &[u8]) -> Result<(), &'static str> {
     Ok(())
 }
 
+/// Merge the title bar into the window chrome — Postman / Arc /
+/// Ghostty style. Sets on every open NSWindow:
+///   * `titlebarAppearsTransparent = YES` — no title bar fill
+///   * `titleVisibility = NSWindowTitleHidden` — no title text
+///   * `styleMask |= NSFullSizeContentViewWindowMask` — content
+///     extends under the title bar so our bg paints the whole window
+///
+/// Safe to call after `NSApp.run` has started; must be called on
+/// every window (we only have one, but `for w in NSApp.windows`
+/// handles that and is robust to future multi-window support).
+///
+/// Returns `Err` with a short message if any cocoa call fails.
+#[cfg(target_os = "macos")]
+pub fn set_macos_titlebar_transparent() -> Result<(), &'static str> {
+    use objc::runtime::{Object, YES};
+    use objc::{class, msg_send, sel, sel_impl};
+
+    let log = std::env::var("RUSTY_REQUESTER_LOG_ICON").is_ok();
+    unsafe {
+        let app: *mut Object = msg_send![class!(NSApplication), sharedApplication];
+        if app.is_null() {
+            return Err("sharedApplication returned null");
+        }
+        let windows: *mut Object = msg_send![app, windows];
+        if windows.is_null() {
+            return Err("NSApp.windows returned null");
+        }
+        let count: usize = msg_send![windows, count];
+        if log {
+            eprintln!("[titlebar] NSApp.windows count = {}", count);
+        }
+        for i in 0..count {
+            let window: *mut Object = msg_send![windows, objectAtIndex: i];
+            if window.is_null() {
+                continue;
+            }
+            // Order matters here: enable fullSizeContentView FIRST,
+            // then hide the title, then make the bar transparent.
+            // Otherwise AppKit may refuse to re-layout content into
+            // the expanded region until the next window refresh.
+            let current_mask: u64 = msg_send![window, styleMask];
+            // NSWindowStyleMaskFullSizeContentView = 1 << 15
+            let new_mask: u64 = current_mask | (1_u64 << 15);
+            let _: () = msg_send![window, setStyleMask: new_mask];
+            // NSWindowTitleHidden = 1
+            let _: () = msg_send![window, setTitleVisibility: 1_i64];
+            let _: () = msg_send![window, setTitlebarAppearsTransparent: YES];
+            if log {
+                eprintln!(
+                    "[titlebar] window[{}] styleMask: {:#x} -> {:#x}",
+                    i, current_mask, new_mask
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
 #[cfg(not(target_os = "macos"))]
 pub fn set_macos_activation_policy_regular() -> Result<(), &'static str> {
     Ok(())
@@ -115,5 +173,10 @@ pub fn set_macos_activation_policy_regular() -> Result<(), &'static str> {
 
 #[cfg(not(target_os = "macos"))]
 pub fn set_macos_app_icon_image(_bytes: &[u8]) -> Result<(), &'static str> {
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn set_macos_titlebar_transparent() -> Result<(), &'static str> {
     Ok(())
 }

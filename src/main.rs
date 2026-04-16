@@ -1634,6 +1634,15 @@ impl eframe::App for ApiClient {
             self.macos_menu_installed = true;
             macos_menu::install();
             eprintln!("[menu] macOS NSMenu installed from first update()");
+            // Merge the title bar into the window chrome (fullSizeContentView
+            // + titlebarAppearsTransparent + titleVisibilityHidden). Doing
+            // this AFTER the window is fully instantiated — setting it via
+            // `ViewportBuilder` in 0.29 was creating a painted-over dead
+            // zone; the raw `objc` path works because we're setting the
+            // NSWindow flags directly once the winit-created window exists.
+            if let Err(e) = icon::set_macos_titlebar_transparent() {
+                eprintln!("[titlebar] could not merge title bar: {}", e);
+            }
         }
 
         // Dispatch any macOS system-menu selections made since the last
@@ -2197,6 +2206,12 @@ fn main() -> Result<(), eframe::Error> {
     if let Some(icon) = load_window_icon() {
         viewport = viewport.with_icon(std::sync::Arc::new(icon));
     }
+    // NOTE: `.with_fullsize_content_view(true)` was tried to make the
+    // macOS title bar blend with the app chrome (Postman / Arc style),
+    // but eframe 0.29 renders a dark empty strip above the content
+    // instead of actually extending content under the title bar.
+    // Reverted — we keep the native macOS title bar for now. Revisit
+    // when we bump to egui 0.31+ where this combo works properly.
 
     let options = eframe::NativeOptions {
         viewport,

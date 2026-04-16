@@ -40,7 +40,7 @@ impl ApiClient {
                             egui::RichText::new("Environments")
                                 .size(11.0)
                                 .strong()
-                                .color(C_MUTED),
+                                .color(muted()),
                         );
                         ui.add_space(4.0);
                         let envs = self.state.environments.clone();
@@ -60,7 +60,7 @@ impl ApiClient {
                                         .color(C_ACCENT),
                                 )
                                 .fill(egui::Color32::TRANSPARENT)
-                                .stroke(egui::Stroke::new(1.0, C_BORDER)),
+                                .stroke(egui::Stroke::new(1.0, border())),
                             )
                             .clicked()
                         {
@@ -79,7 +79,7 @@ impl ApiClient {
                         if let Some(idx) = env_idx {
                             let mut name = self.state.environments[idx].name.clone();
                             ui.horizontal(|ui| {
-                                ui.label(egui::RichText::new("Name").size(11.0).color(C_MUTED));
+                                ui.label(egui::RichText::new("Name").size(11.0).color(muted()));
                                 if ui
                                     .add(
                                         egui::TextEdit::singleline(&mut name)
@@ -109,7 +109,7 @@ impl ApiClient {
                                     "Variables  (use {{name}} in URL/headers/body)",
                                 )
                                 .size(11.0)
-                                .color(C_MUTED),
+                                .color(muted()),
                             );
                             ui.add_space(4.0);
                             let mut vars = self.state.environments[idx].variables.clone();
@@ -123,7 +123,7 @@ impl ApiClient {
                                 egui::RichText::new(
                                     "Select an environment on the left, or create a new one.",
                                 )
-                                .color(C_MUTED),
+                                .color(muted()),
                             );
                         }
                     });
@@ -223,7 +223,7 @@ impl ApiClient {
             egui::RichText::new("SAVE REQUEST")
                 .size(12.0)
                 .strong()
-                .color(C_MUTED),
+                .color(muted()),
         )
         .open(&mut open)
         .collapsible(false)
@@ -237,7 +237,7 @@ impl ApiClient {
             ui.label(
                 egui::RichText::new("Request name")
                     .size(11.0)
-                    .color(C_MUTED),
+                    .color(muted()),
             );
             let name_resp = ui.add(
                 egui::TextEdit::singleline(&mut self.save_draft_name).desired_width(f32::INFINITY),
@@ -249,7 +249,7 @@ impl ApiClient {
             ui.label(
                 egui::RichText::new(format!("Save to  {}", breadcrumb))
                     .size(12.0)
-                    .color(C_TEXT),
+                    .color(text()),
             );
             ui.add_space(6.0);
 
@@ -263,8 +263,8 @@ impl ApiClient {
 
             // Folder tree (scrollable)
             egui::Frame::none()
-                .fill(C_PANEL_DARK)
-                .stroke(egui::Stroke::new(1.0, C_BORDER))
+                .fill(panel_dark())
+                .stroke(egui::Stroke::new(1.0, border()))
                 .rounding(egui::Rounding::same(6.0))
                 .inner_margin(4.0)
                 .show(ui, |ui| {
@@ -309,7 +309,7 @@ impl ApiClient {
                             egui::Button::new(
                                 egui::RichText::new("Create").color(egui::Color32::WHITE),
                             )
-                            .fill(if enabled { C_ACCENT } else { C_ELEVATED })
+                            .fill(if enabled { C_ACCENT } else { elevated() })
                             .min_size(egui::vec2(72.0, 26.0)),
                         )
                         .clicked()
@@ -355,7 +355,7 @@ impl ApiClient {
                         .color(egui::Color32::WHITE)
                         .strong(),
                 )
-                .fill(if can_save { C_ACCENT } else { C_ELEVATED })
+                .fill(if can_save { C_ACCENT } else { elevated() })
                 .min_size(egui::vec2(80.0, 28.0));
                 if ui.add_enabled(can_save, save_btn).clicked() {
                     do_save = true;
@@ -486,7 +486,7 @@ impl ApiClient {
             let bg = if is_selected {
                 C_ACCENT.linear_multiply(0.18)
             } else if resp.hovered() {
-                C_ELEVATED
+                elevated()
             } else {
                 egui::Color32::TRANSPARENT
             };
@@ -501,7 +501,7 @@ impl ApiClient {
                 egui::Rect::from_min_size(egui::pos2(icon_x, text_y - 4.0), egui::vec2(14.0, 10.0));
             let icon_tab =
                 egui::Rect::from_min_size(egui::pos2(icon_x, text_y - 7.0), egui::vec2(6.0, 3.5));
-            let icon_color = if is_selected { C_ACCENT } else { C_MUTED };
+            let icon_color = if is_selected { C_ACCENT } else { muted() };
             ui.painter()
                 .rect_filled(icon_tab, egui::Rounding::same(1.5), icon_color);
             ui.painter()
@@ -511,7 +511,7 @@ impl ApiClient {
                 egui::Align2::LEFT_CENTER,
                 &folder.name,
                 egui::FontId::proportional(13.0),
-                C_TEXT,
+                text(),
             );
         }
         if resp.clicked() {
@@ -655,7 +655,7 @@ impl ApiClient {
             .width_range(280.0..=600.0)
             .frame(
                 egui::Frame::none()
-                    .fill(C_PANEL)
+                    .fill(bg())
                     .inner_margin(egui::Margin::symmetric(10.0, 10.0)),
             )
             .show(ctx, |ui| {
@@ -664,7 +664,7 @@ impl ApiClient {
                         egui::RichText::new("Code snippet")
                             .size(14.0)
                             .strong()
-                            .color(C_TEXT),
+                            .color(text()),
                     );
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if close_x_button(ui, "Close panel").clicked() {
@@ -695,8 +695,8 @@ impl ApiClient {
                 });
                 ui.add_space(8.0);
                 egui::Frame::none()
-                    .fill(C_PANEL_DARK)
-                    .stroke(egui::Stroke::new(1.0, C_BORDER))
+                    .fill(panel_dark())
+                    .stroke(egui::Stroke::new(1.0, border()))
                     .rounding(egui::Rounding::same(8.0))
                     .inner_margin(10.0)
                     .show(ui, |ui| {
@@ -783,7 +783,7 @@ impl ApiClient {
             .show(ctx, |ui| {
                 ui.label(
                     egui::RichText::new("Paste a cURL command below and click Import.")
-                        .color(C_MUTED)
+                        .color(muted())
                         .size(12.0),
                 );
                 ui.add_space(6.0);
@@ -897,7 +897,7 @@ impl ApiClient {
                         "{} has unsaved changes. Save these changes to avoid losing your work.",
                         display_url
                     ))
-                    .color(C_TEXT)
+                    .color(text())
                     .size(13.0),
                 );
                 ui.add_space(16.0);
@@ -943,7 +943,7 @@ impl ApiClient {
             egui::RichText::new("SETTINGS")
                 .size(12.0)
                 .strong()
-                .color(C_MUTED),
+                .color(muted()),
         )
         .open(&mut open)
         .collapsible(false)
@@ -957,7 +957,7 @@ impl ApiClient {
             ui.label(
                 egui::RichText::new("Request timeout (seconds)")
                     .size(11.5)
-                    .color(C_MUTED),
+                    .color(muted()),
             );
             ui.add(
                 egui::DragValue::new(&mut self.editing_settings.timeout_sec)
@@ -968,7 +968,7 @@ impl ApiClient {
             ui.label(
                 egui::RichText::new("0 disables the timeout (requests can hang forever).")
                     .size(10.5)
-                    .color(C_MUTED),
+                    .color(muted()),
             );
             ui.add_space(10.0);
 
@@ -976,7 +976,7 @@ impl ApiClient {
             ui.label(
                 egui::RichText::new("Max response body (MB)")
                     .size(11.5)
-                    .color(C_MUTED),
+                    .color(muted()),
             );
             ui.add(
                 egui::DragValue::new(&mut self.editing_settings.max_body_mb)
@@ -990,12 +990,12 @@ impl ApiClient {
                          0 disables the cap (huge payloads may OOM the app).",
                 )
                 .size(10.5)
-                .color(C_MUTED),
+                .color(muted()),
             );
             ui.add_space(10.0);
 
             // Proxy
-            ui.label(egui::RichText::new("Proxy URL").size(11.5).color(C_MUTED));
+            ui.label(egui::RichText::new("Proxy URL").size(11.5).color(muted()));
             ui.add(
                 egui::TextEdit::singleline(&mut self.editing_settings.proxy_url)
                     .hint_text("http://proxy:8080 (leave empty for direct)")
@@ -1014,12 +1014,12 @@ impl ApiClient {
                          Dangerous on the public internet; useful for internal dev APIs.",
                 )
                 .size(10.5)
-                .color(C_MUTED),
+                .color(muted()),
             );
 
             ui.add_space(10.0);
             // Theme — Dark (default) / Light.
-            ui.label(egui::RichText::new("Theme").size(11.0).color(C_MUTED));
+            ui.label(egui::RichText::new("Theme").size(11.0).color(muted()));
             ui.horizontal(|ui| {
                 let mut t = self.editing_settings.theme;
                 ui.selectable_value(&mut t, Theme::Dark, "Dark");
@@ -1033,7 +1033,7 @@ impl ApiClient {
                          themes.",
                 )
                 .size(10.5)
-                .color(C_MUTED),
+                .color(muted()),
             );
 
             ui.add_space(14.0);
@@ -1099,7 +1099,7 @@ impl ApiClient {
         egui::TopBottomPanel::top("menu_bar")
             .frame(
                 egui::Frame::none()
-                    .fill(C_PANEL_DARK)
+                    .fill(panel_dark())
                     .inner_margin(egui::Margin::symmetric(4.0, 2.0)),
             )
             .show(ctx, |ui| {
@@ -1246,7 +1246,7 @@ impl ApiClient {
             egui::RichText::new("ABOUT")
                 .size(12.0)
                 .strong()
-                .color(C_MUTED),
+                .color(muted()),
         )
         .open(&mut open)
         .collapsible(false)
@@ -1287,25 +1287,25 @@ impl ApiClient {
                     egui::RichText::new("Rusty Requester")
                         .size(19.0)
                         .strong()
-                        .color(C_TEXT),
+                        .color(text()),
                 );
                 ui.add_space(8.0);
                 ui.label(
                     egui::RichText::new(concat!("Version ", env!("CARGO_PKG_VERSION")))
                         .size(12.0)
-                        .color(C_TEXT),
+                        .color(text()),
                 );
                 ui.label(
                     egui::RichText::new(concat!("Build: ", env!("CARGO_PKG_VERSION"), " (native)"))
                         .size(11.5)
-                        .color(C_MUTED),
+                        .color(muted()),
                 );
 
                 ui.add_space(12.0);
                 ui.label(
                     egui::RichText::new("A native, offline, lightweight API client.")
                         .size(12.0)
-                        .color(C_TEXT),
+                        .color(text()),
                 );
 
                 ui.add_space(12.0);
@@ -1334,7 +1334,7 @@ impl ApiClient {
                 ui.label(
                     egui::RichText::new("MIT Licensed · © Lori (@chud-lori)")
                         .size(11.0)
-                        .color(C_MUTED),
+                        .color(muted()),
                 );
                 ui.add_space(10.0);
             });
@@ -1414,7 +1414,7 @@ impl ApiClient {
             egui::RichText::new("COMMAND PALETTE")
                 .size(11.0)
                 .strong()
-                .color(C_MUTED),
+                .color(muted()),
         )
         .open(&mut open)
         .collapsible(false)
@@ -1441,7 +1441,7 @@ impl ApiClient {
                     if matches.len() == 1 { "" } else { "s" }
                 ))
                 .size(10.5)
-                .color(C_MUTED),
+                .color(muted()),
             );
             ui.separator();
 
@@ -1460,7 +1460,7 @@ impl ApiClient {
                             let bg = if is_sel {
                                 C_ACCENT.linear_multiply(0.18)
                             } else if resp.hovered() {
-                                C_ELEVATED
+                                elevated()
                             } else {
                                 egui::Color32::TRANSPARENT
                             };
@@ -1480,14 +1480,14 @@ impl ApiClient {
                                 egui::Align2::LEFT_TOP,
                                 &m.name,
                                 egui::FontId::new(13.0, egui::FontFamily::Proportional),
-                                C_TEXT,
+                                text(),
                             );
                             ui.painter().text(
                                 egui::pos2(rect.left() + 60.0, rect.top() + 22.0),
                                 egui::Align2::LEFT_TOP,
                                 &m.breadcrumb,
                                 egui::FontId::new(10.5, egui::FontFamily::Proportional),
-                                C_MUTED,
+                                muted(),
                             );
                         }
                         let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
@@ -1502,7 +1502,7 @@ impl ApiClient {
                 ui.label(
                     egui::RichText::new("↑ ↓  navigate    Enter  open    Esc  dismiss")
                         .size(10.5)
-                        .color(C_MUTED),
+                        .color(muted()),
                 );
             });
         });
@@ -1577,7 +1577,7 @@ impl ApiClient {
             egui::RichText::new("ACTIONS")
                 .size(11.0)
                 .strong()
-                .color(C_MUTED),
+                .color(muted()),
         )
         .open(&mut open)
         .collapsible(false)
@@ -1604,7 +1604,7 @@ impl ApiClient {
                     if matches.len() == 1 { "" } else { "s" }
                 ))
                 .size(10.5)
-                .color(C_MUTED),
+                .color(muted()),
             );
             ui.separator();
 
@@ -1623,7 +1623,7 @@ impl ApiClient {
                             let bg = if is_sel {
                                 C_ACCENT.linear_multiply(0.18)
                             } else if resp.hovered() {
-                                C_ELEVATED
+                                elevated()
                             } else {
                                 egui::Color32::TRANSPARENT
                             };
@@ -1634,7 +1634,7 @@ impl ApiClient {
                                 egui::Align2::LEFT_CENTER,
                                 a.label(),
                                 egui::FontId::new(13.0, egui::FontFamily::Proportional),
-                                C_TEXT,
+                                text(),
                             );
                             if let Some(sc) = a.shortcut() {
                                 ui.painter().text(
@@ -1642,7 +1642,7 @@ impl ApiClient {
                                     egui::Align2::RIGHT_CENTER,
                                     sc,
                                     egui::FontId::new(11.0, egui::FontFamily::Monospace),
-                                    C_MUTED,
+                                    muted(),
                                 );
                             }
                         }
@@ -1658,7 +1658,7 @@ impl ApiClient {
                 ui.label(
                     egui::RichText::new("↑ ↓  navigate    Enter  run    Esc  dismiss")
                         .size(10.5)
-                        .color(C_MUTED),
+                        .color(muted()),
                 );
             });
         });
@@ -1687,12 +1687,12 @@ impl ApiClient {
             .anchor(egui::Align2::RIGHT_BOTTOM, egui::vec2(-16.0, -16.0))
             .show(ctx, |ui| {
                 egui::Frame::none()
-                    .fill(C_PANEL)
+                    .fill(bg())
                     .stroke(egui::Stroke::new(1.0, C_ACCENT))
                     .rounding(10.0)
                     .inner_margin(10.0)
                     .show(ui, |ui| {
-                        ui.label(egui::RichText::new(msg).color(C_TEXT).size(13.0));
+                        ui.label(egui::RichText::new(msg).color(text()).size(13.0));
                     });
             });
     }
@@ -1775,8 +1775,8 @@ fn fuzzy_contains(haystack: &str, needle: &str) -> bool {
     false
 }
 
-/// Frame styling for ⌘P / ⇧⌘P palette windows. Uses `C_ELEVATED`
-/// instead of the default `C_BG` so the palette visibly floats above
+/// Frame styling for ⌘P / ⇧⌘P palette windows. Uses `elevated()`
+/// instead of the default `bg()` so the palette visibly floats above
 /// the darkened backdrop — without this they blend into the app
 /// chrome and look "greyed-out" rather than focused.
 fn palette_frame(theme: Theme) -> egui::Frame {
@@ -1786,7 +1786,7 @@ fn palette_frame(theme: Theme) -> egui::Frame {
     // brighter-than-panel in dark mode, near-white in light.
     let (fill, border) = match theme {
         Theme::Dark => (
-            // `#252830` — one notch brighter than `C_ELEVATED` (#2A2D34)
+            // `#252830` — one notch brighter than `elevated()` (#2A2D34)
             // looks muddy against other dark chrome, so we nudge a
             // touch cooler. This matches VS Code's "Quick Input" bg.
             egui::Color32::from_rgb(37, 40, 48),

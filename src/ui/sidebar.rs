@@ -24,13 +24,21 @@ impl ApiClient {
             .show_separator_line(false)
             .frame(
                 egui::Frame::none()
-                    .fill(C_PANEL)
+                    .fill(bg())
                     // Asymmetric: less right-padding so sidebar content
                     // butts close to the (invisible) boundary with central.
+                    // On macOS, extra top padding so the traffic-light
+                    // window controls — now overlaid on our chrome via
+                    // `set_macos_titlebar_transparent` — don't collide
+                    // with the "Rusty Requester" header row.
                     .inner_margin(egui::Margin {
                         left: 10.0,
                         right: 4.0,
-                        top: 10.0,
+                        top: if cfg!(target_os = "macos") {
+                            32.0
+                        } else {
+                            10.0
+                        },
                         bottom: 10.0,
                     }),
             )
@@ -39,7 +47,7 @@ impl ApiClient {
                 // children, so scroll tracks / code editors etc. don't
                 // surface with egui-default near-black fills.
                 ui.painter()
-                    .rect_filled(ui.max_rect(), egui::Rounding::ZERO, C_PANEL);
+                    .rect_filled(ui.max_rect(), egui::Rounding::ZERO, bg());
                 ui.add_space(4.0);
                 ui.horizontal(|ui| {
                     if let Some(tex) = &self.app_icon {
@@ -54,7 +62,7 @@ impl ApiClient {
                             egui::RichText::new("Rusty Requester")
                                 .size(15.0)
                                 .strong()
-                                .color(C_TEXT),
+                                .color(text()),
                         );
                         // Baked-in build version — makes it obvious which
                         // binary is actually running (mismatch vs what you
@@ -63,14 +71,14 @@ impl ApiClient {
                         ui.label(
                             egui::RichText::new(concat!("v", env!("CARGO_PKG_VERSION")))
                                 .size(10.5)
-                                .color(C_MUTED),
+                                .color(muted()),
                         );
                     });
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui
                             .add(
                                 egui::Button::new(
-                                    egui::RichText::new("⚙").size(14.0).color(C_MUTED),
+                                    egui::RichText::new("⚙").size(14.0).color(muted()),
                                 )
                                 .min_size(egui::vec2(26.0, 24.0))
                                 .fill(egui::Color32::TRANSPARENT)
@@ -97,13 +105,17 @@ impl ApiClient {
 
                     let coll_label = format!("Collections ({})", self.state.folders.len());
                     let coll_selected = v == SidebarView::Collections;
+                    // Selected pill: brighter text (theme-aware) on a
+                    // tinted accent background. Accent on TEXT was at
+                    // ~4:1 contrast and felt cramped.
                     let coll_btn = egui::Button::new(
                         egui::RichText::new(coll_label)
                             .size(12.0)
-                            .color(if coll_selected { C_ACCENT } else { C_MUTED }),
+                            .strong()
+                            .color(if coll_selected { text() } else { muted() }),
                     )
                     .fill(if coll_selected {
-                        C_ACCENT.linear_multiply(0.15)
+                        C_ACCENT.linear_multiply(0.18)
                     } else {
                         egui::Color32::TRANSPARENT
                     })
@@ -123,10 +135,11 @@ impl ApiClient {
                     let hist_btn = egui::Button::new(
                         egui::RichText::new(hist_label)
                             .size(12.0)
-                            .color(if hist_selected { C_ACCENT } else { C_MUTED }),
+                            .strong()
+                            .color(if hist_selected { text() } else { muted() }),
                     )
                     .fill(if hist_selected {
-                        C_ACCENT.linear_multiply(0.15)
+                        C_ACCENT.linear_multiply(0.18)
                     } else {
                         egui::Color32::TRANSPARENT
                     })
@@ -183,7 +196,7 @@ impl ApiClient {
                 ui.horizontal(|ui| {
                     let btn_w = (ui.available_width() - 6.0) / 2.0;
                     ui.menu_button(
-                        egui::RichText::new("📥 Import").size(12.0).color(C_TEXT),
+                        egui::RichText::new("📥 Import").size(12.0).color(text()),
                         |ui| {
                             ui.set_min_width(200.0);
                             if ui.button("Import collection file...").clicked() {
@@ -201,7 +214,7 @@ impl ApiClient {
                     let _ = btn_w;
 
                     ui.menu_button(
-                        egui::RichText::new("📤 Export").size(12.0).color(C_TEXT),
+                        egui::RichText::new("📤 Export").size(12.0).color(text()),
                         |ui| {
                             ui.set_min_width(200.0);
                             let enabled = !self.state.folders.is_empty();
@@ -253,7 +266,7 @@ impl ApiClient {
                         egui::Align2::CENTER_CENTER,
                         egui_phosphor::regular::MAGNIFYING_GLASS,
                         egui::FontId::proportional(15.0),
-                        C_MUTED,
+                        muted(),
                     );
 
                     // Always reserve the close-button slot (visible or as
@@ -287,7 +300,7 @@ impl ApiClient {
                     ui.label(
                         egui::RichText::new(format!("{} match(es)", total))
                             .size(11.0)
-                            .color(C_MUTED),
+                            .color(muted()),
                     );
                 }
 
@@ -313,7 +326,7 @@ impl ApiClient {
                             egui::RichText::new("COLLECTIONS")
                                 .size(10.5)
                                 .strong()
-                                .color(C_MUTED),
+                                .color(muted()),
                         );
                         ui.add_space(4.0);
 
@@ -336,7 +349,7 @@ impl ApiClient {
             egui::RichText::new("ENVIRONMENT")
                 .size(10.5)
                 .strong()
-                .color(C_MUTED),
+                .color(muted()),
         );
         ui.add_space(3.0);
         ui.horizontal(|ui| {
@@ -348,7 +361,7 @@ impl ApiClient {
                 .map(|e| e.name.clone())
                 .unwrap_or_else(|| "No environment".to_string());
             egui::ComboBox::from_id_salt("env_picker")
-                .selected_text(egui::RichText::new(active_name).size(12.5).color(C_TEXT))
+                .selected_text(egui::RichText::new(active_name).size(12.5).color(text()))
                 .width(ui.available_width() - 40.0)
                 .show_ui(ui, |ui| {
                     let mut new_id: Option<Option<String>> = None;
@@ -371,10 +384,10 @@ impl ApiClient {
                 });
             if ui
                 .add(
-                    egui::Button::new(egui::RichText::new("⚙").size(13.0).color(C_MUTED))
+                    egui::Button::new(egui::RichText::new("⚙").size(13.0).color(muted()))
                         .min_size(egui::vec2(28.0, 26.0))
                         .fill(egui::Color32::TRANSPARENT)
-                        .stroke(egui::Stroke::new(1.0, C_BORDER)),
+                        .stroke(egui::Stroke::new(1.0, border())),
                 )
                 .on_hover_cursor(egui::CursorIcon::PointingHand)
                 .on_hover_text("Manage environments")
@@ -395,7 +408,7 @@ impl ApiClient {
             ui.vertical_centered(|ui| {
                 ui.label(
                     egui::RichText::new("No requests sent yet.")
-                        .color(C_MUTED)
+                        .color(muted())
                         .size(12.0),
                 );
             });
@@ -409,7 +422,7 @@ impl ApiClient {
                     self.state.history.len()
                 ))
                 .size(11.0)
-                .color(C_MUTED),
+                .color(muted()),
             );
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui
@@ -442,7 +455,7 @@ impl ApiClient {
                     );
                     if ui.is_rect_visible(rect) {
                         let bg = if resp.hovered() {
-                            C_ELEVATED
+                            elevated()
                         } else {
                             egui::Color32::TRANSPARENT
                         };
@@ -480,7 +493,7 @@ impl ApiClient {
                             egui::Align2::LEFT_TOP,
                             elided,
                             url_font,
-                            C_TEXT,
+                            text(),
                         );
                     }
                     ui.add_space(2.0);
@@ -527,7 +540,7 @@ impl ApiClient {
         let mut header = egui::CollapsingHeader::new(
             egui::RichText::new(format!("{}{}", name_prefix, header_text))
                 .size(13.0)
-                .color(C_TEXT)
+                .color(text())
                 .strong(),
         )
         .id_salt(&folder.id)
@@ -619,7 +632,7 @@ impl ApiClient {
                     let bg = if is_selected {
                         C_ACCENT.linear_multiply(0.18)
                     } else if resp.hovered() {
-                        C_ELEVATED
+                        elevated()
                     } else {
                         egui::Color32::TRANSPARENT
                     };
@@ -657,7 +670,7 @@ impl ApiClient {
                             egui::Align2::LEFT_CENTER,
                             display_name,
                             font,
-                            C_TEXT,
+                            text(),
                         );
                     }
                 }
@@ -672,7 +685,7 @@ impl ApiClient {
                     );
                     // Visible background + accent border so the input is obvious.
                     ui.painter()
-                        .rect_filled(edit_rect, egui::Rounding::same(4.0), C_PANEL_DARK);
+                        .rect_filled(edit_rect, egui::Rounding::same(4.0), panel_dark());
                     ui.painter().rect_stroke(
                         edit_rect,
                         egui::Rounding::same(4.0),
@@ -684,7 +697,7 @@ impl ApiClient {
                         egui::TextEdit::singleline(&mut self.rename_request_text)
                             .desired_width(inner.width())
                             .frame(false)
-                            .text_color(C_TEXT)
+                            .text_color(text())
                             .font(egui::FontId::new(13.0, egui::FontFamily::Proportional)),
                     );
                     if self.request_rename_focus_pending {
@@ -807,7 +820,7 @@ impl ApiClient {
                 egui::Align2::CENTER_CENTER,
                 egui_phosphor::regular::FOLDER_SIMPLE,
                 egui::FontId::proportional(14.0),
-                C_MUTED,
+                muted(),
             );
         }
 
@@ -869,9 +882,9 @@ impl ApiClient {
                 .on_hover_cursor(egui::CursorIcon::PointingHand);
             if plus_resp.hovered() {
                 ui.painter()
-                    .rect_filled(plus_rect, egui::Rounding::same(4.0), C_ELEVATED);
+                    .rect_filled(plus_rect, egui::Rounding::same(4.0), elevated());
             }
-            let plus_color = if plus_resp.hovered() { C_TEXT } else { C_MUTED };
+            let plus_color = if plus_resp.hovered() { text() } else { muted() };
             ui.painter().text(
                 plus_rect.center(),
                 egui::Align2::CENTER_CENTER,
@@ -890,9 +903,9 @@ impl ApiClient {
                 .on_hover_cursor(egui::CursorIcon::PointingHand);
             if dots_resp.hovered() {
                 ui.painter()
-                    .rect_filled(dots_rect, egui::Rounding::same(4.0), C_ELEVATED);
+                    .rect_filled(dots_rect, egui::Rounding::same(4.0), elevated());
             }
-            let dots_color = if dots_resp.hovered() { C_TEXT } else { C_MUTED };
+            let dots_color = if dots_resp.hovered() { text() } else { muted() };
             ui.painter().text(
                 dots_rect.center(),
                 egui::Align2::CENTER_CENTER,
