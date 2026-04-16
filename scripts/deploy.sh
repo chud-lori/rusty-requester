@@ -110,6 +110,18 @@ if ! cargo fmt --all -- --check >/dev/null 2>&1; then
     exit 1
 fi
 
+# --- Clippy check --------------------------------------------------------
+# Catches macOS-side clippy issues before the tag push. Note: only
+# catches issues on THIS platform — Linux / Windows `#[cfg]`-gated
+# code still needs CI to catch. CI (.github/workflows/ci.yml) runs
+# clippy on ubuntu-latest for that reason.
+blue "→ Running clippy (--all-targets -D warnings)"
+if ! cargo clippy --all-targets -- -D warnings >/dev/null 2>&1; then
+    red "error: clippy failed. Run 'cargo clippy --all-targets -- -D warnings' and fix before deploying."
+    cargo clippy --all-targets -- -D warnings 2>&1 | tail -30
+    exit 1
+fi
+
 # --- Rebuild so Cargo.lock picks up the new version ---------------------
 blue "→ Refreshing Cargo.lock"
 cargo build --release --quiet

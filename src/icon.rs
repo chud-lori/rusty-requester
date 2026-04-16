@@ -176,7 +176,12 @@ pub fn set_macos_app_icon_image(_bytes: &[u8]) -> Result<(), &'static str> {
     Ok(())
 }
 
+/// Non-macOS stub — the caller is gated on `cfg(target_os = "macos")`
+/// so this is genuinely unreachable on other platforms. `#[allow]`
+/// keeps CI's `-D warnings` happy without wrapping the call site in
+/// more cfgs; same pattern as the other macOS stubs above.
 #[cfg(not(target_os = "macos"))]
+#[allow(dead_code)]
 pub fn set_macos_titlebar_transparent() -> Result<(), &'static str> {
     Ok(())
 }
