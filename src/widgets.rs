@@ -32,39 +32,6 @@ pub fn substitute_kvs(rows: &[KvRow], env: Option<&Environment>) -> Vec<KvRow> {
 
 /// Draw a small magnifying-glass search icon centred on `center`.
 /// The circle has `radius`, handle extends diagonally down-right.
-pub fn paint_search_icon(painter: &egui::Painter, center: egui::Pos2, color: egui::Color32) {
-    let stroke = egui::Stroke::new(1.5, color);
-    let radius = 4.5;
-    painter.circle_stroke(center, radius, stroke);
-    // Handle — from lower-right of circle, extending down-right
-    let start = egui::pos2(center.x + radius * 0.70, center.y + radius * 0.70);
-    let end = egui::pos2(center.x + radius + 2.5, center.y + radius + 2.5);
-    painter.line_segment([start, end], stroke);
-}
-
-pub fn paint_x(
-    painter: &egui::Painter,
-    center: egui::Pos2,
-    half: f32,
-    color: egui::Color32,
-    width: f32,
-) {
-    let stroke = egui::Stroke::new(width, color);
-    painter.line_segment(
-        [
-            egui::pos2(center.x - half, center.y - half),
-            egui::pos2(center.x + half, center.y + half),
-        ],
-        stroke,
-    );
-    painter.line_segment(
-        [
-            egui::pos2(center.x - half, center.y + half),
-            egui::pos2(center.x + half, center.y - half),
-        ],
-        stroke,
-    );
-}
 
 pub fn close_x_button(ui: &mut egui::Ui, hover_text: &str) -> egui::Response {
     let size = egui::vec2(20.0, 20.0);
@@ -76,7 +43,13 @@ pub fn close_x_button(ui: &mut egui::Ui, hover_text: &str) -> egui::Response {
                 .rect_filled(rect, egui::Rounding::same(4.0), C_RED.linear_multiply(0.35));
         }
         let color = if hovered { C_RED } else { C_MUTED };
-        paint_x(ui.painter(), rect.center(), 4.0, color, 1.5);
+        ui.painter().text(
+            rect.center(),
+            egui::Align2::CENTER_CENTER,
+            egui_phosphor::regular::X,
+            egui::FontId::proportional(13.0),
+            color,
+        );
     }
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
         .on_hover_text(hover_text)
@@ -450,7 +423,13 @@ pub fn render_single_tab(
             );
         }
         let color = if hovered { C_RED } else { C_MUTED };
-        paint_x(ui.painter(), close_rect.center(), 4.0, color, 1.5);
+        ui.painter().text(
+            close_rect.center(),
+            egui::Align2::CENTER_CENTER,
+            egui_phosphor::regular::X,
+            egui::FontId::proportional(12.0),
+            color,
+        );
     }
 
     if close_resp.clicked() {
@@ -563,99 +542,9 @@ impl HandCursor for egui::Response {
     }
 }
 
-/// Paints a download / save icon — a downward arrow over a tray — at
-/// the given center. Used for "Save response to file".
-pub fn paint_save_icon(painter: &egui::Painter, center: egui::Pos2, color: egui::Color32) {
-    let stroke = egui::Stroke::new(1.4, color);
-    // Downward arrow
-    painter.line_segment(
-        [
-            egui::pos2(center.x, center.y - 5.0),
-            egui::pos2(center.x, center.y + 2.0),
-        ],
-        stroke,
-    );
-    painter.line_segment(
-        [
-            egui::pos2(center.x - 3.0, center.y - 1.0),
-            egui::pos2(center.x, center.y + 2.0),
-        ],
-        stroke,
-    );
-    painter.line_segment(
-        [
-            egui::pos2(center.x + 3.0, center.y - 1.0),
-            egui::pos2(center.x, center.y + 2.0),
-        ],
-        stroke,
-    );
-    // Tray base
-    painter.line_segment(
-        [
-            egui::pos2(center.x - 5.0, center.y + 5.0),
-            egui::pos2(center.x + 5.0, center.y + 5.0),
-        ],
-        stroke,
-    );
-}
-
-/// Paints a thin plus icon (two crossed lines) at the given center.
-pub fn paint_plus_icon(painter: &egui::Painter, center: egui::Pos2, color: egui::Color32) {
-    let stroke = egui::Stroke::new(1.4, color);
-    let half = 5.0;
-    painter.line_segment(
-        [
-            egui::pos2(center.x - half, center.y),
-            egui::pos2(center.x + half, center.y),
-        ],
-        stroke,
-    );
-    painter.line_segment(
-        [
-            egui::pos2(center.x, center.y - half),
-            egui::pos2(center.x, center.y + half),
-        ],
-        stroke,
-    );
-}
-
-/// Paints a horizontal three-dots (overflow-menu) icon at the given center.
-pub fn paint_dots_icon(painter: &egui::Painter, center: egui::Pos2, color: egui::Color32) {
-    let r = 1.5;
-    let gap = 4.0;
-    for dx in &[-gap, 0.0, gap] {
-        painter.circle_filled(egui::pos2(center.x + dx, center.y), r, color);
-    }
-}
-
-/// Paints a "copy" icon — two overlapping rounded rects — at the given
-/// center point. Font-free.
-pub fn paint_copy_icon(painter: &egui::Painter, center: egui::Pos2, color: egui::Color32) {
-    let size = egui::vec2(9.0, 11.0);
-    let stroke = egui::Stroke::new(1.3, color);
-    // Back rect (upper-left), front rect (lower-right).
-    let back = egui::Rect::from_center_size(center + egui::vec2(-1.5, -1.5), size);
-    let front = egui::Rect::from_center_size(center + egui::vec2(1.5, 1.5), size);
-    painter.rect_stroke(back, egui::Rounding::same(1.5), stroke);
-    // Mask front's intersection with back so it visually sits on top.
-    painter.rect_filled(
-        front,
-        egui::Rounding::same(1.5),
-        painter.ctx().style().visuals.panel_fill,
-    );
-    painter.rect_stroke(front, egui::Rounding::same(1.5), stroke);
-}
-
-/// Compact square icon button — 24×24 clickable area with an icon
-/// drawn by `paint` via an egui::Painter reference. Used in toolbars
-/// next to the response body view pills.
-pub fn icon_button(
-    ui: &mut egui::Ui,
-    hover_text: &str,
-    paint: impl FnOnce(&egui::Painter, egui::Pos2, egui::Color32),
-) -> egui::Response {
-    // Slimmer than a typical button so the body toolbar stays
-    // lightweight and leaves room for pills + filter + icons in one row.
+/// Compact square icon button using a Phosphor icon glyph.
+/// 22×20 clickable area — fits in toolbars alongside pills and filters.
+pub fn icon_btn(ui: &mut egui::Ui, icon: &str, hover_text: &str) -> egui::Response {
     let size = egui::vec2(22.0, 20.0);
     let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::click());
     if ui.is_rect_visible(rect) {
@@ -664,35 +553,16 @@ pub fn icon_button(
             ui.painter()
                 .rect_filled(rect, egui::Rounding::same(4.0), C_ELEVATED);
         }
-        paint(ui.painter(), rect.center(), color);
+        ui.painter().text(
+            rect.center(),
+            egui::Align2::CENTER_CENTER,
+            icon,
+            egui::FontId::proportional(15.0),
+            color,
+        );
     }
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
         .on_hover_text(hover_text)
-}
-
-/// Paints a clean outlined folder silhouette at the given center point.
-/// Uses line segments (not filled rects) so the tab + body read as one
-/// single folder shape rather than two overlapping blobs. Font-free —
-/// matches `paint_folder_chevron`'s rationale.
-pub fn paint_folder_icon(painter: &egui::Painter, center: egui::Pos2, color: egui::Color32) {
-    let stroke = egui::Stroke::new(1.2, color);
-    // 14×9 outline. The tab occupies the top-left ~40% of the width,
-    // then a short diagonal joins it to the body's top edge.
-    let cx = center.x;
-    let cy = center.y;
-    let a = egui::pos2(cx - 7.0, cy - 4.0); // tab top-left
-    let b = egui::pos2(cx - 2.5, cy - 4.0); // tab top-right
-    let c = egui::pos2(cx - 1.0, cy - 2.0); // diagonal to body top
-    let d = egui::pos2(cx + 7.0, cy - 2.0); // body top-right
-    let e = egui::pos2(cx + 7.0, cy + 4.5); // body bottom-right
-    let f = egui::pos2(cx - 7.0, cy + 4.5); // body bottom-left
-
-    painter.line_segment([a, b], stroke); // tab top
-    painter.line_segment([b, c], stroke); // tab → body diagonal
-    painter.line_segment([c, d], stroke); // body top (right of tab)
-    painter.line_segment([d, e], stroke); // body right
-    painter.line_segment([e, f], stroke); // body bottom
-    painter.line_segment([f, a], stroke); // body left
 }
 
 pub fn folder_matches(folder: &Folder, q: &str) -> bool {

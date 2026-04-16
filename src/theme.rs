@@ -138,4 +138,10 @@ pub fn apply_style(ctx: &egui::Context) {
     .into();
 
     ctx.set_style(style);
+
+    // Phosphor icon font — register once so icon glyphs resolve
+    // inside any Proportional text (labels, buttons, RichText).
+    let mut fonts = egui::FontDefinitions::default();
+    egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
+    ctx.set_fonts(fonts);
 }

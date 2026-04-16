@@ -116,10 +116,16 @@ impl ApiClient {
 
                 ui.vertical_centered(|ui| {
                     ui.add_space((inner_h * 0.18).max(24.0));
-                    // Illustration — a simple unplugged-plug icon
-                    // drawn with primitives (keeps the project's
-                    // no-image-asset ethos).
-                    paint_unplugged_plug(ui, 120.0, tint);
+                    // Large Phosphor icon as the error-state illustration.
+                    ui.label(
+                        egui::RichText::new(if cancelled {
+                            egui_phosphor::regular::PROHIBIT
+                        } else {
+                            egui_phosphor::regular::WIFI_SLASH
+                        })
+                        .size(64.0)
+                        .color(tint.linear_multiply(0.6)),
+                    );
                     ui.add_space(14.0);
 
                     ui.label(egui::RichText::new(headline).size(14.5).color(C_MUTED));
@@ -214,15 +220,27 @@ impl ApiClient {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.add_space(6.0);
                 if body_active {
-                    if icon_button(ui, "Save response to file", paint_save_icon).clicked() {
+                    if icon_btn(
+                        ui,
+                        egui_phosphor::regular::DOWNLOAD_SIMPLE,
+                        "Save response to file",
+                    )
+                    .clicked()
+                    {
                         save_clicked = true;
                     }
                     ui.add_space(2.0);
-                    if icon_button(ui, "Copy response body", paint_copy_icon).clicked() {
+                    if icon_btn(ui, egui_phosphor::regular::COPY, "Copy response body").clicked() {
                         copy_clicked = true;
                     }
                     ui.add_space(2.0);
-                    if icon_button(ui, "Search in body", paint_search_icon).clicked() {
+                    if icon_btn(
+                        ui,
+                        egui_phosphor::regular::MAGNIFYING_GLASS,
+                        "Search in body",
+                    )
+                    .clicked()
+                    {
                         toggle_search = true;
                     }
                     ui.add_space(12.0);
@@ -277,9 +295,7 @@ impl ApiClient {
                         .hint_text("Find in body…")
                         .desired_width(ui.available_width() - 40.0),
                 );
-                if icon_button(ui, "Close search", |p, c, col| paint_x(p, c, 5.0, col, 1.5))
-                    .clicked()
-                {
+                if icon_btn(ui, egui_phosphor::regular::X, "Close search").clicked() {
                     self.body_search_visible = false;
                     self.body_search_query.clear();
                 }
@@ -574,12 +590,12 @@ fn render_error_pill(ui: &mut egui::Ui, tint: egui::Color32, prefix: &str, detai
                 .inner_margin(egui::Margin::symmetric(12.0, 8.0))
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
-                        // Small ⚠-style painter icon so we don't
-                        // depend on an emoji font rendering correctly.
-                        let (rect, _) =
-                            ui.allocate_exact_size(egui::vec2(18.0, 18.0), egui::Sense::hover());
-                        paint_warning_icon(ui.painter(), rect.center(), tint);
-                        ui.add_space(4.0);
+                        ui.label(
+                            egui::RichText::new(egui_phosphor::regular::WARNING)
+                                .size(15.0)
+                                .color(tint),
+                        );
+                        ui.add_space(2.0);
                         ui.label(
                             egui::RichText::new(prefix)
                                 .color(tint)
@@ -598,108 +614,5 @@ fn render_error_pill(ui: &mut egui::Ui, tint: egui::Color32, prefix: &str, detai
     );
 }
 
-/// Draw a simple "unplugged cable" illustration centered at the
-/// current cursor position. A rounded plug on one side, a socket
-/// on the other, with a loose cable between them. Uses the same
-/// painter primitives the rest of the app does, so the file-size
-/// cost is zero.
-fn paint_unplugged_plug(ui: &mut egui::Ui, size: f32, tint: egui::Color32) {
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(size, size * 0.7), egui::Sense::hover());
-    let painter = ui.painter();
-    let line_stroke = egui::Stroke::new(1.8, C_MUTED);
-    let cx = rect.center().x;
-    let cy = rect.center().y;
-    let scale = size / 120.0;
-    let s = |v: f32| v * scale;
-
-    // Left side — socket (box with two holes).
-    let socket =
-        egui::Rect::from_center_size(egui::pos2(cx - s(36.0), cy), egui::vec2(s(24.0), s(34.0)));
-    painter.rect_stroke(socket, egui::Rounding::same(s(3.0)), line_stroke);
-    // Two socket holes.
-    painter.circle_filled(
-        egui::pos2(socket.center().x - s(4.0), socket.center().y),
-        s(1.8),
-        C_MUTED,
-    );
-    painter.circle_filled(
-        egui::pos2(socket.center().x + s(4.0), socket.center().y),
-        s(1.8),
-        C_MUTED,
-    );
-
-    // Right side — plug head with two prongs.
-    let plug = egui::Rect::from_center_size(
-        egui::pos2(cx + s(36.0), cy + s(4.0)),
-        egui::vec2(s(22.0), s(30.0)),
-    );
-    painter.rect_stroke(plug, egui::Rounding::same(s(3.0)), line_stroke);
-    // Prongs on the left face of the plug.
-    painter.line_segment(
-        [
-            egui::pos2(plug.left(), plug.center().y - s(6.0)),
-            egui::pos2(plug.left() - s(7.0), plug.center().y - s(6.0)),
-        ],
-        line_stroke,
-    );
-    painter.line_segment(
-        [
-            egui::pos2(plug.left(), plug.center().y + s(6.0)),
-            egui::pos2(plug.left() - s(7.0), plug.center().y + s(6.0)),
-        ],
-        line_stroke,
-    );
-
-    // Cable — two short arcs, drooping to imply the plug is loose.
-    // Rendered as short line segments approximating a curve (no
-    // bezier math needed at this scale).
-    let cable_start = egui::pos2(plug.right(), plug.center().y);
-    let cable_end = egui::pos2(cx + s(50.0), cy - s(18.0));
-    painter.line_segment(
-        [cable_start, egui::pos2(cx + s(54.0), cy + s(6.0))],
-        line_stroke,
-    );
-    painter.line_segment(
-        [egui::pos2(cx + s(54.0), cy + s(6.0)), cable_end],
-        line_stroke,
-    );
-
-    // Status dot in the tint colour on top of the socket — signals
-    // "attention here" (Postman uses an orange dot the same way).
-    painter.circle_filled(
-        egui::pos2(socket.center().x, socket.top() - s(6.0)),
-        s(3.0),
-        tint,
-    );
-    painter.line_segment(
-        [
-            egui::pos2(socket.center().x, socket.top() - s(3.0)),
-            egui::pos2(socket.center().x, socket.top()),
-        ],
-        egui::Stroke::new(1.5, C_MUTED),
-    );
-}
-
-/// Warning triangle with an exclamation mark — tiny (18×18). Used
-/// inside the error pill next to the `Error:` / `Cancelled:` label.
-fn paint_warning_icon(painter: &egui::Painter, center: egui::Pos2, tint: egui::Color32) {
-    let r = 7.0;
-    let top = egui::pos2(center.x, center.y - r);
-    let bl = egui::pos2(center.x - r * 0.9, center.y + r * 0.75);
-    let br = egui::pos2(center.x + r * 0.9, center.y + r * 0.75);
-    painter.add(egui::Shape::convex_polygon(
-        vec![top, br, bl],
-        tint.linear_multiply(0.3),
-        egui::Stroke::new(1.3, tint),
-    ));
-    // Exclamation mark stem.
-    painter.line_segment(
-        [
-            egui::pos2(center.x, center.y - 2.0),
-            egui::pos2(center.x, center.y + 2.0),
-        ],
-        egui::Stroke::new(1.4, tint),
-    );
-    // Dot.
-    painter.circle_filled(egui::pos2(center.x, center.y + 4.0), 1.0, tint);
-}
+// Hand-drawn paint_unplugged_plug and paint_warning_icon removed —
+// replaced by Phosphor icon font glyphs (WIFI_SLASH, PROHIBIT, WARNING).

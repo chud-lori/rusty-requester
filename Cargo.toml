@@ -17,6 +17,7 @@ base64 = "0.22"
 serde_yaml = "0.9"
 rfd = "0.15"
 image = { version = "0.25", default-features = false, features = ["png"] }
+egui-phosphor = "0.7"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc = "0.2"

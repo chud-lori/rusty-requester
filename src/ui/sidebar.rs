@@ -246,11 +246,15 @@ impl ApiClient {
 
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 4.0;
-                    // Hand-drawn magnifying-glass icon — avoids emoji-font
-                    // fallback that looks pixelated in egui's default font.
                     let (icon_rect, _) =
                         ui.allocate_exact_size(egui::vec2(18.0, 24.0), egui::Sense::hover());
-                    paint_search_icon(ui.painter(), icon_rect.center(), C_MUTED);
+                    ui.painter().text(
+                        icon_rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        egui_phosphor::regular::MAGNIFYING_GLASS,
+                        egui::FontId::proportional(15.0),
+                        C_MUTED,
+                    );
 
                     // Always reserve the close-button slot (visible or as
                     // a phantom spacer) so the TextEdit's desired_width
@@ -798,7 +802,13 @@ impl ApiClient {
         if !is_collection && !is_renaming {
             let rect = header_response.header_response.rect;
             let icon_center = egui::pos2(rect.left() + 22.0, rect.center().y);
-            paint_folder_icon(&ui.painter_at(rect), icon_center, C_MUTED);
+            ui.painter_at(rect).text(
+                icon_center,
+                egui::Align2::CENTER_CENTER,
+                egui_phosphor::regular::FOLDER_SIMPLE,
+                egui::FontId::proportional(14.0),
+                C_MUTED,
+            );
         }
 
         if is_renaming {
@@ -862,7 +872,13 @@ impl ApiClient {
                     .rect_filled(plus_rect, egui::Rounding::same(4.0), C_ELEVATED);
             }
             let plus_color = if plus_resp.hovered() { C_TEXT } else { C_MUTED };
-            paint_plus_icon(ui.painter(), plus_rect.center(), plus_color);
+            ui.painter().text(
+                plus_rect.center(),
+                egui::Align2::CENTER_CENTER,
+                egui_phosphor::regular::PLUS,
+                egui::FontId::proportional(14.0),
+                plus_color,
+            );
             plus_resp.clone().on_hover_text("Add request");
             if plus_resp.clicked() {
                 action_add_request = true;
@@ -877,7 +893,13 @@ impl ApiClient {
                     .rect_filled(dots_rect, egui::Rounding::same(4.0), C_ELEVATED);
             }
             let dots_color = if dots_resp.hovered() { C_TEXT } else { C_MUTED };
-            paint_dots_icon(ui.painter(), dots_rect.center(), dots_color);
+            ui.painter().text(
+                dots_rect.center(),
+                egui::Align2::CENTER_CENTER,
+                egui_phosphor::regular::DOTS_THREE,
+                egui::FontId::proportional(14.0),
+                dots_color,
+            );
             dots_resp.clone().on_hover_text("More options");
 
             let popup_id = ui.id().with(("folder_menu", &folder_id));

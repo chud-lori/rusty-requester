@@ -687,7 +687,7 @@ impl ApiClient {
                             }
                         });
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if icon_button(ui, "Copy snippet", paint_copy_icon).clicked() {
+                        if icon_btn(ui, egui_phosphor::regular::COPY, "Copy snippet").clicked() {
                             copy_clicked = true;
                         }
                     });
