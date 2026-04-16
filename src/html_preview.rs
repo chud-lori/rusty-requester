@@ -88,10 +88,10 @@ fn replace_block_tags_with_newlines(html: &str) -> String {
                 if lc[i..].starts_with(&open) {
                     let next = i + open.len();
                     // Valid opener: next char is `>`, space, or `/` (self-closing).
-                    let ok = match bytes.get(next) {
-                        Some(b'>') | Some(b' ') | Some(b'/') | Some(b'\t') => true,
-                        _ => false,
-                    };
+                    let ok = matches!(
+                        bytes.get(next),
+                        Some(b'>') | Some(b' ') | Some(b'/') | Some(b'\t')
+                    );
                     if ok {
                         out.push('\n');
                         break;

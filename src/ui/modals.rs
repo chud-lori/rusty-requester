@@ -622,6 +622,7 @@ impl ApiClient {
         self.state.open_tabs.push(OpenTab {
             folder_path: vec![],
             request_id: id.clone(),
+            pinned: false,
         });
         self.selected_folder_path = vec![];
         self.selected_request_id = Some(id);

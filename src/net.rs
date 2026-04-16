@@ -81,14 +81,6 @@ pub fn ensure_url_scheme(url: &str) -> String {
     format!("http://{}", t)
 }
 
-/// Scheme that `ensure_url_scheme` will prepend to a schemeless URL.
-/// Exposed so the URL-bar hint renders the same prefix the send path
-/// uses. Currently constant, but kept as a function to match the hint
-/// call site's expectations.
-pub fn default_scheme_for(_url_lower: &str) -> &'static str {
-    "http"
-}
-
 /// Build a long-lived tokio runtime used to drive every HTTP request.
 /// Stored on `ApiClient` and shared across `execute_request` calls so
 /// we don't pay the spawn-runtime cost (~1ms + thread allocation)

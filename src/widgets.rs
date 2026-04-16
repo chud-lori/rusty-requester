@@ -30,9 +30,7 @@ pub fn substitute_kvs(rows: &[KvRow], env: Option<&Environment>) -> Vec<KvRow> {
         .collect()
 }
 
-/// Draw a small magnifying-glass search icon centred on `center`.
-/// The circle has `radius`, handle extends diagonally down-right.
-
+/// Square X/close button with a red-tinted hover state.
 pub fn close_x_button(ui: &mut egui::Ui, hover_text: &str) -> egui::Response {
     let size = egui::vec2(20.0, 20.0);
     let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::click());
@@ -317,8 +315,11 @@ pub enum TabAction {
     CloseOthers,
     CloseAll,
     SaveDraft,
+    Duplicate,
+    TogglePin,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn render_single_tab(
     ui: &mut egui::Ui,
     idx: usize,
@@ -327,6 +328,7 @@ pub fn render_single_tab(
     url: &str,
     is_active: bool,
     is_draft: bool,
+    is_pinned: bool,
 ) -> TabAction {
     let tab_height = 32.0;
     let tab_width = 180.0;
@@ -365,8 +367,22 @@ pub fn render_single_tab(
         let method_str = format!("{}", method);
         let method_font = egui::FontId::new(10.5, egui::FontFamily::Proportional);
         let method_slot_w = 42.0;
-        let pad_left = rect.left() + 12.0;
+        let mut pad_left = rect.left() + 12.0;
         let mid_y = rect.center().y;
+
+        // Pin glyph (before the method) when the tab is pinned — small
+        // accent-colored Phosphor pin. Shrinks the method label slot by
+        // ~14 px so the rest of the layout just shifts right.
+        if is_pinned {
+            ui.painter().text(
+                egui::pos2(pad_left, mid_y),
+                egui::Align2::LEFT_CENTER,
+                egui_phosphor::regular::PUSH_PIN_SIMPLE,
+                egui::FontId::proportional(11.5),
+                C_ACCENT,
+            );
+            pad_left += 14.0;
+        }
         // Paint the text twice — second pass slightly offset — for a
         // faux-bold effect that matches RichText::strong() in the
         // URL bar combobox (which uses the same color).
@@ -484,6 +500,16 @@ pub fn render_single_tab(
             }
             ui.separator();
         }
+        if ui.button("Duplicate tab").clicked() {
+            action = TabAction::Duplicate;
+            ui.close_menu();
+        }
+        let pin_label = if is_pinned { "Unpin tab" } else { "Pin tab" };
+        if ui.button(pin_label).clicked() {
+            action = TabAction::TogglePin;
+            ui.close_menu();
+        }
+        ui.separator();
         if ui.button("Close").clicked() {
             action = TabAction::Close;
             ui.close_menu();

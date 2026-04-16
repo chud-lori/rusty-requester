@@ -437,6 +437,10 @@ pub struct OpenTab {
     #[serde(default)]
     pub folder_path: Vec<String>,
     pub request_id: String,
+    /// Pinned tabs are skipped by ⌘W and "Close others" / "Close all"
+    /// so they can be kept around as persistent references.
+    #[serde(default)]
+    pub pinned: bool,
 }
 
 impl OpenTab {

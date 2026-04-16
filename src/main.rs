@@ -702,6 +702,7 @@ impl ApiClient {
             self.state.open_tabs.push(OpenTab {
                 folder_path: folder_path.clone(),
                 request_id: request_id.clone(),
+                pinned: false,
             });
             self.selected_folder_path = folder_path;
             self.selected_request_id = Some(request_id);
@@ -715,6 +716,13 @@ impl ApiClient {
 
     fn close_tab(&mut self, idx: usize) {
         if idx >= self.state.open_tabs.len() {
+            return;
+        }
+        // Pinned tabs are sticky — user has to unpin or use the X
+        // button directly (X still works; this only guards ⌘W and
+        // menu-driven closes).
+        if self.state.open_tabs[idx].pinned {
+            self.show_toast("Tab is pinned — unpin to close");
             return;
         }
         // If it's a draft with content, show the "Save changes?" modal
@@ -769,38 +777,147 @@ impl ApiClient {
         if keep_idx >= self.state.open_tabs.len() {
             return;
         }
-        let keep = self.state.open_tabs.remove(keep_idx);
-        // Discard any draft requests whose tabs are about to be closed.
-        let keep_id = keep.request_id.clone();
-        let draft_ids: Vec<String> = self
+        let keep_id = self.state.open_tabs[keep_idx].request_id.clone();
+        // Collect tabs to drop: everything except `keep_idx` and
+        // anything pinned. Pinned tabs are preserved by design.
+        let to_drop_draft_ids: Vec<String> = self
             .state
             .open_tabs
             .iter()
-            .filter(|t| t.folder_path.is_empty())
-            .map(|t| t.request_id.clone())
+            .enumerate()
+            .filter(|(i, t)| *i != keep_idx && !t.pinned && t.folder_path.is_empty())
+            .map(|(_, t)| t.request_id.clone())
             .collect();
         self.state
             .drafts
-            .retain(|d| d.id == keep_id || !draft_ids.contains(&d.id));
-        self.state.open_tabs.clear();
-        self.state.open_tabs.push(keep.clone());
-        self.selected_folder_path = keep.folder_path;
-        self.selected_request_id = Some(keep.request_id);
-        self.load_request_for_editing();
+            .retain(|d| !to_drop_draft_ids.contains(&d.id));
+        self.state
+            .open_tabs
+            .retain(|t| t.request_id == keep_id || t.pinned);
+        // Make the kept tab active (it may have moved after retain).
+        if let Some(keep) = self
+            .state
+            .open_tabs
+            .iter()
+            .find(|t| t.request_id == keep_id)
+            .cloned()
+        {
+            self.selected_folder_path = keep.folder_path;
+            self.selected_request_id = Some(keep.request_id);
+            self.load_request_for_editing();
+        }
     }
 
     fn close_all_tabs(&mut self) {
-        // Discard all drafts (they're only alive because they had a tab).
+        // Discard drafts whose tabs are about to close — pinned tabs
+        // (and their drafts) are preserved.
         let draft_ids: Vec<String> = self
             .state
             .open_tabs
             .iter()
-            .filter(|t| t.folder_path.is_empty())
+            .filter(|t| !t.pinned && t.folder_path.is_empty())
             .map(|t| t.request_id.clone())
             .collect();
         self.state.drafts.retain(|d| !draft_ids.contains(&d.id));
-        self.state.open_tabs.clear();
-        self.clear_selection();
+        self.state.open_tabs.retain(|t| t.pinned);
+        if self.state.open_tabs.is_empty() {
+            self.clear_selection();
+        } else {
+            // Activate the first remaining (pinned) tab.
+            let first = self.state.open_tabs[0].clone();
+            self.selected_folder_path = first.folder_path;
+            self.selected_request_id = Some(first.request_id);
+            self.load_request_for_editing();
+        }
+    }
+
+    /// Flattened list of `(folder_path, request_id)` for every
+    /// request in every collection, depth-first. Used by ↑/↓ arrow
+    /// navigation so the user can step through requests without
+    /// mouse-clicking. Respects the current sidebar search filter.
+    fn flat_request_list(&self) -> Vec<(Vec<String>, String)> {
+        let q = self.search_query.to_lowercase();
+        let mut out = Vec::new();
+        for folder in &self.state.folders {
+            collect_flat_requests(folder, &mut Vec::new(), &mut out, &q);
+        }
+        out
+    }
+
+    /// Move sidebar selection to the next (`down = true`) or previous
+    /// request in the flat list, wrapping at the ends. No-op when the
+    /// list is empty.
+    fn arrow_navigate_sidebar(&mut self, down: bool) {
+        let flat = self.flat_request_list();
+        if flat.is_empty() {
+            return;
+        }
+        let current_idx = self.selected_request_id.as_ref().and_then(|id| {
+            flat.iter()
+                .position(|(p, rid)| rid == id && *p == self.selected_folder_path)
+        });
+        let next_idx = match current_idx {
+            None => {
+                if down {
+                    0
+                } else {
+                    flat.len() - 1
+                }
+            }
+            Some(i) => {
+                if down {
+                    (i + 1) % flat.len()
+                } else {
+                    (i + flat.len() - 1) % flat.len()
+                }
+            }
+        };
+        let (path, id) = flat[next_idx].clone();
+        self.open_request(path, id);
+    }
+
+    /// Duplicate the request at `idx` as a new draft tab. For saved
+    /// requests, a fresh draft copy is added to `state.drafts` with a
+    /// new UUID; for drafts, the source draft itself is cloned.
+    fn duplicate_tab(&mut self, idx: usize) {
+        let Some(tab) = self.state.open_tabs.get(idx).cloned() else {
+            return;
+        };
+        let src: Option<Request> = if tab.folder_path.is_empty() {
+            self.state
+                .drafts
+                .iter()
+                .find(|d| d.id == tab.request_id)
+                .cloned()
+        } else {
+            let path = tab.folder_path.clone();
+            let mut req: Option<Request> = None;
+            if let Some(folder) = self.folder_at_path_mut(&path) {
+                req = folder
+                    .requests
+                    .iter()
+                    .find(|r| r.id == tab.request_id)
+                    .cloned();
+            }
+            req
+        };
+        let Some(mut req) = src else { return };
+        req.id = Uuid::new_v4().to_string();
+        if !req.name.is_empty() {
+            req.name = format!("{} (copy)", req.name);
+        }
+        let new_id = req.id.clone();
+        self.state.drafts.push(req);
+        self.state.open_tabs.push(OpenTab {
+            folder_path: vec![],
+            request_id: new_id.clone(),
+            pinned: false,
+        });
+        self.selected_folder_path = vec![];
+        self.selected_request_id = Some(new_id);
+        self.load_request_for_editing();
+        self.save_state();
+        self.show_toast("Tab duplicated");
     }
 
     fn prune_stale_tabs(&mut self) {
@@ -1066,17 +1183,41 @@ impl eframe::App for ApiClient {
             self.do_export_all(io::Format::Yaml);
         }
 
-        let (cmd_enter, cmd_k, cmd_p, cmd_s, cmd_n, cmd_w, f2) = ctx.input(|i| {
-            (
-                i.modifiers.command && i.key_pressed(egui::Key::Enter),
-                i.modifiers.command && i.key_pressed(egui::Key::K),
-                i.modifiers.command && i.key_pressed(egui::Key::P),
-                i.modifiers.command && i.key_pressed(egui::Key::S),
-                i.modifiers.command && i.key_pressed(egui::Key::N),
-                i.modifiers.command && i.key_pressed(egui::Key::W),
-                i.key_pressed(egui::Key::F2),
-            )
-        });
+        let (cmd_enter, cmd_k, cmd_p, cmd_s, cmd_n, cmd_w, cmd_d, f2, arrow_up, arrow_down) = ctx
+            .input(|i| {
+                (
+                    i.modifiers.command && i.key_pressed(egui::Key::Enter),
+                    i.modifiers.command && i.key_pressed(egui::Key::K),
+                    i.modifiers.command && i.key_pressed(egui::Key::P),
+                    i.modifiers.command && i.key_pressed(egui::Key::S),
+                    i.modifiers.command && i.key_pressed(egui::Key::N),
+                    i.modifiers.command && i.key_pressed(egui::Key::W),
+                    i.modifiers.command && i.key_pressed(egui::Key::D),
+                    i.key_pressed(egui::Key::F2),
+                    !i.modifiers.command && !i.modifiers.alt && i.key_pressed(egui::Key::ArrowUp),
+                    !i.modifiers.command && !i.modifiers.alt && i.key_pressed(egui::Key::ArrowDown),
+                )
+            });
+        // Arrow navigation is gated on "no widget wants keyboard
+        // input" — so typing in a TextEdit, Body editor, or search
+        // box isn't hijacked. When nothing's focused, ↑/↓ step
+        // through the flat request list in the sidebar.
+        let can_arrow_nav = !ctx.wants_keyboard_input()
+            && !self.show_command_palette
+            && !self.show_env_modal
+            && !self.show_settings_modal
+            && !self.show_paste_modal
+            && !self.show_about_modal
+            && !self.save_draft_open
+            && self.confirm_close_draft_idx.is_none()
+            && self.renaming_request_id.is_none()
+            && self.renaming_folder_id.is_none();
+        if can_arrow_nav && arrow_up {
+            self.arrow_navigate_sidebar(false);
+        }
+        if can_arrow_nav && arrow_down {
+            self.arrow_navigate_sidebar(true);
+        }
         if cmd_enter && self.selected_request_id.is_some() && !self.is_loading {
             self.send_request();
         }
@@ -1094,6 +1235,19 @@ impl eframe::App for ApiClient {
                     .position(|t| &t.request_id == req_id);
                 if let Some(i) = idx {
                     self.close_tab(i);
+                }
+            }
+        }
+        // Cmd+D — duplicate active tab.
+        if cmd_d {
+            if let Some(req_id) = &self.selected_request_id {
+                let idx = self
+                    .state
+                    .open_tabs
+                    .iter()
+                    .position(|t| &t.request_id == req_id);
+                if let Some(i) = idx {
+                    self.duplicate_tab(i);
                 }
             }
         }
@@ -1355,6 +1509,27 @@ pub(crate) fn find_folder_by_id_mut<'a>(
 
 fn find_folder_desc(folders: &[Folder], id: &str) -> Option<String> {
     find_folder_by_id(folders, id).map(|f| f.description.clone())
+}
+
+/// Depth-first collector for `flat_request_list` — pushes
+/// `(folder_path, request_id)` for each request matching the search
+/// query. Empty query accepts everything.
+fn collect_flat_requests(
+    folder: &Folder,
+    path: &mut Vec<String>,
+    out: &mut Vec<(Vec<String>, String)>,
+    query: &str,
+) {
+    path.push(folder.id.clone());
+    for r in &folder.requests {
+        if query.is_empty() || widgets::request_matches(r, query) {
+            out.push((path.clone(), r.id.clone()));
+        }
+    }
+    for sub in &folder.subfolders {
+        collect_flat_requests(sub, path, out, query);
+    }
+    path.pop();
 }
 
 fn main() -> Result<(), eframe::Error> {

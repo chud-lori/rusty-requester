@@ -160,6 +160,8 @@ impl ApiClient {
                 let mut close_all = false;
                 let mut new_draft = false;
                 let mut save_draft: Option<usize> = None;
+                let mut duplicate: Option<usize> = None;
+                let mut toggle_pin: Option<usize> = None;
 
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 4.0;
@@ -194,6 +196,7 @@ impl ApiClient {
                                         &url,
                                         is_active,
                                         tab.is_draft(),
+                                        tab.pinned,
                                     );
                                     match action {
                                         TabAction::Activate => activate = Some(i),
@@ -201,6 +204,8 @@ impl ApiClient {
                                         TabAction::CloseOthers => close_others = Some(i),
                                         TabAction::CloseAll => close_all = true,
                                         TabAction::SaveDraft => save_draft = Some(i),
+                                        TabAction::Duplicate => duplicate = Some(i),
+                                        TabAction::TogglePin => toggle_pin = Some(i),
                                         TabAction::None => {}
                                     }
                                 }
@@ -268,6 +273,15 @@ impl ApiClient {
                 if let Some(idx) = save_draft {
                     self.begin_save_draft(idx);
                 }
+                if let Some(idx) = duplicate {
+                    self.duplicate_tab(idx);
+                }
+                if let Some(idx) = toggle_pin {
+                    if let Some(tab) = self.state.open_tabs.get_mut(idx) {
+                        tab.pinned = !tab.pinned;
+                        self.save_state();
+                    }
+                }
             });
     }
 
@@ -316,12 +330,9 @@ impl ApiClient {
                             }
                         });
 
-                    // Reserve space for Send + Code buttons (~180 px)
-                    // and a fixed slot for the scheme hint so the URL
-                    // bar doesn't jitter as the indicator appears.
+                    // Reserve space for Send + Code buttons (~180 px).
                     let btn_space = 180.0;
-                    let scheme_slot = 70.0;
-                    let avail = (ui.available_width() - btn_space - scheme_slot).max(200.0);
+                    let avail = (ui.available_width() - btn_space).max(200.0);
                     let url_edit = ui.add(
                         egui::TextEdit::singleline(&mut self.editing_url)
                             .id_source("url_bar_edit")
@@ -330,34 +341,6 @@ impl ApiClient {
                                 "https://api.example.com/endpoint  (or paste a cURL command)",
                             ))
                             .font(egui::TextStyle::Monospace),
-                    );
-
-                    // Postman-style scheme hint — show "→ http" or
-                    // "→ https" when the user typed a schemeless URL,
-                    // so they know what we'll prepend on send.
-                    let trimmed_url = self.editing_url.trim();
-                    let lower = trimmed_url.to_ascii_lowercase();
-                    let has_scheme = lower.starts_with("http://")
-                        || lower.starts_with("https://")
-                        || lower.starts_with("ws://")
-                        || lower.starts_with("wss://");
-                    ui.allocate_ui_with_layout(
-                        egui::vec2(scheme_slot, 0.0),
-                        egui::Layout::left_to_right(egui::Align::Center),
-                        |ui| {
-                            if !trimmed_url.is_empty() && !has_scheme {
-                                let scheme = crate::net::default_scheme_for(&lower);
-                                ui.label(
-                                    egui::RichText::new(format!("→ {}", scheme))
-                                        .color(C_MUTED)
-                                        .font(egui::FontId::monospace(11.0)),
-                                )
-                                .on_hover_text(format!(
-                                    "Will be sent as {}://{}",
-                                    scheme, trimmed_url
-                                ));
-                            }
-                        },
                     );
                     if url_edit.changed() {
                         let trimmed = self.editing_url.trim_start();
