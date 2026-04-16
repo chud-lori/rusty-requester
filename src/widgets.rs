@@ -271,7 +271,7 @@ pub fn render_kv_table(
                         [key_w, row_h],
                         egui::TextEdit::singleline(&mut row.key)
                             .id(id_salt.with((i, "key")))
-                            .hint_text(if is_last_blank { "Key" } else { "" })
+                            .hint_text(if is_last_blank { hint("Key") } else { hint("") })
                             .text_color(text_color),
                     );
                     if key_resp.changed() {
@@ -283,7 +283,11 @@ pub fn render_kv_table(
                         [val_w, row_h],
                         egui::TextEdit::singleline(&mut row.value)
                             .id(id_salt.with((i, "value")))
-                            .hint_text(if is_last_blank { "Value" } else { "" })
+                            .hint_text(if is_last_blank {
+                                hint("Value")
+                            } else {
+                                hint("")
+                            })
                             .text_color(text_color),
                     );
                     if val_resp.changed() {
@@ -296,7 +300,11 @@ pub fn render_kv_table(
                             [desc_w, row_h],
                             egui::TextEdit::singleline(&mut row.description)
                                 .id(id_salt.with((i, "desc")))
-                                .hint_text(if is_last_blank { "Description" } else { "" })
+                                .hint_text(if is_last_blank {
+                                    hint("Description")
+                                } else {
+                                    hint("")
+                                })
                                 .text_color(text_color),
                         );
                         if desc_resp.changed() {

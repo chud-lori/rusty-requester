@@ -326,9 +326,9 @@ impl ApiClient {
                         egui::TextEdit::singleline(&mut self.editing_url)
                             .id_source("url_bar_edit")
                             .desired_width(avail)
-                            .hint_text(
+                            .hint_text(hint(
                                 "https://api.example.com/endpoint  (or paste a cURL command)",
-                            )
+                            ))
                             .font(egui::TextStyle::Monospace),
                     );
 

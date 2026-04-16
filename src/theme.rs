@@ -21,6 +21,13 @@ pub const C_PINK: egui::Color32 = egui::Color32::from_rgb(183, 65, 14); // #B741
 pub const C_RED: egui::Color32 = egui::Color32::from_rgb(220, 38, 38); // #DC2626 crimson — DELETE / errors
 pub const C_MUTED: egui::Color32 = egui::Color32::from_rgb(126, 131, 145); // #7E8391 neutral muted text
 pub const C_TEXT: egui::Color32 = egui::Color32::from_rgb(224, 226, 232); // #E0E2E8 neutral light
+pub const C_HINT: egui::Color32 = egui::Color32::from_rgb(80, 84, 95); // #50545F dim placeholder
+
+/// Styled placeholder text for TextEdit hint_text — dim color so
+/// it's unambiguously a placeholder, not a real value.
+pub fn hint(text: &str) -> egui::RichText {
+    egui::RichText::new(text).color(C_HINT)
+}
 
 pub fn method_color(m: &HttpMethod) -> egui::Color32 {
     match m {
