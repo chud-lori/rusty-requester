@@ -11,7 +11,36 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
-## Unreleased — Light theme
+## Unreleased — OAuth 2.0
+
+### Added
+- **OAuth 2.0 Authorization Code + PKCE.** New `Auth::OAuth2` variant
+  alongside Bearer / Basic. Full in-app flow — click **Get New
+  Token** in the Auth tab, the app opens your provider's authorize
+  URL in your default browser, spins up a loopback listener on a
+  random `127.0.0.1:<port>`, parses the redirect, exchanges the
+  code for a token via the provider's `token_url`. Access token +
+  refresh token + expiry get cached on the request; subsequent
+  sends inject `Authorization: Bearer <token>` automatically. The
+  Auth tab shows a live status badge (valid / refreshing soon /
+  expired) and a masked preview of the stored token.
+- New `src/oauth.rs` module (6 unit tests, zero runtime deps
+  beyond the new lightweight `sha2` for PKCE's S256 challenge).
+  Covers the RFC 7636 canonical test vector for the challenge
+  derivation.
+- New `sha2` dependency — only for PKCE S256. Pure-Rust, ~40 KB,
+  no transitive extras.
+
+### Known limitations (follow-ups for 1.x)
+- Client Credentials + Refresh Token flows aren't implemented yet —
+  the Auth tab only offers Authorization Code + PKCE. When the
+  access token expires, click **Get New Token** to re-run the
+  flow manually.
+- Tokens are persisted in `data.json` alongside other auth data,
+  same security model as Bearer. Native-keychain storage remains
+  on the post-1.0 roadmap.
+
+## [0.14.0] — Light theme
 
 ### Added
 - **Light theme** — new `Theme::Light` option in Settings. Flips

@@ -17,7 +17,8 @@ Full feature catalog for Rusty Requester. For a quick pitch see the
 - 📝 Tabbed editor: **Params · Headers · Cookies · Body · Auth · Tests**
 - 🔗 **Bidirectional URL ↔ Params sync** (Postman-style): type `?foo=bar` in the URL bar → params populate the table; edit the table → URL bar rebuilds. Auto-growing "ghost" row.
 - 🍪 Cookies list (merged into a `Cookie` header on send)
-- 🔐 Auth presets: **No Auth · Bearer Token · Basic Auth** + **JWT decoder** (Bearer tokens auto-decode below the input — header & payload pretty JSON, scope/exp at a glance)
+- 🔐 Auth presets: **No Auth · Bearer Token · Basic Auth · OAuth 2.0** + **JWT decoder** (Bearer tokens auto-decode below the input — header & payload pretty JSON, scope/exp at a glance)
+- 🪪 **OAuth 2.0 Authorization Code + PKCE** — click **Get New Token** in the Auth tab; browser opens the provider's authorize URL, loopback listener catches the redirect, code is exchanged for a token via the provider's `token_url`. Access token auto-injected as `Authorization: Bearer <token>` on every send. Live status badge (valid / expired / refreshing soon). No client secret required for PKCE clients.
 - 📦 **Body modes**: Raw / `x-www-form-urlencoded` / `multipart/form-data` / **GraphQL** (query + variables, sent as `application/json`)
 - 📐 **Line-numbered request body** with subtle `Beautify` / `Minify` action links
 - 🌱 **Environment variables** — define key/value vars per environment, reference them anywhere with `{{varname}}`. Switch active env from the sidebar.
@@ -230,6 +231,7 @@ Foundations
 - [x] JSON / YAML export & import
 - [x] Bidirectional **URL ↔ Params sync** — type `?k=v` in URL, table populates; edit table, URL rebuilds
 - [x] Bearer / Basic auth presets + **JWT decoder** for Bearer tokens
+- [x] **OAuth 2.0 Authorization Code + PKCE** — in-app browser flow with loopback listener, auto-injects Bearer token on send
 - [x] Body modes: Raw / form-urlencoded / multipart / GraphQL
 - [x] Environment variables — `{{var}}` substitution with active env selector + manage modal
 - [x] Request history — last 200 sends with preview
@@ -279,12 +281,12 @@ Platform
 
 **On the v1.0 pathway:**
 
-- [ ] **OAuth 2.0** flows (Authorization Code + PKCE, Client Credentials, refresh
-      token). Highest-impact remaining feature; tokens slot directly into the env
-      system.
+_Nothing — v0.15.0 ships OAuth 2.0 Auth Code + PKCE, which was the last v1.0 item._
 
 **Post-1.0:**
 
+- [ ] **OAuth 2.0 Client Credentials + Refresh flows** — the first release ships Auth Code + PKCE only.
+- [ ] **Native keychain integration** — back OAuth + Bearer tokens with the OS keychain via the `keyring` crate.
 - [ ] **WebSocket testing** — separate connection lifecycle + per-request message log.
 - [ ] **Pre-request scripts** — Rhai/Boa scripting engine for transformations before send.
 - [ ] **Windows builds** — CI + installer parity with macOS/Linux.
