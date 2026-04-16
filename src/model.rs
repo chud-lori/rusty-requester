@@ -349,6 +349,21 @@ pub struct AppSettings {
     /// = direct.
     #[serde(default)]
     pub proxy_url: String,
+    /// UI theme. `Dark` is the default, opinionated palette; `Light`
+    /// flips egui's chrome (panels, text, borders, widget backgrounds)
+    /// for bright environments. Saturated accents (method colors,
+    /// status pills, rust-orange accent) stay the same across themes
+    /// — they're tuned to read on both backgrounds.
+    #[serde(default)]
+    pub theme: Theme,
+}
+
+/// UI theme — drives `apply_style`'s choice of `Visuals`.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum Theme {
+    #[default]
+    Dark,
+    Light,
 }
 
 fn default_timeout_sec() -> u64 {
@@ -368,6 +383,7 @@ impl Default for AppSettings {
             max_body_mb: default_max_body_mb(),
             verify_tls: default_verify_tls(),
             proxy_url: String::new(),
+            theme: Theme::Dark,
         }
     }
 }
