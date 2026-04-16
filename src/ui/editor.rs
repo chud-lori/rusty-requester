@@ -468,10 +468,11 @@ impl ApiClient {
         } else {
             "Body •".to_string()
         };
-        let auth_label = match self.editing_auth {
+        let auth_label = match &self.editing_auth {
             Auth::None => "Auth".to_string(),
             Auth::Bearer { .. } => "Auth (Bearer)".to_string(),
             Auth::Basic { .. } => "Auth (Basic)".to_string(),
+            Auth::OAuth2(_) => "Auth (OAuth 2.0)".to_string(),
         };
         let active_extractors = self
             .editing_extractors
@@ -814,11 +815,13 @@ impl ApiClient {
                     AuthKind::None => "No Auth",
                     AuthKind::Bearer => "Bearer Token",
                     AuthKind::Basic => "Basic Auth",
+                    AuthKind::OAuth2 => "OAuth 2.0",
                 })
                 .show_ui(ui, |ui| {
                     ui.selectable_value(&mut kind, AuthKind::None, "No Auth");
                     ui.selectable_value(&mut kind, AuthKind::Bearer, "Bearer Token");
                     ui.selectable_value(&mut kind, AuthKind::Basic, "Basic Auth");
+                    ui.selectable_value(&mut kind, AuthKind::OAuth2, "OAuth 2.0");
                 });
         });
 
@@ -841,6 +844,10 @@ impl ApiClient {
                         username: String::new(),
                         password: String::new(),
                     },
+                },
+                AuthKind::OAuth2 => match &self.editing_auth {
+                    Auth::OAuth2(s) => Auth::OAuth2(s.clone()),
+                    _ => Auth::OAuth2(Box::default()),
                 },
             };
             let auth = self.editing_auth.clone();
@@ -946,10 +953,163 @@ impl ApiClient {
                     }
                 });
             }
+            Auth::OAuth2(s) => {
+                // Config form — six fields. Stored persistently on
+                // the request; `Get New Token` uses these to drive
+                // the PKCE flow.
+                fn field(
+                    ui: &mut egui::Ui,
+                    label: &str,
+                    value: &mut String,
+                    hint: &str,
+                    password: bool,
+                ) -> bool {
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new(label).color(C_ACCENT));
+                        let mut edit = egui::TextEdit::singleline(value)
+                            .desired_width(ui.available_width() - 140.0)
+                            .hint_text(hint);
+                        if password {
+                            edit = edit.password(true);
+                        }
+                        ui.add(edit).changed()
+                    })
+                    .inner
+                }
+                changed |= field(
+                    ui,
+                    "Auth URL",
+                    &mut s.config.auth_url,
+                    "https://provider.example.com/oauth/authorize",
+                    false,
+                );
+                changed |= field(
+                    ui,
+                    "Token URL",
+                    &mut s.config.token_url,
+                    "https://provider.example.com/oauth/token",
+                    false,
+                );
+                changed |= field(ui, "Client ID", &mut s.config.client_id, "", false);
+                changed |= field(
+                    ui,
+                    "Client secret",
+                    &mut s.config.client_secret,
+                    "(public / PKCE clients: leave empty)",
+                    true,
+                );
+                changed |= field(
+                    ui,
+                    "Scope",
+                    &mut s.config.scope,
+                    "read:all write:all",
+                    false,
+                );
+                changed |= field(
+                    ui,
+                    "Redirect URI",
+                    &mut s.config.redirect_uri,
+                    "http://127.0.0.1/callback",
+                    false,
+                );
+
+                ui.add_space(8.0);
+                // Status line + action button.
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs() as i64)
+                    .unwrap_or(0);
+                let (status_text, status_color) = if s.access_token.is_empty() {
+                    ("No token yet — click Get New Token", C_MUTED)
+                } else if let Some(exp) = s.expires_at {
+                    if exp <= now {
+                        ("Access token expired — click Get New Token", C_RED)
+                    } else {
+                        let secs = exp - now;
+                        let min = secs / 60;
+                        if min > 60 {
+                            ("Access token valid", C_GREEN)
+                        } else if min > 1 {
+                            ("Access token valid (refreshing soon)", C_ORANGE)
+                        } else {
+                            ("Access token valid (<1 min left)", C_ORANGE)
+                        }
+                    }
+                } else {
+                    ("Access token stored (no expiry info)", C_GREEN)
+                };
+                // Collect intents from the closures (can't call
+                // `self.start_oauth_flow()` while `s` holds a mutable
+                // borrow of `self.editing_auth`).
+                let busy = self.oauth_flow_rx.is_some();
+                let flow_status = self.oauth_flow_status.clone();
+                let has_token = !s.access_token.is_empty();
+                let mut start_flow = false;
+                let mut clear_token = false;
+                ui.horizontal(|ui| {
+                    ui.label(
+                        egui::RichText::new(status_text)
+                            .color(status_color)
+                            .size(12.0),
+                    );
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let btn_text = if busy { "Waiting…" } else { "Get New Token" };
+                        let btn = egui::Button::new(
+                            egui::RichText::new(btn_text)
+                                .color(egui::Color32::WHITE)
+                                .strong(),
+                        )
+                        .fill(C_ACCENT)
+                        .min_size(egui::vec2(140.0, 28.0));
+                        let resp = ui.add_enabled(!busy, btn);
+                        if resp.clicked() {
+                            start_flow = true;
+                        }
+                        if has_token && ui.small_button("Clear token").clicked() {
+                            clear_token = true;
+                        }
+                    });
+                });
+                if clear_token {
+                    s.access_token.clear();
+                    s.refresh_token.clear();
+                    s.expires_at = None;
+                    changed = true;
+                }
+                if let Some(msg) = flow_status {
+                    ui.add_space(4.0);
+                    ui.label(egui::RichText::new(msg).color(C_MUTED).size(11.0));
+                }
+                // `start_flow` is handled after the match ends (below)
+                // so we don't hold `&mut self.editing_auth` across the
+                // call to `self.start_oauth_flow()`.
+                if start_flow {
+                    self.oauth_start_requested = true;
+                }
+
+                if !s.access_token.is_empty() {
+                    ui.add_space(6.0);
+                    ui.label(
+                        egui::RichText::new("Access token (stored in data.json)")
+                            .size(10.5)
+                            .color(C_MUTED),
+                    );
+                    // Masked preview — show first + last 8 chars.
+                    let preview = mask_token(&s.access_token);
+                    ui.label(
+                        egui::RichText::new(preview)
+                            .font(egui::FontId::monospace(11.5))
+                            .color(C_TEXT),
+                    );
+                }
+            }
         }
         if changed {
             let auth = self.editing_auth.clone();
             self.update_current_request(|r| r.auth = auth);
+        }
+        if std::mem::take(&mut self.oauth_start_requested) {
+            self.start_oauth_flow();
         }
     }
 

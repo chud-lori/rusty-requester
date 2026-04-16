@@ -415,6 +415,12 @@ fn collect_send_headers(req: &Request) -> Vec<(String, String)> {
             out.push(("Authorization".into(), format!("Bearer {}", token)));
         }
     }
+    // OAuth2 → Bearer <access_token>, mirroring the send path.
+    if let Auth::OAuth2(s) = &req.auth {
+        if !s.access_token.is_empty() {
+            out.push(("Authorization".into(), format!("Bearer {}", s.access_token)));
+        }
+    }
     out
 }
 

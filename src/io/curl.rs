@@ -21,6 +21,12 @@ pub fn to_curl(req: &Request) -> String {
         Auth::Bearer { token } if !token.is_empty() => {
             parts.push(format!("-H 'Authorization: Bearer {}'", esc(token)));
         }
+        Auth::OAuth2(s) if !s.access_token.is_empty() => {
+            parts.push(format!(
+                "-H 'Authorization: Bearer {}'",
+                esc(&s.access_token)
+            ));
+        }
         Auth::Basic { username, password } if !username.is_empty() => {
             parts.push(format!("-u '{}:{}'", esc(username), esc(password)));
         }

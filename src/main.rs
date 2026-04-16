@@ -10,6 +10,7 @@ mod io;
 mod macos_menu;
 mod model;
 mod net;
+mod oauth;
 mod snippet;
 mod sse;
 mod theme;
@@ -29,6 +30,14 @@ use model::*;
 struct InFlightRequest {
     handle: tokio::task::JoinHandle<()>,
     rx: std::sync::mpsc::Receiver<net::RequestUpdate>,
+}
+
+/// Result of a successful OAuth2 flow, ready to be copied into the
+/// active request's `Auth::OAuth2` state.
+pub struct OAuth2TokenUpdate {
+    pub access_token: String,
+    pub refresh_token: String,
+    pub expires_at: Option<i64>,
 }
 use snippet::SnippetLang;
 use std::fs;
@@ -148,6 +157,20 @@ struct ApiClient {
     /// banner stays visible across frames. `None` = no update / not
     /// checked yet / current version is latest.
     update_available: Option<String>,
+
+    /// In-flight OAuth 2.0 flow. `Some` while the user is completing
+    /// the authorize-redirect dance in their browser; drained each
+    /// frame. `Ok(tokens)` → copy into the active Auth::OAuth2 state
+    /// and clear; `Err(msg)` → toast the error and clear.
+    oauth_flow_rx: Option<std::sync::mpsc::Receiver<Result<OAuth2TokenUpdate, String>>>,
+    /// Human-readable status line shown under the Auth tab while a
+    /// flow is in progress ("Waiting for browser redirect…", etc.).
+    oauth_flow_status: Option<String>,
+    /// "Get New Token" was clicked this frame — render_auth_tab can't
+    /// call `start_oauth_flow` directly because it's already holding
+    /// a mutable borrow of `editing_auth`. Caller flushes this flag
+    /// after the match ends.
+    oauth_start_requested: bool,
 
     /// Open "save draft" modal state.
     save_draft_open: bool,
@@ -328,6 +351,9 @@ impl Default for ApiClient {
             startup_warning: None,
             update_check_rx: None,
             update_available: None,
+            oauth_flow_rx: None,
+            oauth_flow_status: None,
+            oauth_start_requested: false,
             save_draft_open: false,
             save_draft_tab_idx: None,
             save_draft_target_path: Vec::new(),
@@ -648,6 +674,125 @@ impl ApiClient {
     fn active_environment(&self) -> Option<&Environment> {
         let id = self.state.active_env_id.as_ref()?;
         self.state.environments.iter().find(|e| &e.id == id)
+    }
+
+    /// Kick off an OAuth 2.0 Authorization Code + PKCE flow using the
+    /// config currently showing on the Auth tab. Spawns a background
+    /// thread that opens the browser, waits for the redirect, and
+    /// exchanges the code for a token — result flows back via
+    /// `oauth_flow_rx` and is merged into `editing_auth` on the next
+    /// `update()` frame. Returns immediately; UI shows "Waiting…"
+    /// until the flow completes.
+    fn start_oauth_flow(&mut self) {
+        let Auth::OAuth2(state) = &self.editing_auth else {
+            return;
+        };
+        if state.config.auth_url.trim().is_empty()
+            || state.config.token_url.trim().is_empty()
+            || state.config.client_id.trim().is_empty()
+        {
+            self.show_toast("Fill in Auth URL, Token URL, and Client ID first");
+            return;
+        }
+        let config = state.config.clone();
+        let client = self.http_client.clone();
+        let rt_handle = self.http_runtime.handle().clone();
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.oauth_flow_rx = Some(rx);
+        self.oauth_flow_status = Some("Opening browser…".to_string());
+
+        std::thread::spawn(move || {
+            let flow = match oauth::begin_flow(&config) {
+                Ok(f) => f,
+                Err(e) => {
+                    let _ = tx.send(Err(format!("Flow setup failed: {}", e)));
+                    return;
+                }
+            };
+            let auth_url = flow.authorize_url(&config);
+            if let Err(e) = webbrowser_open(&auth_url) {
+                let _ = tx.send(Err(format!("Could not open browser: {}", e)));
+                return;
+            }
+            // Block up to 2 min for the user to complete the redirect.
+            let code = match flow.wait_for_redirect(std::time::Duration::from_secs(120)) {
+                Ok(c) => c,
+                Err(e) => {
+                    let _ = tx.send(Err(format!("{}", e)));
+                    return;
+                }
+            };
+            let redirect_uri = flow.redirect_uri().to_string();
+            // Run the token exchange on the shared tokio runtime so
+            // we don't build a throwaway runtime per flow.
+            let exchange = rt_handle.block_on(oauth::exchange_code(
+                &client,
+                &config,
+                &code,
+                &flow.verifier,
+                &redirect_uri,
+            ));
+            match exchange {
+                Ok(tr) => {
+                    let expires_at = tr.expires_in_secs.map(|s| {
+                        let now = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_secs() as i64)
+                            .unwrap_or(0);
+                        now + s
+                    });
+                    let _ = tx.send(Ok(OAuth2TokenUpdate {
+                        access_token: tr.access_token,
+                        refresh_token: tr.refresh_token,
+                        expires_at,
+                    }));
+                }
+                Err(e) => {
+                    let _ = tx.send(Err(format!("{}", e)));
+                }
+            }
+        });
+    }
+
+    /// Called each `update()` frame — if the OAuth flow has
+    /// completed, drain the result into `editing_auth` (success) or
+    /// a toast (failure). No-op when no flow is in flight.
+    fn poll_oauth_flow(&mut self) {
+        if self.oauth_flow_rx.is_none() {
+            return;
+        }
+        let Some(rx) = &self.oauth_flow_rx else {
+            return;
+        };
+        match rx.try_recv() {
+            Ok(Ok(tokens)) => {
+                if let Auth::OAuth2(ref mut s) = self.editing_auth {
+                    s.access_token = tokens.access_token;
+                    s.refresh_token = tokens.refresh_token;
+                    s.expires_at = tokens.expires_at;
+                }
+                let auth = self.editing_auth.clone();
+                self.update_current_request(|r| r.auth = auth);
+                self.oauth_flow_rx = None;
+                self.oauth_flow_status = None;
+                self.show_toast("OAuth token obtained");
+            }
+            Ok(Err(msg)) => {
+                self.oauth_flow_rx = None;
+                self.oauth_flow_status = None;
+                self.show_toast(format!("OAuth failed: {}", msg));
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => {
+                // Flow still running — bump status if we haven't yet.
+                if self.oauth_flow_status.as_deref() == Some("Opening browser…") {
+                    self.oauth_flow_status = Some("Waiting for browser redirect…".to_string());
+                }
+            }
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                self.oauth_flow_rx = None;
+                self.oauth_flow_status = None;
+            }
+        }
     }
 
     /// Run the current request's extractors against the just-received
@@ -1427,6 +1572,8 @@ impl eframe::App for ApiClient {
         if let Some(msg) = self.startup_warning.take() {
             self.show_toast(msg);
         }
+
+        self.poll_oauth_flow();
 
         // Drain the update-check channel. Only fires once (the tokio
         // task sends at most one message then the sender drops);
