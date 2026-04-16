@@ -33,7 +33,6 @@ struct InFlightRequest {
 use snippet::SnippetLang;
 use std::fs;
 use std::path::PathBuf;
-use theme::*;
 use uuid::Uuid;
 use widgets::*;
 
@@ -1686,21 +1685,23 @@ impl eframe::App for ApiClient {
             }
         }
 
-        theme::apply_style(ctx);
+        theme::apply_style(ctx, self.state.settings.theme);
 
-        // Paint the ENTIRE window background with C_BG before any panels
-        // render. egui leaves a ~50-60 logical-pixel "gutter" between
+        // Paint the ENTIRE window background before any panels render.
+        // egui leaves a ~50-60 logical-pixel "gutter" between
         // `SidePanel::left` and `CentralPanel` (for separator/resize
         // reservation) that neither panel's fill covers — without this
         // base-layer paint, that gutter surfaces as egui's default
         // near-black. Using the background layer ensures panels draw on top
-        // of our fill, not the other way around.
+        // of our fill, not the other way around. Theme-aware so light
+        // mode doesn't get a black gutter strip.
         {
             let screen_rect = ctx.screen_rect();
+            let bg = theme::palette_for(self.state.settings.theme).bg;
             ctx.layer_painter(egui::LayerId::background()).rect_filled(
                 screen_rect,
                 egui::Rounding::ZERO,
-                C_BG,
+                bg,
             );
         }
 

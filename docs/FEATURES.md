@@ -269,6 +269,7 @@ Networking & safety
 UI
 - [x] **Phosphor icon font** — 1,200+ tintable icons rendered as font glyphs (replaces every hand-drawn painter icon)
 - [x] **Styled hint text** — dim, italic-free placeholders in all TextEdits so `Key`/`Value`/`Description` no longer look like real data
+- [x] **Light theme** (Settings → Theme) — flips egui's chrome; saturated accents stay constant across themes
 
 Platform
 - [x] macOS + Linux one-line installer (`install.sh`); auto-detects platform
@@ -281,8 +282,6 @@ Platform
 - [ ] **OAuth 2.0** flows (Authorization Code + PKCE, Client Credentials, refresh
       token). Highest-impact remaining feature; tokens slot directly into the env
       system.
-- [ ] **Light theme** — parallel palette behind a Settings toggle. The dark default
-      stays unchanged.
 
 **Post-1.0:**
 

@@ -11,20 +11,22 @@ use eframe::egui;
 
 impl ApiClient {
     pub(crate) fn render_central(&mut self, ctx: &egui::Context) {
+        let theme_bg = crate::theme::palette_for(self.state.settings.theme).bg;
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::none()
-                    .fill(C_BG)
+                    .fill(theme_bg)
                     .inner_margin(egui::Margin::symmetric(0.0, 0.0)),
             )
             .show(ctx, |ui| {
-                // Defensive floor: paint the full panel rect with C_BG BEFORE
-                // any children render. Without this, if any child widget (scroll
-                // track, code editor, etc.) leaves a sub-region with an
-                // un-themed dark/transparent fill, the OS default (near-black)
-                // bleeds through as a "black strip".
+                // Defensive floor: paint the full panel rect with the
+                // theme bg BEFORE any children render. Without this, if
+                // any child widget (scroll track, code editor, etc.)
+                // leaves a sub-region with an un-themed dark/transparent
+                // fill, the OS default (near-black) bleeds through as a
+                // "black strip".
                 ui.painter()
-                    .rect_filled(ui.max_rect(), egui::Rounding::ZERO, C_BG);
+                    .rect_filled(ui.max_rect(), egui::Rounding::ZERO, theme_bg);
                 self.render_tabs_bar(ui);
 
                 // Collection overview — activated via sidebar folder's

@@ -1,4 +1,4 @@
-use crate::model::HttpMethod;
+use crate::model::{HttpMethod, Theme};
 use eframe::egui;
 
 // ====== Dark palette, rust only as accent ======
@@ -52,46 +52,101 @@ pub fn status_color(status: &str) -> egui::Color32 {
     }
 }
 
-pub fn apply_style(ctx: &egui::Context) {
+/// Color palette for the egui chrome (panel fills, text, borders, widget
+/// backgrounds). Saturated accents (method colors, status pills,
+/// `C_ACCENT`) are not in the palette — they stay constant across
+/// themes because they're already tuned to read on either background.
+#[derive(Clone, Copy)]
+pub struct Palette {
+    pub bg: egui::Color32,
+    pub panel_dark: egui::Color32,
+    pub elevated: egui::Color32,
+    pub border: egui::Color32,
+    pub text: egui::Color32,
+    /// Reserved for call sites that want a theme-aware muted color.
+    /// `C_MUTED` is still used directly across the codebase (it reads
+    /// fine on both backgrounds); this field exists so future refactors
+    /// can thread a lighter muted through light mode without changing
+    /// the palette shape.
+    #[allow(dead_code)]
+    pub muted: egui::Color32,
+}
+
+/// Dark palette — the project's original / default. Keeps the
+/// pre-light-theme values so existing screenshots stay accurate.
+pub const DARK_PALETTE: Palette = Palette {
+    bg: C_BG,
+    panel_dark: C_PANEL_DARK,
+    elevated: C_ELEVATED,
+    border: C_BORDER,
+    text: C_TEXT,
+    muted: C_MUTED,
+};
+
+/// Light palette — inverted L-values of the dark palette, tuned for
+/// readability. Off-white background (`#F6F7F9`) instead of pure
+/// white to avoid harshness; muted grey text (`#2E3138`) for body.
+pub const LIGHT_PALETTE: Palette = Palette {
+    bg: egui::Color32::from_rgb(246, 247, 249),
+    panel_dark: egui::Color32::from_rgb(237, 239, 243),
+    elevated: egui::Color32::from_rgb(225, 228, 234),
+    border: egui::Color32::from_rgb(200, 204, 212),
+    text: egui::Color32::from_rgb(46, 49, 56),
+    muted: egui::Color32::from_rgb(103, 107, 115),
+};
+
+pub fn palette_for(theme: Theme) -> Palette {
+    match theme {
+        Theme::Dark => DARK_PALETTE,
+        Theme::Light => LIGHT_PALETTE,
+    }
+}
+
+pub fn apply_style(ctx: &egui::Context, theme: Theme) {
     use egui::{FontFamily, FontId, TextStyle};
+    let p = palette_for(theme);
     let mut style = (*ctx.style()).clone();
-    style.visuals.window_fill = C_BG;
-    style.visuals.panel_fill = C_BG;
+    style.visuals.window_fill = p.bg;
+    style.visuals.panel_fill = p.bg;
     // Every background-colour field egui exposes, coerced into our palette.
     // Leaving any of these on their dark-default can surface as pure-black
     // strips behind scroll bars, code editors, or grid zebra stripes.
-    style.visuals.extreme_bg_color = C_PANEL_DARK;
-    style.visuals.faint_bg_color = C_ELEVATED;
-    style.visuals.code_bg_color = C_PANEL_DARK;
-    style.visuals.override_text_color = Some(C_TEXT);
+    style.visuals.extreme_bg_color = p.panel_dark;
+    style.visuals.faint_bg_color = p.elevated;
+    style.visuals.code_bg_color = p.panel_dark;
+    style.visuals.override_text_color = Some(p.text);
     style.visuals.selection.bg_fill = C_ACCENT.gamma_multiply(0.4);
     style.visuals.selection.stroke = egui::Stroke::new(1.0, C_ACCENT);
     style.visuals.hyperlink_color = C_ACCENT;
-    style.visuals.widgets.noninteractive.bg_fill = C_BG;
-    style.visuals.widgets.noninteractive.weak_bg_fill = C_BG;
-    style.visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, C_BORDER);
-    style.visuals.widgets.noninteractive.fg_stroke = egui::Stroke::new(1.0, C_TEXT);
+    style.visuals.widgets.noninteractive.bg_fill = p.bg;
+    style.visuals.widgets.noninteractive.weak_bg_fill = p.bg;
+    style.visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, p.border);
+    style.visuals.widgets.noninteractive.fg_stroke = egui::Stroke::new(1.0, p.text);
     style.visuals.widgets.noninteractive.rounding = egui::Rounding::same(8.0);
-    style.visuals.widgets.inactive.bg_fill = C_ELEVATED;
-    style.visuals.widgets.inactive.weak_bg_fill = C_ELEVATED;
+    style.visuals.widgets.inactive.bg_fill = p.elevated;
+    style.visuals.widgets.inactive.weak_bg_fill = p.elevated;
     style.visuals.widgets.inactive.bg_stroke = egui::Stroke::NONE;
     style.visuals.widgets.inactive.rounding = egui::Rounding::same(8.0);
-    style.visuals.widgets.hovered.bg_fill = C_BORDER;
-    style.visuals.widgets.hovered.weak_bg_fill = C_BORDER;
+    style.visuals.widgets.hovered.bg_fill = p.border;
+    style.visuals.widgets.hovered.weak_bg_fill = p.border;
     // No hover stroke — a 1px stroke on hover was causing the sidebar
     // right-edge (SidePanel resize zone) to cascade 1-pixel layout shifts
     // as the pointer moved, making the whole panel visibly "jitter".
     style.visuals.widgets.hovered.bg_stroke = egui::Stroke::NONE;
     style.visuals.widgets.hovered.rounding = egui::Rounding::same(8.0);
-    style.visuals.widgets.active.bg_fill = C_BORDER;
-    style.visuals.widgets.active.weak_bg_fill = C_BORDER;
+    style.visuals.widgets.active.bg_fill = p.border;
+    style.visuals.widgets.active.weak_bg_fill = p.border;
     style.visuals.widgets.active.bg_stroke = egui::Stroke::new(1.0, C_ACCENT);
     style.visuals.widgets.active.rounding = egui::Rounding::same(8.0);
-    style.visuals.widgets.open.bg_fill = C_BORDER;
+    style.visuals.widgets.open.bg_fill = p.border;
     style.visuals.widgets.open.rounding = egui::Rounding::same(8.0);
     style.visuals.menu_rounding = egui::Rounding::same(10.0);
     style.visuals.window_rounding = egui::Rounding::same(12.0);
-    style.visuals.window_stroke = egui::Stroke::new(1.0, C_BORDER);
+    style.visuals.window_stroke = egui::Stroke::new(1.0, p.border);
+    // Light theme wants dark widgets on a light panel — flip
+    // `dark_mode` so egui's internal defaults pick sensible colors
+    // for things we don't override (scroll thumbs, tooltips, etc.).
+    style.visuals.dark_mode = matches!(theme, Theme::Dark);
 
     // Slightly longer animations — softer fades on hover, panel collapse,
     // tab switches, etc. egui default is ~0.083s (snappy but abrupt).

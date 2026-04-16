@@ -11,7 +11,17 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
-## Unreleased — Hardening for v1.0
+## Unreleased — Light theme
+
+### Added
+- **Light theme** — new `Theme::Light` option in Settings. Flips
+  egui's chrome (panels, text, borders, widget backgrounds) via a
+  theme-aware `Palette` struct. Saturated accents — HTTP method
+  colors, status pills, rust-orange accent, syntax highlighting —
+  stay the same across both themes because they're tuned to read
+  on either background. `Theme::Dark` remains the default.
+
+## [0.13.0] — Hardening round 2
 
 ### Added
 - **Panic log.** Any panic writes to `panic.log` next to `data.json`
@@ -23,13 +33,31 @@ upgrades read old files cleanly.
   published, a toast points the user at the Releases page. Silent
   on any failure (offline, rate-limited, parse error) — an API
   client whose update check was noisy would be ironic.
+- **Security note in README.** Explicit call-out that `data.json`
+  holds tokens in plaintext and relies on local-disk permissions.
+  Keychain integration deferred to post-1.0.
+
+### Changed
+- **Palette contrast.** ⌘P / ⇧⌘P windows now render on a brighter
+  `C_ELEVATED` background with an accent-tinted border and a soft
+  drop-shadow — stands out from the darkened backdrop instead of
+  blending into it.
+
+### Deferred
+- **Integration tests for the send path.** Requires restructuring the
+  crate as `lib.rs + main.rs` so a separate integration-test binary
+  can access internals, plus a mock HTTP server. Separate effort.
+- **Keychain / native secret store.** Planned post-1.0; would back
+  token fields in env variables with the OS keychain via the
+  `keyring` crate. Until then, protect `data.json` via disk perms.
+
+## [0.12.0] — Hardening round 1
+
+### Added
 - **Double size cap on SSE streaming.** Beyond the existing raw-network
   cap, the event log gets a `2 × max_body_mb` ceiling — defends against
   malicious servers that stream millions of tiny events (where pretty-
   printed output can be 3–4× the network size).
-- **Security note in README.** Explicit call-out that `data.json`
-  holds tokens in plaintext and relies on local-disk permissions.
-  Keychain integration deferred to post-1.0.
 
 ### Changed
 - **Atomic state writes.** `save_state` now writes to `data.json.tmp`,
@@ -41,10 +69,6 @@ upgrades read old files cleanly.
   data for forensic recovery) and the app starts fresh, surfacing a
   toast pointing to the backup file. Previously a corrupt file
   silently reset to empty state.
-- **Palette contrast.** ⌘P / ⇧⌘P windows now render on a brighter
-  `C_ELEVATED` background with an accent-tinted border and a soft
-  drop-shadow — stands out from the darkened backdrop instead of
-  blending into it.
 - **CI tightened.** `cargo clippy --all-targets -- -D warnings` is now
   a blocking job (was informational). `cargo-audit` added as a
   non-blocking informational job so dependency advisories surface on
@@ -54,14 +78,6 @@ upgrades read old files cleanly.
   wildcard / CRL issues) by pulling in newer patch releases via
   transitive updates. Remaining `cargo-audit` warnings are unmaintained-
   crate notes from `rfd`'s GTK3 bindings — not exploitable.
-
-### Deferred
-- **Integration tests for the send path.** Requires restructuring the
-  crate as `lib.rs + main.rs` so a separate integration-test binary
-  can access internals, plus a mock HTTP server. Separate effort.
-- **Keychain / native secret store.** Planned post-1.0; would back
-  token fields in env variables with the OS keychain via the
-  `keyring` crate. Until then, protect `data.json` via disk perms.
 
 ## [0.11.0] — Docs split + quality of life
 
