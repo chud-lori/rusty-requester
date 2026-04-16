@@ -48,6 +48,7 @@ and of managing a wall of raw <code>curl</code> commands in my terminal.
 - 🛈 **Time hover tooltip** — gantt-style phase breakdown: Prepare · Waiting (TTFB) · Download
 - 🧩 **Body view modes**: **JSON** (syntax-highlighted code editor with line numbers), **Tree** (collapsible JSON tree with filter + right-click "Copy path"), **Preview** (HTML rendered as readable text for error pages / login challenges), **Events** (structured log for `text/event-stream` / SSE responses), **Raw** (verbatim) — pills are inline with the section tabs and don't scroll away
 - 📡 **Server-Sent Events (SSE)** — native streaming support for LLM / event-stream APIs. Auto-detected by `Content-Type: text/event-stream`; events flow into a collapsible-per-row Events view with auto-scroll, per-event timestamps, and JSON-pretty-printed data. Cancel aborts the stream instantly.
+- 🔀 **Response diff** — send a request twice to compare. The **Diff** pill shows a unified `+/-` line-diff of the current response against the previous one, with `+A −B` summary.
 - 🛑 **Cancel button** — Send flips to Cancel while a request is in flight. Instantly aborts the tokio task + underlying hyper connection (no per-chunk polling).
 - 🖼 **Failed/cancelled state** — dedicated illustrated screen with status headline + error-detail pill instead of opaque text, for network failures, TLS issues, or user cancels.
 - 🔍 **Find in body** — toolbar search icon highlights all matches inline
@@ -90,8 +91,9 @@ and of managing a wall of raw <code>curl</code> commands in my terminal.
 - 🎛 **Settings modal** — request timeout, max body size cap (50 MB default; truncates with banner), proxy URL, TLS verification toggle. All persisted to disk.
 - 🔌 **Reused HTTP client + tokio runtime** — no per-request connection-pool / runtime spinup; faster repeated sends.
 - ⌨️ **⌘P command palette** — fuzzy-find any request across every collection, ↑↓ navigate, Enter to open
+- ⌨️ **⇧⌘P actions palette** — fuzzy-find an app **action** (New request, Duplicate tab, Toggle snippet panel, Copy as cURL, Open environments, Clear history, …). Fully discoverable — open the palette and start typing.
 - ⌨️ **↑ / ↓ arrow nav** — step through every request across every collection when nothing's focused; wraps at both ends
-- ⌨️ Standard shortcuts: **⌘⏎** Send · **⌘N** New request · **⌘W** Close tab · **⌘D** Duplicate tab · **⌘K** Focus search · **⌘S** Save draft · **⌘P** Command palette · **F2** Rename · **Esc** Dismiss modals
+- ⌨️ Standard shortcuts: **⌘⏎** Send · **⌘N** New request · **⌘W** Close tab · **⌘D** Duplicate tab · **⌘K** Focus search · **⌘S** Save draft · **⌘P** Command palette · **⇧⌘P** Actions palette · **F2** Rename · **Esc** Dismiss modals
 - 🍎 **Native macOS NSMenu bar** (Rusty Requester · File · View · Request · Help) via `muda`; in-window menu on Linux
 - 🎨 **Phosphor icon font** — 1,200+ tintable icons rendered as font glyphs; crisp at every DPI, zero image assets to ship
 - ℹ **Help → About** opens a custom modal with creator credit + Contribute / Report-issue links
@@ -331,6 +333,7 @@ Type in the **🔎 Search** box in the sidebar. It filters by request name, URL,
 - **⌘/Ctrl + D** → Duplicate active tab
 - **⌘/Ctrl + K** → Focus the sidebar search
 - **⌘/Ctrl + P** → Command palette (fuzzy request finder)
+- **⇧⌘/Ctrl⇧ + P** → Actions palette (fuzzy app-action finder — type to see every available action)
 - **⌘/Ctrl + S** → Save current draft to a folder
 - **↑ / ↓** → Arrow-nav through every request (when no modal or text field is focused)
 - **F2** → Rename the active request (VS Code / Finder convention)
@@ -551,6 +554,8 @@ Workflow
 Response viewing
 - [x] **Body view modes**: JSON (syntax-highlighted code, line numbers), Tree (collapsible JSON tree with **right-click "Copy path"**), **Preview** (HTML rendered as readable text), **Events** (structured SSE log), Raw
 - [x] **Server-Sent Events (SSE)** — streaming support for LLM / event-stream APIs with live Events view (auto-scroll, per-event timestamps, JSON pretty-print)
+- [x] **Response diff** — send twice to the same request → Diff pill shows unified `+/-` line-diff with `+A −B` summary
+- [x] **⇧⌘P actions palette** — fuzzy-find app actions (16 built-in: New / Duplicate / Close tab, Save draft, Copy as cURL, Toggle snippet panel, Open environments, Open settings, Paste cURL, Import/Export, Clear history, etc.)
 - [x] **Cancel button** — Send flips to Cancel while in flight; instantly aborts the tokio task
 - [x] **Illustrated failed/cancelled state** — network failure / TLS / cancel screens with detail pill instead of raw text
 - [x] Find-in-body, copy-body, **save-response-to-file**
@@ -584,9 +589,6 @@ Platform
       system.
 - [ ] **Light theme** — parallel palette behind a Settings toggle. The dark default
       stays unchanged.
-- [ ] **Response diff** — "send twice, diff me" between two recent responses.
-- [ ] **⇧⌘P actions palette** — ⌘P finds requests; ⇧⌘P triggers app actions
-      (toggle snippet panel, duplicate tab, clear history, etc.).
 
 **Post-1.0:**
 

@@ -14,7 +14,31 @@ upgrades read old files cleanly.
 ## Unreleased — v1.0 prep
 
 ### Added
-- _see 1.0 pathway items in the Roadmap section of the README._
+- **Actions palette (⇧⌘P)** — fuzzy-find + run any of 16 built-in app
+  actions: New request, Duplicate / Close tab, Toggle pin, Save draft,
+  Copy as cURL, Toggle snippet panel, Open environments, Open settings,
+  Paste cURL, Import collection, Export JSON / YAML, Clear history,
+  Toggle sidebar History/Collections, About. Self-discoverable — open
+  the palette and type. Shortcut column on the right for actions that
+  also have a keybinding.
+- **Response diff** — sending a request twice populates a **Diff** pill
+  in the body toolbar. Unified `+/-` line-diff against the previous
+  response, `+A −B` summary header. Backed by an LCS-based diff
+  implementation in `src/diff.rs` (5 unit tests, zero deps).
+
+### Changed
+- **`data.json` trims defaults.** Added `skip_serializing_if` on
+  `Folder.description` (empty string), `StoredCookie.domain`,
+  `StoredCookie.secure` / `http_only`, and `OpenTab.pinned` (false).
+  Reads stay forward-compatible (all fields use `serde(default)`).
+- **README + CHANGELOG overhaul.** README now reflects every v0.6 →
+  v0.10 feature (Cancel, HTML Preview, URL↔Params sync, Phosphor
+  icons, save-draft confirmation, ⌘N / ⌘W / ⌘D / ⇧⌘P shortcuts, SSE,
+  pinned tabs, arrow nav, diff). Architecture section updated to
+  mention `egui-phosphor`, the `RequestUpdate` streaming enum, and
+  the new `sse` / `html_preview` / `actions` / `diff` modules.
+  CHANGELOG filled in entries for v0.6 through v0.10 (previously
+  stuck at v0.5.1).
 
 ## [0.10.0] — Server-Sent Events
 
