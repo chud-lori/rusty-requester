@@ -369,7 +369,8 @@ impl ApiClient {
                             match curl::parse_curl(&self.editing_url) {
                                 Ok(parsed) => {
                                     self.editing_method = parsed.method;
-                                    self.editing_url = parsed.url;
+                                    self.editing_url =
+                                        curl::build_full_url(&parsed.url, &parsed.query_params);
                                     self.editing_params = parsed.query_params;
                                     self.editing_headers = parsed.headers;
                                     self.editing_cookies = parsed.cookies;
