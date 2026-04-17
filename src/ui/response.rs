@@ -384,7 +384,7 @@ impl ApiClient {
                     ui.add_space(8.0);
                     ui.add(
                         egui::TextEdit::singleline(&mut self.body_tree_filter)
-                            .hint_text("Filter keys / values")
+                            .hint_text(hint("Filter keys / values"))
                             .desired_width(160.0),
                     );
                 }
@@ -490,7 +490,7 @@ impl ApiClient {
             ui.horizontal(|ui| {
                 ui.add(
                     egui::TextEdit::singleline(&mut self.body_search_query)
-                        .hint_text("Find in body…")
+                        .hint_text(hint("Find in body…"))
                         .desired_width(ui.available_width() - 40.0),
                 );
                 if icon_btn(ui, egui_phosphor::regular::X, "Close search").clicked() {

@@ -738,7 +738,7 @@ impl ApiClient {
                     [ui.available_width(), avail_h],
                     egui::TextEdit::multiline(&mut self.editing_body)
                         .frame(false)
-                        .hint_text("Request body (JSON, text, ...)")
+                        .hint_text(hint("Request body (JSON, text, ...)"))
                         .font(egui::TextStyle::Monospace)
                         .layouter(&mut layouter),
                 )
@@ -807,7 +807,7 @@ impl ApiClient {
                 [ui.available_width(), query_h],
                 egui::TextEdit::multiline(&mut self.editing_body)
                     .code_editor()
-                    .hint_text("query MyQuery { ... }")
+                    .hint_text(hint("query MyQuery { ... }"))
                     .font(egui::TextStyle::Monospace),
             )
             .changed()
@@ -832,7 +832,7 @@ impl ApiClient {
                 [ui.available_width(), vars_h],
                 egui::TextEdit::multiline(&mut vars)
                     .code_editor()
-                    .hint_text("{ \"id\": 123 }")
+                    .hint_text(hint("{ \"id\": 123 }"))
                     .font(egui::TextStyle::Monospace),
             )
             .changed()
@@ -922,7 +922,7 @@ impl ApiClient {
                         egui::TextEdit::singleline(token)
                             .desired_width(ui.available_width())
                             .password(false)
-                            .hint_text("eyJhbGciOi..."),
+                            .hint_text(hint("eyJhbGciOi...")),
                     )
                     .changed()
                 {

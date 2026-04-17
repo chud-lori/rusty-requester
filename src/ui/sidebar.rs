@@ -280,7 +280,8 @@ impl ApiClient {
                     let search_w = (ui.available_width() - clear_w - spacing).max(80.0);
                     let search_resp = ui.add_sized(
                         [search_w, 24.0],
-                        egui::TextEdit::singleline(&mut self.search_query).hint_text("Search (⌘K)"),
+                        egui::TextEdit::singleline(&mut self.search_query)
+                            .hint_text(hint("Search (⌘K)")),
                     );
                     if self.focus_search_next_frame {
                         self.focus_search_next_frame = false;

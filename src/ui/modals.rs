@@ -256,7 +256,7 @@ impl ApiClient {
             // Search
             ui.add(
                 egui::TextEdit::singleline(&mut self.save_draft_search)
-                    .hint_text("Search for collection or folder")
+                    .hint_text(hint("Search for collection or folder"))
                     .desired_width(f32::INFINITY),
             );
             ui.add_space(6.0);
@@ -299,7 +299,7 @@ impl ApiClient {
                 ui.horizontal(|ui| {
                     ui.add(
                         egui::TextEdit::singleline(name)
-                            .hint_text("New folder name")
+                            .hint_text(hint("New folder name"))
                             .desired_width(260.0),
                     );
                     let enabled = !name.trim().is_empty();
@@ -815,7 +815,7 @@ impl ApiClient {
                         .code_editor()
                         .desired_rows(10)
                         .desired_width(f32::INFINITY)
-                        .hint_text("curl -X POST 'https://api.example.com' -H 'Content-Type: application/json' -d '{\"k\":\"v\"}'"),
+                        .hint_text(hint("curl -X POST 'https://api.example.com' -H 'Content-Type: application/json' -d '{\"k\":\"v\"}'")),
                 );
                 if !self.paste_error.is_empty() {
                     ui.add_space(4.0);
@@ -1026,7 +1026,7 @@ impl ApiClient {
             ui.label(egui::RichText::new("Proxy URL").size(11.5).color(muted()));
             ui.add(
                 egui::TextEdit::singleline(&mut self.editing_settings.proxy_url)
-                    .hint_text("http://proxy:8080 (leave empty for direct)")
+                    .hint_text(hint("http://proxy:8080 (leave empty for direct)"))
                     .desired_width(f32::INFINITY),
             );
             ui.add_space(10.0);
@@ -1453,7 +1453,7 @@ impl ApiClient {
         .show(ctx, |ui| {
             let query_resp = ui.add(
                 egui::TextEdit::singleline(&mut self.palette_query)
-                    .hint_text("Search requests by name, URL, or method…")
+                    .hint_text(hint("Search requests by name, URL, or method…"))
                     .desired_width(f32::INFINITY)
                     .font(egui::TextStyle::Body),
             );
@@ -1648,7 +1648,7 @@ impl ApiClient {
         .show(ctx, |ui| {
             let query_resp = ui.add(
                 egui::TextEdit::singleline(&mut self.actions_palette_query)
-                    .hint_text("Run an action…")
+                    .hint_text(hint("Run an action…"))
                     .desired_width(f32::INFINITY)
                     .font(egui::TextStyle::Body),
             );

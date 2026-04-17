@@ -20,12 +20,23 @@ pub const C_PINK: egui::Color32 = egui::Color32::from_rgb(183, 65, 14); // #B741
 pub const C_RED: egui::Color32 = egui::Color32::from_rgb(220, 38, 38); // #DC2626 crimson — DELETE / errors
 pub const C_MUTED: egui::Color32 = egui::Color32::from_rgb(143, 148, 162); // #8F94A2 neutral muted text (WCAG AA ~5.3:1 on C_BG)
 pub const C_TEXT: egui::Color32 = egui::Color32::from_rgb(224, 226, 232); // #E0E2E8 neutral light
-pub const C_HINT: egui::Color32 = egui::Color32::from_rgb(80, 84, 95); // #50545F dim placeholder
 
-/// Styled placeholder text for TextEdit hint_text — dim color so
-/// it's unambiguously a placeholder, not a real value.
+/// Theme-aware placeholder color. Earlier `#50545F` was too dark on
+/// the dark bg (dropped below WCAG AA ~2.5:1) and egui's default
+/// `weak_text_color` landed too pale on light bg. These values hit
+/// ~4.5:1 in both modes — visibly a placeholder but readable.
+pub fn hint_color() -> egui::Color32 {
+    if is_light() {
+        egui::Color32::from_rgb(140, 148, 158) // #8C949E — medium grey on paper
+    } else {
+        egui::Color32::from_rgb(138, 142, 152) // #8A8E98 — lifted grey on dark
+    }
+}
+
+/// Styled placeholder text for TextEdit hint_text — dim but legible
+/// in either theme.
 pub fn hint(text: &str) -> egui::RichText {
-    egui::RichText::new(text).color(C_HINT)
+    egui::RichText::new(text).color(hint_color())
 }
 
 /// Light-mode versions of the method colors, picked for ~4.5:1+
