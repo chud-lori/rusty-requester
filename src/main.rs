@@ -1052,8 +1052,6 @@ impl ApiClient {
         // Any request activation leaves the collection overview mode.
         self.viewing_folder_id = None;
 
-        // Stash the outgoing tab's live response so switching back
-        // restores it — the old behavior wiped it on every switch.
         let outgoing_id = self.selected_request_id.clone();
 
         if let Some(existing) = self
@@ -1074,10 +1072,18 @@ impl ApiClient {
             self.selected_folder_path = folder_path;
             self.selected_request_id = Some(request_id);
         }
+
+        // Re-clicking the already-active tab is a no-op — don't wipe
+        // the live response by restoring from an empty cache. Only
+        // stash/restore when we actually switched requests.
+        let actually_switched = outgoing_id.as_deref() != self.selected_request_id.as_deref();
+        if !actually_switched {
+            self.load_request_for_editing();
+            return;
+        }
+
         if let Some(prev) = outgoing_id {
-            if Some(prev.as_str()) != self.selected_request_id.as_deref() {
-                self.stash_response_for(&prev);
-            }
+            self.stash_response_for(&prev);
         }
         self.load_request_for_editing();
         let new_id = self.selected_request_id.clone();

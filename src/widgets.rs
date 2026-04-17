@@ -197,9 +197,10 @@ pub fn render_kv_table(
     let key_w = 200.0;
     let row_h = 24.0;
     let cell_pad = 6.0;
-    // Small trailing gap so the × delete button doesn't sit flush
-    // against the panel's right border.
-    let right_margin = 12.0;
+    // Trailing gap so the × delete button doesn't sit flush against
+    // the panel's right border / scroll bar. Matches the 16 px edge
+    // rule used in the response chips row.
+    let right_margin = 20.0;
     let usable = avail - right_margin;
     let (val_w, desc_w) = if show_description {
         let total = (usable - cb_w - key_w - del_w - cell_pad * 4.0).max(200.0);
@@ -858,11 +859,18 @@ fn json_header_with_menu(
     body: impl FnOnce(&mut egui::Ui),
 ) {
     ui.horizontal(|ui| {
-        ui.add_space(16.0 * depth as f32);
+        // Tighter indent per level — was 16 px which added up to
+        // giant gaps at depth 4+. And a single space between the key
+        // and its summary (was two) pulls the `{...}` block closer.
+        ui.add_space(10.0 * depth as f32);
+        // Collapse vertical item spacing for nested rows so lines sit
+        // snugly on top of each other, like a proper tree. Leaves the
+        // outer panel's spacing alone.
+        ui.spacing_mut().item_spacing.y = 1.0;
         let header_text = if key.is_empty() {
             summary.to_string()
         } else {
-            format!("{}  {}", key, summary)
+            format!("{} {}", key, summary)
         };
         let head = egui::CollapsingHeader::new(
             egui::RichText::new(header_text)

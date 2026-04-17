@@ -391,10 +391,11 @@ impl ApiClient {
             }
 
             // Right side: action icons (Body tab only) + status chips.
-            // 6 px right edge padding so nothing sits flush against
-            // the panel border.
+            // Rule: every right-hand row gets 16 px of padding so
+            // chips and icons don't sit flush against the panel
+            // border or the scroll bar.
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.add_space(6.0);
+                ui.add_space(16.0);
                 if body_active {
                     if icon_btn(
                         ui,
@@ -741,18 +742,25 @@ impl ApiClient {
                                     egui::RichText::new("No response headers yet.").color(muted()),
                                 );
                             } else {
+                                // Softer header pane: keys use `muted()`
+                                // instead of saturated C_ACCENT (the rust
+                                // red on every row felt harsh), and we
+                                // drop the built-in `.striped(true)`
+                                // zebra in favor of a single 1-px
+                                // `border()` divider between rows —
+                                // closer to Postman's calmer table look.
                                 egui::Grid::new("resp_headers_grid")
                                     .num_columns(2)
-                                    .spacing([20.0, 4.0])
-                                    .striped(true)
+                                    .spacing([20.0, 6.0])
                                     .show(ui, |ui| {
                                         for (k, v) in &self.response_headers {
                                             ui.label(
-                                                egui::RichText::new(k).color(C_ACCENT).strong(),
+                                                egui::RichText::new(k).color(muted()).strong(),
                                             );
                                             ui.label(
                                                 egui::RichText::new(v)
-                                                    .font(egui::FontId::monospace(12.0)),
+                                                    .font(egui::FontId::monospace(12.0))
+                                                    .color(text()),
                                             );
                                             ui.end_row();
                                         }
