@@ -1742,11 +1742,11 @@ impl eframe::App for ApiClient {
         // ~no-op until `take()` clears it.
         if let Some(rx) = &self.update_check_rx {
             if let Ok(new_version) = rx.try_recv() {
-                self.show_toast(format!(
-                    "Update {} available — click the pill next to the version in the sidebar.",
-                    new_version
-                ));
                 self.update_available = Some(new_version);
+                // Auto-open the update modal on first detection so the
+                // user can't miss it. The sidebar pill persists after
+                // dismissal for follow-up access.
+                self.show_update_modal = true;
                 self.update_check_rx = None;
             } else if matches!(
                 rx.try_recv(),

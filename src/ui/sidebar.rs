@@ -76,11 +76,18 @@ impl ApiClient {
                                     .color(muted()),
                             );
                             if let Some(latest) = self.update_available.clone() {
+                                // Phosphor arrow glyph — egui's bundled
+                                // font lacks U+2191 (↑) and renders it
+                                // as a tofu square.
                                 let pill = egui::Button::new(
-                                    egui::RichText::new(format!("↑ {}", latest))
-                                        .size(10.0)
-                                        .strong()
-                                        .color(egui::Color32::WHITE),
+                                    egui::RichText::new(format!(
+                                        "{} {}",
+                                        egui_phosphor::regular::ARROW_UP,
+                                        latest
+                                    ))
+                                    .size(10.0)
+                                    .strong()
+                                    .color(egui::Color32::WHITE),
                                 )
                                 .fill(C_ACCENT)
                                 .stroke(egui::Stroke::NONE)
