@@ -1475,13 +1475,23 @@ impl ApiClient {
                 .show(ui, |ui| {
                     for (i, m) in matches.iter().enumerate() {
                         let is_sel = i == self.palette_selected;
+                        // Row height bumped from 34 → 44 so the
+                        // breadcrumb has breathing room. Previously the
+                        // secondary line sat flush against the bottom
+                        // edge of the selection fill.
                         let (rect, resp) = ui.allocate_exact_size(
-                            egui::vec2(ui.available_width(), 34.0),
+                            egui::vec2(ui.available_width(), 44.0),
                             egui::Sense::click(),
                         );
                         if ui.is_rect_visible(rect) {
+                            // Softer accent-tinted fill for selected
+                            // (translucent over the panel) plus a
+                            // thin accent bar on the left. The prior
+                            // `linear_multiply(0.18)` produced a dark
+                            // saturated red block that read as a
+                            // destructive state, not a selection.
                             let bg = if is_sel {
-                                C_ACCENT.linear_multiply(0.18)
+                                egui::Color32::from_rgba_unmultiplied(206, 66, 43, 36)
                             } else if resp.hovered() {
                                 elevated()
                             } else {
@@ -1489,24 +1499,40 @@ impl ApiClient {
                             };
                             ui.painter()
                                 .rect_filled(rect, egui::Rounding::same(5.0), bg);
+                            if is_sel {
+                                let bar = egui::Rect::from_min_size(
+                                    rect.min,
+                                    egui::vec2(3.0, rect.height()),
+                                );
+                                ui.painter().rect_filled(
+                                    bar,
+                                    egui::Rounding {
+                                        nw: 5.0,
+                                        sw: 5.0,
+                                        ne: 0.0,
+                                        se: 0.0,
+                                    },
+                                    C_ACCENT,
+                                );
+                            }
                             // Method
                             let mc = method_color(&m.method);
                             ui.painter().text(
-                                egui::pos2(rect.left() + 10.0, rect.top() + 10.0),
+                                egui::pos2(rect.left() + 10.0, rect.top() + 11.0),
                                 egui::Align2::LEFT_TOP,
                                 format!("{}", m.method),
                                 egui::FontId::new(10.5, egui::FontFamily::Proportional),
                                 mc,
                             );
                             ui.painter().text(
-                                egui::pos2(rect.left() + 60.0, rect.top() + 7.0),
+                                egui::pos2(rect.left() + 60.0, rect.top() + 8.0),
                                 egui::Align2::LEFT_TOP,
                                 &m.name,
                                 egui::FontId::new(13.0, egui::FontFamily::Proportional),
                                 text(),
                             );
                             ui.painter().text(
-                                egui::pos2(rect.left() + 60.0, rect.top() + 22.0),
+                                egui::pos2(rect.left() + 60.0, rect.top() + 26.0),
                                 egui::Align2::LEFT_TOP,
                                 &m.breadcrumb,
                                 egui::FontId::new(10.5, egui::FontFamily::Proportional),
@@ -1522,10 +1548,16 @@ impl ApiClient {
 
             ui.add_space(4.0);
             ui.horizontal(|ui| {
+                // Phosphor arrow glyphs — the bundled Inter font lacks
+                // U+2191 / U+2193 and used to render as "tofu" squares.
                 ui.label(
-                    egui::RichText::new("↑ ↓  navigate    Enter  open    Esc  dismiss")
-                        .size(10.5)
-                        .color(muted()),
+                    egui::RichText::new(format!(
+                        "{} {}  navigate    Enter  open    Esc  dismiss",
+                        egui_phosphor::regular::ARROW_UP,
+                        egui_phosphor::regular::ARROW_DOWN,
+                    ))
+                    .size(10.5)
+                    .color(muted()),
                 );
             });
         });
@@ -1643,8 +1675,11 @@ impl ApiClient {
                             egui::Sense::click(),
                         );
                         if ui.is_rect_visible(rect) {
+                            // Match the command-palette treatment —
+                            // softer tint + left accent bar for
+                            // selection (was a saturated red block).
                             let bg = if is_sel {
-                                C_ACCENT.linear_multiply(0.18)
+                                egui::Color32::from_rgba_unmultiplied(206, 66, 43, 36)
                             } else if resp.hovered() {
                                 elevated()
                             } else {
@@ -1652,6 +1687,22 @@ impl ApiClient {
                             };
                             ui.painter()
                                 .rect_filled(rect, egui::Rounding::same(5.0), bg);
+                            if is_sel {
+                                let bar = egui::Rect::from_min_size(
+                                    rect.min,
+                                    egui::vec2(3.0, rect.height()),
+                                );
+                                ui.painter().rect_filled(
+                                    bar,
+                                    egui::Rounding {
+                                        nw: 5.0,
+                                        sw: 5.0,
+                                        ne: 0.0,
+                                        se: 0.0,
+                                    },
+                                    C_ACCENT,
+                                );
+                            }
                             ui.painter().text(
                                 egui::pos2(rect.left() + 14.0, rect.center().y),
                                 egui::Align2::LEFT_CENTER,
@@ -1679,9 +1730,13 @@ impl ApiClient {
             ui.add_space(4.0);
             ui.horizontal(|ui| {
                 ui.label(
-                    egui::RichText::new("↑ ↓  navigate    Enter  run    Esc  dismiss")
-                        .size(10.5)
-                        .color(muted()),
+                    egui::RichText::new(format!(
+                        "{} {}  navigate    Enter  run    Esc  dismiss",
+                        egui_phosphor::regular::ARROW_UP,
+                        egui_phosphor::regular::ARROW_DOWN,
+                    ))
+                    .size(10.5)
+                    .color(muted()),
                 );
             });
         });

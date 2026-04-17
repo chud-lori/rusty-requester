@@ -8,8 +8,9 @@ Full feature catalog for Rusty Requester. For a quick pitch see the
 
 - 🚀 **Truly native** — Rust + `egui`, no Electron, no Chromium
 - 💾 **Fully offline** — all data lives in one local JSON file, no cloud sync, no telemetry
-- 🎨 **Rust-forge dark UI** — warm copper / rust-orange / amber palette with colored HTTP-method pills and underlined tabs
+- 🎨 **Dark + light themes** — rust-orange / amber accents on either a deep Monokai-style dark canvas or a GitHub-ish near-white canvas (toggle in Settings). Syntax-highlighted response body adapts: Monokai on dark, dark-on-paper on light.
 - 🍎 Builds for Apple Silicon, Intel Mac, Linux, and Windows
+- 🪟 **Native macOS title-bar integration** — traffic-light buttons float over the app content (no dark stub strip above the workspace).
 
 ## Request building
 
@@ -31,7 +32,8 @@ Full feature catalog for Rusty Requester. For a quick pitch see the
 - 📊 Status pill + response time + size rendered inline with the Body/Headers tab row, on the right (Postman-style: `Body  Headers  JSON Tree Raw  [🔍][📋][💾]    200 OK · 54 ms · 434 B`)
 - 🛈 **Size hover tooltip** — breakdown of response headers/body and request headers/body bytes
 - 🛈 **Time hover tooltip** — gantt-style phase breakdown: Prepare · Waiting (TTFB) · Download
-- 🧩 **Body view modes**: **JSON** (syntax-highlighted code editor with line numbers), **Tree** (collapsible JSON tree with filter + right-click "Copy path"), **Preview** (HTML rendered as readable text for error pages / login challenges), **Events** (structured log for `text/event-stream` / SSE responses), **Diff** (unified +/− against the previous response), **Raw** (verbatim) — pills are inline with the section tabs and don't scroll away
+- 🧩 **Body view modes**: **JSON** (syntax-highlighted code editor with line numbers; horizontal scroll for long minified lines so the gutter never overlaps), **Tree** (collapsible JSON tree with filter + right-click "Copy path"), **Preview** (HTML rendered as readable text for error pages / login challenges), **Events** (structured log for `text/event-stream` / SSE responses), **Diff** (unified +/− against the previous response), **Raw** (verbatim) — pills are inline with the section tabs and don't scroll away
+- 🧠 **Per-request response cache** — switching tabs preserves each request's last response (body, status, timings, headers, SSE events, assertion results). Session-only; closed tabs drop their cache.
 - 📡 **Server-Sent Events (SSE)** — native streaming support for LLM / event-stream APIs. Auto-detected by `Content-Type: text/event-stream`; events flow into a collapsible-per-row Events view with auto-scroll, per-event timestamps, and JSON-pretty-printed data. Cancel aborts the stream instantly.
 - 🔀 **Response diff** — send a request twice to compare. The **Diff** pill shows a unified `+/-` line-diff of the current response against the previous one, with `+A −B` summary.
 - 🛑 **Cancel button** — Send flips to Cancel while a request is in flight. Instantly aborts the tokio task + underlying hyper connection (no per-chunk polling).

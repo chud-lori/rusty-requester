@@ -11,7 +11,130 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
-## Unreleased — OAuth 2.0
+## [0.15.7] — Tab-chrome simplification
+
+### Changed
+- **Active-tab indicator collapsed to a single bottom accent line.**
+  Previous layout stacked a red top bar, a peach fill tint, green
+  method text, and an amber draft dot on the same tab — four
+  competing accents, read as "broken color shift". Same convention
+  as the inline Body / Headers / Tests tabs so selection semantics
+  are consistent across the app.
+
+## [0.15.6] — Light-mode retune + paper-cuts round
+
+### Added
+- **Per-request response cache.** Switching tabs no longer wipes
+  the response. `CachedResponse` snapshot (body, status, timings,
+  headers, SSE events, assertion results) is stashed on tab-switch
+  and restored on tab re-activation. In-memory only — not
+  persisted to `data.json`. Matches Postman's session-scoped
+  behaviour. Closed tabs drop their cache entry.
+- **Inline "Copied" flash.** Green ✓ Copied label appears next to
+  the response-body and snippet-panel copy buttons for ~1.5 s.
+  Replaces the bottom-right toast, which was getting hidden behind
+  the snippet side panel.
+- **KV paste sanitizer.** Pasting values from Chrome DevTools'
+  Network tab used to drop invisible Unicode (U+200B zero-width
+  spaces, U+FEFF BOM, bidi marks, ASCII controls) into params /
+  headers / cookies — rendered as "tofu" rectangles and silently
+  broke requests. `sanitize_pasted` strips them on every change.
+
+### Changed
+- **JSON response body: horizontal scroll, no wrap.** Long minified
+  lines (e.g. encoded polygon coordinates) used to wrap with no
+  gutter indent, so continuation rows visually overlapped the
+  line-number column. Matches VS Code's default for source files.
+- **Light palette retuned, twice.** The `#EBEDF1` canvas washed out
+  syntax-highlighted JSON; the `#D9DCE3` correction read as muddy
+  grey. Final values: bg `#FCFCFD` canvas, panel `#F3F4F7`,
+  elevated `#EDEFF2`, text `#1F2328`. GitHub-ish dark-on-paper
+  syntax palette for the response body in light mode (Monokai
+  stays on dark).
+- **Snippet / response syntax highlight is now theme-aware.**
+  `hl_text()` / `hl_json_key()` / `hl_string()` etc. branch on the
+  active theme so the response body reads cleanly in either.
+
+### Fixed
+- Clippy `collapsible_match` on `src/cookies.rs` path arm.
+- Clippy `while_let_loop` on the request-in-flight poll in
+  `src/main.rs`.
+
+## [0.15.5] — Drop the modified-dot; formalise the threat model
+
+### Changed
+- **Modified-saved-request dot removed.** Only drafts now show the
+  amber indicator. Saved requests auto-persist every keystroke, so
+  a "modified" dot was stale by design. Removed `pristine_request`
+  snapshot field and the `active_request_is_dirty()` check.
+- **Cmd+S "Saved" toast on saved requests removed.** It fired every
+  time because edits were already persistent — pure noise.
+
+### Added
+- **Explicit security section in `readme.md`.** Threat model laid
+  out plainly: what a hostile server can't do to you
+  (no auto-download, no code execution on response content, no
+  memory-corruption path, no shell on curl paste) vs what the user
+  still owns (SSRF to localhost, saved-then-opened files, plaintext
+  `data.json`, supply chain on deps).
+- **Competitor comparison table.** 4-way against Postman /
+  Insomnia / Bruno covering runtime, size, RAM, startup, telemetry,
+  account-gating, supply-chain surface, response-HTML sandboxing.
+
+## [0.15.4] — Unify tab indicator
+
+### Changed
+- **Single amber dot for both drafts and modified saved tabs.** The
+  prior split (solid dot for drafts, hollow ring for modified
+  saved) confused users more than it clarified — both indicate
+  "edits worth noticing", so collapse to one visual and let the
+  tooltip disambiguate. (Fully removed for saved in 0.15.5.)
+
+## [0.15.3] — Modified-since-opened indicator (superseded)
+
+### Added
+- **Hollow-ring dirty indicator on saved-request tabs.** Compared
+  the live `editing_*` fields to a `pristine_request` snapshot
+  taken at load time. Superseded by 0.15.4 then fully removed in
+  0.15.5.
+
+### Fixed
+- **CI clippy on Linux.** Non-macOS title-bar stub was flagged as
+  `dead_code`; fixed with an `#[allow]` on the cross-platform stub
+  and `cargo clippy --all-targets -- -D warnings` added to
+  `scripts/deploy.sh` so the check runs locally before tagging.
+
+## [0.15.2] — Palette redesign + deploy hardening
+
+### Changed
+- **Command palette chrome.** Dropped the dim backdrop (which
+  competed with the palette itself); floats with a shadow over the
+  content, VS Code-style. Lighter, less intrusive.
+- **MSRV declared at 1.73** (was implicitly higher in some
+  build paths). Matches what the CI and install docs advertised.
+- **crates.io metadata.** Cargo.toml gained `license`, `keywords`,
+  `repository`, `homepage` so the crate is publishable.
+
+### Fixed
+- **OAuth browser-open cross-platform.** Linux/Windows paths weren't
+  compiling because the `open` shim was macOS-only. Gated behind
+  `#[cfg]` per platform (`xdg-open` on Linux, `cmd /c start` on
+  Windows).
+- **Misleading "OAuth ready" status** before the access token was
+  actually present.
+
+## [0.15.1] — Native macOS title bar
+
+### Changed
+- **Title-bar chrome merged into the app surface.** Raw `objc`
+  calls on `NSWindow` to set `fullSizeContentView`,
+  `titlebarAppearsTransparent`, and `titleVisibility = .hidden`.
+  Traffic-light buttons float over the app content (like Ghostty,
+  Xcode 15, etc.); no more dark empty strip above the content
+  panel. Linux / Windows unchanged; the helper is `#[cfg]`-stubbed
+  with `#[allow(dead_code)]` on non-macOS.
+
+## [0.15.0] — OAuth 2.0
 
 ### Added
 - **OAuth 2.0 Authorization Code + PKCE.** New `Auth::OAuth2` variant
