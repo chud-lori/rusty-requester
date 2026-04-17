@@ -471,20 +471,35 @@ impl ApiClient {
     }
 
     fn render_request_tabs(&mut self, ui: &mut egui::Ui) {
-        let params_label = if self.editing_params.is_empty() {
+        // Tab count labels — skip the trailing blank "ghost" row that
+        // `render_kv_table` appends for the user to type into. Without
+        // this filter, a brand-new request shows "Params (1)" even
+        // though the row is empty.
+        let params_count = self.editing_params.iter().filter(|r| !r.is_blank()).count();
+        let headers_count = self
+            .editing_headers
+            .iter()
+            .filter(|r| !r.is_blank())
+            .count();
+        let cookies_count = self
+            .editing_cookies
+            .iter()
+            .filter(|r| !r.is_blank())
+            .count();
+        let params_label = if params_count == 0 {
             "Params".to_string()
         } else {
-            format!("Params ({})", self.editing_params.len())
+            format!("Params ({})", params_count)
         };
-        let headers_label = if self.editing_headers.is_empty() {
+        let headers_label = if headers_count == 0 {
             "Headers".to_string()
         } else {
-            format!("Headers ({})", self.editing_headers.len())
+            format!("Headers ({})", headers_count)
         };
-        let cookies_label = if self.editing_cookies.is_empty() {
+        let cookies_label = if cookies_count == 0 {
             "Cookies".to_string()
         } else {
-            format!("Cookies ({})", self.editing_cookies.len())
+            format!("Cookies ({})", cookies_count)
         };
         let body_label = if self.editing_body.is_empty() {
             "Body".to_string()
