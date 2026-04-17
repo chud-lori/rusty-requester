@@ -1000,7 +1000,7 @@ impl ApiClient {
                 );
                 ui.add_space(12.0);
                 ui.label(
-                    egui::RichText::new("Paste this into your terminal to update:")
+                    egui::RichText::new("One-line installer — paste into your terminal to update:")
                         .color(muted())
                         .size(11.0),
                 );
@@ -1024,9 +1024,15 @@ impl ApiClient {
                 ui.add_space(6.0);
                 ui.label(
                     egui::RichText::new(
-                        "The installer quits the running app, downloads the new DMG, \
-                         copies it into /Applications, and relaunches. Your data \
-                         (data.json) is untouched.",
+                        "The official one-line installer handles everything:\n\
+                         • Quits the running app automatically\n\
+                         • Downloads the new build from GitHub Releases\n\
+                         • Replaces /Applications/RustyRequester.app (macOS) or \
+                         ~/.local/bin/rusty-requester (Linux)\n\
+                         • Strips Gatekeeper quarantine + refreshes Dock / Spotlight\n\n\
+                         Your data (data.json — collections, history, OAuth tokens, \
+                         env vars) is untouched. After it finishes, relaunch from \
+                         Spotlight or the Dock.",
                     )
                     .color(muted())
                     .size(10.5),
