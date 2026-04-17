@@ -4,7 +4,7 @@
 //! empty state.
 
 use crate::model::*;
-use crate::snippet::build_json_layout_job_with_search;
+use crate::snippet::build_json_layout_job_content_only_with_search;
 use crate::theme::*;
 use crate::widgets::*;
 use crate::ApiClient;
@@ -629,44 +629,56 @@ impl ApiClient {
 
                             match effective_view {
                                 BodyView::Json => {
-                                    // `&mut &str` keeps the buffer
-                                    // read-only while still letting the
-                                    // user click to position the caret,
-                                    // drag to select, and ⌘A / ⌘C as
-                                    // expected — egui's TextEdit
-                                    // handles those shortcuts itself
-                                    // (the macOS Edit menu used to
-                                    // intercept them; we removed that).
-                                    //
-                                    // Wrapping is DISABLED for JSON:
-                                    // wrapped continuation rows have no
-                                    // line-number gutter, so a single
-                                    // very long line (e.g. a minified
-                                    // encoded coordinate blob) visually
-                                    // overlaps the gutter column. VS
-                                    // Code solves this with horizontal
-                                    // scroll — so do we.
-                                    let mut buf: &str = &self.response_text;
-                                    let search = self.body_search_query.clone();
-                                    let mut layouter =
-                                        move |ui: &egui::Ui, s: &str, _wrap_width: f32| {
-                                            let mut job =
-                                                build_json_layout_job_with_search(s, &search);
-                                            job.wrap.max_width = f32::INFINITY;
-                                            ui.fonts(|f| f.layout_job(job))
-                                        };
-                                    egui::ScrollArea::horizontal()
-                                        .id_salt("resp_json_hscroll")
-                                        .auto_shrink([false, false])
-                                        .show(ui, |ui| {
-                                            ui.add(
-                                                egui::TextEdit::multiline(&mut buf)
-                                                    .frame(false)
-                                                    .desired_width(f32::INFINITY)
-                                                    .font(egui::TextStyle::Monospace)
-                                                    .layouter(&mut layouter),
-                                            );
+                                    // Two-column layout — separate
+                                    // gutter column on the left, content
+                                    // on the right. Matches the snippet
+                                    // panel and Postman's response view:
+                                    // vertical scroll only, content
+                                    // wraps inside its own column so
+                                    // wrapped rows never collide with
+                                    // the line numbers. Earlier nested
+                                    // horizontal ScrollArea allowed
+                                    // diagonal drag-scrolling that felt
+                                    // broken.
+                                    let gutter_w = 44.0;
+                                    let line_count =
+                                        self.response_text.split('\n').count().max(1);
+                                    ui.horizontal_top(|ui| {
+                                        ui.vertical(|ui| {
+                                            ui.spacing_mut().item_spacing.y = 0.0;
+                                            for i in 1..=line_count {
+                                                ui.add_sized(
+                                                    [gutter_w, 17.0],
+                                                    egui::Label::new(
+                                                        egui::RichText::new(format!("{:>3}", i))
+                                                            .color(egui::Color32::from_rgb(
+                                                                100, 105, 115,
+                                                            ))
+                                                            .font(egui::FontId::monospace(12.5)),
+                                                    ),
+                                                );
+                                            }
                                         });
+                                        ui.add_space(6.0);
+                                        let mut buf: &str = &self.response_text;
+                                        let search = self.body_search_query.clone();
+                                        let mut layouter =
+                                            move |ui: &egui::Ui, s: &str, wrap_width: f32| {
+                                                let mut job =
+                                                    build_json_layout_job_content_only_with_search(
+                                                        s, &search,
+                                                    );
+                                                job.wrap.max_width = wrap_width;
+                                                ui.fonts(|f| f.layout_job(job))
+                                            };
+                                        ui.add(
+                                            egui::TextEdit::multiline(&mut buf)
+                                                .frame(false)
+                                                .desired_width(f32::INFINITY)
+                                                .font(egui::TextStyle::Monospace)
+                                                .layouter(&mut layouter),
+                                        );
+                                    });
                                 }
                                 BodyView::Tree => {
                                     if let Some(v) = parsed {

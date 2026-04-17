@@ -228,6 +228,7 @@ fn highlight_line(job: &mut LayoutJob, line: &str, lang: SnippetLang, font: &Fon
 /// Build a syntax-highlighted `LayoutJob` for a JSON payload with a
 /// line-number gutter. `search` (case-insensitive) paints match
 /// backgrounds in accent color; empty = no search highlight.
+#[allow(dead_code)]
 pub fn build_json_layout_job_with_search(text: &str, search: &str) -> LayoutJob {
     let font = FontId::monospace(12.5);
     let mut job = LayoutJob::default();
@@ -244,6 +245,31 @@ pub fn build_json_layout_job_with_search(text: &str, search: &str) -> LayoutJob 
         }
         let lineno = format!("{:>4}  ", line_idx + 1);
         append(&mut job, &lineno, &font, hl_lineno());
+        highlight_json_line(&mut job, line, &font);
+    }
+    if let Some(q) = search_opt {
+        apply_search_highlight(&mut job, text, q);
+    }
+    job
+}
+
+/// Same as `build_json_layout_job_with_search` but skips the embedded
+/// line-number gutter. Pair with a separately-rendered gutter column
+/// so wrapped continuation rows don't collide with the line numbers.
+pub fn build_json_layout_job_content_only_with_search(text: &str, search: &str) -> LayoutJob {
+    let font = FontId::monospace(12.5);
+    let mut job = LayoutJob::default();
+    let search_lc = search.to_lowercase();
+    let search_opt = if search_lc.is_empty() {
+        None
+    } else {
+        Some(search_lc.as_str())
+    };
+
+    for (line_idx, line) in text.split('\n').enumerate() {
+        if line_idx > 0 {
+            append(&mut job, "\n", &font, hl_text());
+        }
         highlight_json_line(&mut job, line, &font);
     }
     if let Some(q) = search_opt {
