@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" shape-rendering="geometricPrecision">
+  <!--
+    Rusty Requester app icon — v3 "Postman playbook".
+
+    v1 (nameplate + bolts) and v2 (orange plate on dark plinth) were
+    too busy at 24 px / 32 px — the plate, bolts, glyph, and teal
+    accent all competed for the same handful of pixels. Killed all
+    the chrome. One idea: the plinth is the brand color; a single
+    confident glyph sits on top. Works at 16 px, still reads at 1024.
+
+    Palette (all pulled from the app's own theme — zero off-palette):
+      #CE422B  C_ACCENT rust orange — plinth (hero color)
+      #1A1210  warm ink — subtle bottom-shadow plinth edge
+      #F4E8D4  warm parchment — glyph
+      #8C2A18  deep oxide — glyph engraving shadow
+
+    Glyph: `{→` — a curly brace and a forward arrow, the two core
+    symbols of an API client (JSON body + request). Bold strokes,
+    tight coupling, no surrounding chrome.
+  -->
+  <defs>
+    <!-- Subtle plinth depth: lighter top, slightly darker bottom.
+         Keeps the orange from looking flat without introducing a
+         second palette color. -->
+    <linearGradient id="plinthLight" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#E85A40" stop-opacity="1"/>
+      <stop offset="1" stop-color="#B8341F" stop-opacity="1"/>
+    </linearGradient>
+    <!-- Warm highlight sheen across the top quarter — a few percent
+         of parchment, not glossy. -->
+    <linearGradient id="topSheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F4E8D4" stop-opacity="0.13"/>
+      <stop offset="0.4" stop-color="#F4E8D4" stop-opacity="0"/>
+    </linearGradient>
+    <!-- Inset bottom shadow — tiny, makes the plinth feel physical. -->
+    <linearGradient id="bottomShade" x1="0" y1="0.88" x2="0" y2="1">
+      <stop offset="0" stop-color="#1A1210" stop-opacity="0"/>
+      <stop offset="1" stop-color="#1A1210" stop-opacity="0.18"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Plinth: rust-orange rounded square, full bleed. -->
+  <rect width="1024" height="1024" rx="224" fill="url(#plinthLight)"/>
+  <rect width="1024" height="1024" rx="224" fill="url(#topSheen)"/>
+  <rect width="1024" height="1024" rx="224" fill="url(#bottomShade)"/>
+
+  <!-- Glyph — drawn BIG so it survives the 16 px / 24 px shrink. The
+       brace and arrow together span ~65 % of the plinth width and
+       ~35 % of the height, vertically centered. -->
+
+  <!-- Engraving shadow first (drop-shadow effect), then the main
+       cream stroke on top. Same path, offset 6 px. -->
+  <g transform="translate(6 8)">
+    <path d="M 288 320
+             Q 208 320, 208 400
+             L 208 476
+             Q 208 498, 156 512
+             Q 208 526, 208 548
+             L 208 624
+             Q 208 704, 288 704"
+          fill="none" stroke="#8C2A18" stroke-width="58"
+          stroke-linecap="round" stroke-linejoin="round" opacity="0.45"/>
+    <rect x="300" y="484" width="408" height="56" rx="28" fill="#8C2A18" opacity="0.45"/>
+    <path d="M 820 512 L 696 428 L 696 596 Z" fill="#8C2A18" opacity="0.45"/>
+  </g>
+
+  <!-- Main cream glyph -->
+  <path d="M 288 320
+           Q 208 320, 208 400
+           L 208 476
+           Q 208 498, 156 512
+           Q 208 526, 208 548
+           L 208 624
+           Q 208 704, 288 704"
+        fill="none" stroke="#F4E8D4" stroke-width="58"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="300" y="484" width="408" height="56" rx="28" fill="#F4E8D4"/>
+  <path d="M 820 512 L 696 428 L 696 596 Z" fill="#F4E8D4"/>
+</svg>
