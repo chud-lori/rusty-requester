@@ -150,8 +150,7 @@ pub fn find_request_info(
 /// (< 0x20 except none — none are useful in a KV value), DEL (0x7F),
 /// BOM/ZWSP family (U+200B–U+200F, U+202A–U+202E, U+2060, U+FEFF).
 fn sanitize_pasted(s: &mut String) {
-    if s
-        .chars()
+    if s.chars()
         .all(|c| c >= ' ' && c != '\u{007F}' && !is_invisible_unicode(c))
     {
         return; // fast path — already clean
