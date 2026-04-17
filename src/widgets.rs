@@ -241,7 +241,12 @@ pub fn render_kv_table(
     for (i, row) in rows.iter_mut().enumerate() {
         let is_blank = row.is_blank();
         let is_last_blank = is_blank && i == row_count - 1;
-        let bg = if is_last_blank {
+        // Blank ghost-row highlight. Dark mode: a sunken `panel_dark`
+        // reads as a ready-to-type hint. Light mode: the same treatment
+        // paints a medium-grey pill on near-white canvas — the "8-bit"
+        // look. Keep the hint dark-only; light mode leaves the row
+        // transparent and leans on the placeholder text for affordance.
+        let bg = if is_last_blank && !is_light() {
             panel_dark().linear_multiply(0.6)
         } else {
             egui::Color32::TRANSPARENT
@@ -373,8 +378,18 @@ pub fn render_single_tab(
         // Hovered inactives get a faint elevation too, but less
         // saturated. Inactive = transparent so the strip bg shows
         // through (matches Postman's flat chrome).
+        // Active tab fill — in dark mode `elevated()` reads as a subtle
+        // "lift" against the bg. In light mode the same elevation is
+        // visually DARKER than the near-white canvas, which reads as a
+        // muddy grey block (the "8-bit" tab look). Instead, use a pale
+        // amber tint that echoes the accent bar above — selection reads
+        // as intentional + warm, not as dithered grey.
         let tab_bg = if is_active {
-            elevated()
+            if is_light() {
+                egui::Color32::from_rgba_unmultiplied(206, 66, 43, 26)
+            } else {
+                elevated()
+            }
         } else if resp.hovered() {
             elevated().linear_multiply(0.5)
         } else {

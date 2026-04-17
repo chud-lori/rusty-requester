@@ -138,24 +138,24 @@ pub const DARK_PALETTE: Palette = Palette {
     muted: C_MUTED,
 };
 
-/// Light palette — warm mid-gray canvas. Earlier `#EBEDF1` was still
-/// too bright and washed out the syntax-highlighted response. This
-/// softer `#D9DCE3` reads like paper under warm light — surfaces are
-/// still unambiguously "light" but don't glare, and the text colors
-/// below keep 4.5:1+ WCAG AA contrast.
-///   * `bg`         #D9DCE3 — app canvas
-///   * `panel_dark` #CED2DA — sunken surface (response body, code)
-///   * `elevated`   #BEC3CD — inputs / hover / active rows
-///   * `border`     #A7ADB8 — divider lines
-///   * `text`       #1F232A — body text, high contrast on bg
-///   * `muted`      #545A68 — secondary labels
+/// Light palette — tuned against Postman's light mode. Earlier
+/// iterations landed too grey (`#D9DCE3`) and made every KV input
+/// render as a visible grey pill — the "8-bit" look. Postman's
+/// canvas is essentially white; structure comes from borders and
+/// content, not from chunky input fills.
+///   * `bg`         #FCFCFD — canvas (faint off-white, not clinical)
+///   * `panel_dark` #F3F4F7 — sidebar / sunken (response body, code)
+///   * `elevated`   #EDEFF2 — inputs / hover / active rows
+///   * `border`     #D1D5DB — clear dividers (GitHub-ish)
+///   * `text`       #1F2328 — body text, high contrast on bg
+///   * `muted`      #656D76 — secondary labels
 pub const LIGHT_PALETTE: Palette = Palette {
-    bg: egui::Color32::from_rgb(217, 220, 227),
-    panel_dark: egui::Color32::from_rgb(206, 210, 218),
-    elevated: egui::Color32::from_rgb(190, 195, 205),
-    border: egui::Color32::from_rgb(167, 173, 184),
-    text: egui::Color32::from_rgb(31, 35, 42),
-    muted: egui::Color32::from_rgb(84, 90, 104),
+    bg: egui::Color32::from_rgb(252, 252, 253),
+    panel_dark: egui::Color32::from_rgb(243, 244, 247),
+    elevated: egui::Color32::from_rgb(237, 239, 242),
+    border: egui::Color32::from_rgb(209, 213, 219),
+    text: egui::Color32::from_rgb(31, 35, 40),
+    muted: egui::Color32::from_rgb(101, 109, 118),
 };
 
 pub fn palette_for(theme: Theme) -> Palette {
