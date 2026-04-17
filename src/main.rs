@@ -194,6 +194,9 @@ struct ApiClient {
     /// banner stays visible across frames. `None` = no update / not
     /// checked yet / current version is latest.
     update_available: Option<String>,
+    /// Toggles the update-instructions modal — surfaced via the
+    /// sidebar pill when an update is available.
+    show_update_modal: bool,
 
     /// In-flight OAuth 2.0 flow. `Some` while the user is completing
     /// the authorize-redirect dance in their browser; drained each
@@ -391,6 +394,7 @@ impl Default for ApiClient {
             startup_warning: None,
             update_check_rx: None,
             update_available: None,
+            show_update_modal: false,
             oauth_flow_rx: None,
             oauth_flow_status: None,
             oauth_start_requested: false,
@@ -434,8 +438,12 @@ impl Default for ApiClient {
         // Fire a background check against GitHub's latest-release API.
         // One HTTP call per launch; silent failure if offline or if
         // GitHub rate-limits us — an API client crashing on startup
-        // because its update check hiccuped would be absurd.
-        this.update_check_rx = Some(spawn_update_check(&this.http_runtime));
+        // because its update check hiccuped would be absurd. Users
+        // who want strict offline operation can disable this in
+        // Settings → Check for updates on launch.
+        if this.state.settings.check_updates_on_launch {
+            this.update_check_rx = Some(spawn_update_check(&this.http_runtime));
+        }
         // Restore active tab — if state has a saved `active_tab_id`,
         // activate that tab now. Otherwise fall back to the first open tab.
         let active_tab: Option<OpenTab> = {
@@ -1735,7 +1743,7 @@ impl eframe::App for ApiClient {
         if let Some(rx) = &self.update_check_rx {
             if let Ok(new_version) = rx.try_recv() {
                 self.show_toast(format!(
-                    "Update available: {} — grab it from Releases",
+                    "Update {} available — click the pill next to the version in the sidebar.",
                     new_version
                 ));
                 self.update_available = Some(new_version);
@@ -2015,6 +2023,7 @@ impl eframe::App for ApiClient {
         self.render_paste_modal(ctx);
         self.render_env_modal(ctx);
         self.render_settings_modal(ctx);
+        self.render_update_modal(ctx);
         self.render_save_draft_modal(ctx);
         self.render_confirm_close_draft(ctx);
         self.render_about_modal(ctx);

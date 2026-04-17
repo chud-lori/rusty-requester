@@ -64,15 +64,38 @@ impl ApiClient {
                                 .strong()
                                 .color(text()),
                         );
-                        // Baked-in build version — makes it obvious which
-                        // binary is actually running (mismatch vs what you
-                        // just shipped usually = macOS LaunchServices
-                        // cached the old bundle).
-                        ui.label(
-                            egui::RichText::new(concat!("v", env!("CARGO_PKG_VERSION")))
-                                .size(10.5)
-                                .color(muted()),
-                        );
+                        // Baked-in build version + optional
+                        // "update available" pill — stays visible
+                        // for the whole session so the user never
+                        // forgets a pending update.
+                        ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing.x = 6.0;
+                            ui.label(
+                                egui::RichText::new(concat!("v", env!("CARGO_PKG_VERSION")))
+                                    .size(10.5)
+                                    .color(muted()),
+                            );
+                            if let Some(latest) = self.update_available.clone() {
+                                let pill = egui::Button::new(
+                                    egui::RichText::new(format!("↑ {}", latest))
+                                        .size(10.0)
+                                        .strong()
+                                        .color(egui::Color32::WHITE),
+                                )
+                                .fill(C_ACCENT)
+                                .stroke(egui::Stroke::NONE)
+                                .rounding(egui::Rounding::same(4.0))
+                                .min_size(egui::vec2(0.0, 18.0));
+                                if ui
+                                    .add(pill)
+                                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                    .on_hover_text("Click to see update instructions")
+                                    .clicked()
+                                {
+                                    self.show_update_modal = true;
+                                }
+                            }
+                        });
                     });
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui

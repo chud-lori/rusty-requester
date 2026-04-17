@@ -414,6 +414,12 @@ pub struct AppSettings {
     /// — they're tuned to read on both backgrounds.
     #[serde(default)]
     pub theme: Theme,
+    /// When true (default), the app makes one silent GET to
+    /// `api.github.com/.../releases/latest` on launch and shows a
+    /// toast if a newer version exists. Disable for strict offline
+    /// operation — no outbound traffic from this app on startup.
+    #[serde(default = "default_check_updates")]
+    pub check_updates_on_launch: bool,
 }
 
 /// UI theme — drives `apply_style`'s choice of `Visuals`.
@@ -433,6 +439,9 @@ fn default_max_body_mb() -> u64 {
 fn default_verify_tls() -> bool {
     true
 }
+fn default_check_updates() -> bool {
+    true
+}
 
 impl Default for AppSettings {
     fn default() -> Self {
@@ -442,6 +451,7 @@ impl Default for AppSettings {
             verify_tls: default_verify_tls(),
             proxy_url: String::new(),
             theme: Theme::Dark,
+            check_updates_on_launch: default_check_updates(),
         }
     }
 }

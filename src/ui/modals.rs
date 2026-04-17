@@ -956,6 +956,136 @@ impl ApiClient {
         }
     }
 
+    /// Update-instructions modal — surfaced when the user clicks the
+    /// "update available" pill. Gives them the exact `curl` one-liner
+    /// (same `install.sh` that handles fresh installs — quit running
+    /// app, download DMG, copy into /Applications, strip quarantine,
+    /// re-register with Launch Services, relaunch). A single click
+    /// copies it to the clipboard. Release notes link for the
+    /// curious.
+    pub(crate) fn render_update_modal(&mut self, ctx: &egui::Context) {
+        if !self.show_update_modal {
+            return;
+        }
+        let Some(latest) = self.update_available.clone() else {
+            self.show_update_modal = false;
+            return;
+        };
+        let mut open = self.show_update_modal;
+        let curl_cmd =
+            "curl -fsSL https://raw.githubusercontent.com/chud-lori/rusty-requester/main/install.sh | bash";
+        let release_url = format!(
+            "https://github.com/chud-lori/rusty-requester/releases/tag/{}",
+            latest
+        );
+        let mut copy_curl = false;
+        let mut open_releases = false;
+
+        egui::Window::new(format!("Update to {}", latest))
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .fixed_size([520.0, 0.0])
+            .show(ctx, |ui| {
+                ui.add_space(4.0);
+                ui.label(
+                    egui::RichText::new(format!(
+                        "Running v{}. A newer version ({}) is available.",
+                        env!("CARGO_PKG_VERSION"),
+                        latest
+                    ))
+                    .color(text())
+                    .size(13.0),
+                );
+                ui.add_space(12.0);
+                ui.label(
+                    egui::RichText::new("Paste this into your terminal to update:")
+                        .color(muted())
+                        .size(11.0),
+                );
+                ui.add_space(4.0);
+                // Read-only code block showing the curl one-liner.
+                egui::Frame::none()
+                    .fill(panel_dark())
+                    .stroke(egui::Stroke::new(1.0, border()))
+                    .rounding(egui::Rounding::same(6.0))
+                    .inner_margin(egui::Margin::symmetric(10.0, 8.0))
+                    .show(ui, |ui| {
+                        ui.add(
+                            egui::TextEdit::multiline(&mut curl_cmd.to_string())
+                                .font(egui::FontId::monospace(11.5))
+                                .frame(false)
+                                .desired_width(f32::INFINITY)
+                                .desired_rows(2)
+                                .interactive(false),
+                        );
+                    });
+                ui.add_space(6.0);
+                ui.label(
+                    egui::RichText::new(
+                        "The installer quits the running app, downloads the new DMG, \
+                         copies it into /Applications, and relaunches. Your data \
+                         (data.json) is untouched.",
+                    )
+                    .color(muted())
+                    .size(10.5),
+                );
+
+                ui.add_space(14.0);
+                ui.horizontal(|ui| {
+                    if ui
+                        .add(
+                            egui::Button::new(
+                                egui::RichText::new("Copy command")
+                                    .color(egui::Color32::WHITE)
+                                    .strong(),
+                            )
+                            .fill(C_ACCENT)
+                            .min_size(egui::vec2(140.0, 30.0)),
+                        )
+                        .clicked()
+                    {
+                        copy_curl = true;
+                    }
+                    if ui
+                        .add(
+                            egui::Button::new(egui::RichText::new("Release notes").color(text()))
+                                .fill(elevated())
+                                .min_size(egui::vec2(120.0, 30.0)),
+                        )
+                        .clicked()
+                    {
+                        open_releases = true;
+                    }
+                });
+            });
+
+        if copy_curl {
+            ctx.output_mut(|o| o.copied_text = curl_cmd.to_string());
+            self.show_toast("Update command copied — paste in your terminal");
+        }
+        if open_releases {
+            // Best-effort platform-specific open. Silently ignores
+            // errors — worst case the URL string is in the toast for
+            // the user to copy manually.
+            #[cfg(target_os = "macos")]
+            let _ = std::process::Command::new("open").arg(&release_url).spawn();
+            #[cfg(target_os = "linux")]
+            let _ = std::process::Command::new("xdg-open")
+                .arg(&release_url)
+                .spawn();
+            #[cfg(target_os = "windows")]
+            let _ = std::process::Command::new("cmd")
+                .args(["/C", "start", "", &release_url])
+                .spawn();
+        }
+        self.show_update_modal = open;
+        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            self.show_update_modal = false;
+        }
+    }
+
     /// App-wide settings modal — request timeout, body size cap, proxy,
     /// TLS verification. Changes take effect immediately (we rebuild
     /// the shared `reqwest::Client` on save).
@@ -1059,6 +1189,23 @@ impl ApiClient {
                     "Light theme flips egui's chrome (panels, text, borders). \
                          HTTP method colors and status pills stay the same across \
                          themes.",
+                )
+                .size(10.5)
+                .color(muted()),
+            );
+
+            ui.add_space(10.0);
+            // Check for updates on launch — single outbound call to
+            // GitHub's releases API. Disable for strict offline use.
+            ui.checkbox(
+                &mut self.editing_settings.check_updates_on_launch,
+                "Check for updates on launch",
+            );
+            ui.label(
+                egui::RichText::new(
+                    "Silent GET to github.com/.../releases/latest once per \
+                         launch. No account, no telemetry — disable for \
+                         zero outbound traffic.",
                 )
                 .size(10.5)
                 .color(muted()),
