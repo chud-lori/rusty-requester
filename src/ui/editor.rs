@@ -4,6 +4,7 @@
 
 use crate::io::curl;
 use crate::model::*;
+use crate::snippet::build_json_layout_job_content_only_with_search;
 use crate::theme::*;
 use crate::widgets::*;
 use crate::ApiClient;
@@ -593,15 +594,19 @@ impl ApiClient {
             Some(BodyExt::GraphQL { .. }) => BodyMode::GraphQL,
         };
         let mut new_mode = current_mode;
+        // Postman-style radio row — native radio circles, no saturated
+        // fills or a redundant "Body type" label. The options label
+        // themselves ("Raw", "x-www-form-urlencoded", ...) are
+        // self-descriptive.
         ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("Body type").size(11.0).color(muted()));
             for &m in &[
                 BodyMode::Raw,
                 BodyMode::FormUrlEncoded,
                 BodyMode::MultipartForm,
                 BodyMode::GraphQL,
             ] {
-                ui.selectable_value(&mut new_mode, m, m.label());
+                ui.radio_value(&mut new_mode, m, m.label());
+                ui.add_space(6.0);
             }
         });
         if new_mode != current_mode {
@@ -718,14 +723,24 @@ impl ApiClient {
                 }
             });
             ui.add_space(4.0);
+            // Syntax highlight via the same JSON layouter the response
+            // body uses — keys blue/green, strings yellow/navy, numbers
+            // purple/orange, true/false/null pink/red. For non-JSON
+            // raw text the layouter just tokenizes quoted strings and
+            // numbers, which is a sensible fallback for most bodies.
+            let mut layouter = |ui: &egui::Ui, s: &str, wrap_width: f32| {
+                let mut job = build_json_layout_job_content_only_with_search(s, "");
+                job.wrap.max_width = wrap_width;
+                ui.fonts(|f| f.layout_job(job))
+            };
             if ui
                 .add_sized(
                     [ui.available_width(), avail_h],
                     egui::TextEdit::multiline(&mut self.editing_body)
-                        .code_editor()
                         .frame(false)
                         .hint_text("Request body (JSON, text, ...)")
-                        .font(egui::TextStyle::Monospace),
+                        .font(egui::TextStyle::Monospace)
+                        .layouter(&mut layouter),
                 )
                 .changed()
             {

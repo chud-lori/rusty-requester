@@ -949,6 +949,11 @@ impl ApiClient {
         if !open {
             self.confirm_close_draft_idx = None;
         }
+        // Esc dismisses the modal as Cancel — don't lose the draft,
+        // don't save, just put the user back where they were.
+        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            self.confirm_close_draft_idx = None;
+        }
     }
 
     /// App-wide settings modal — request timeout, body size cap, proxy,
