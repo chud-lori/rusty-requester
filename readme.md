@@ -23,22 +23,114 @@ and of managing a wall of raw <code>curl</code> commands in my terminal.
 
 ## 🎯 Why Rusty Requester?
 
-Postman is a ~500 MB Electron app that phones home and wants you to log in. Rusty Requester:
+Most API clients today are Electron apps — Chromium + Node wrapped
+around a form builder. That buys you cross-platform consistency at the
+cost of hundreds of MB of RAM and a supply chain with thousands of npm
+packages. Rusty Requester is a single ~15 MB native binary: Rust +
+`egui`, no webview, no Node, no account.
 
-| | Postman | Rusty Requester |
-|---|---|---|
-| RAM | ~500 MB+ | ~10–30 MB |
-| Startup | seconds | instant |
-| Distribution | Electron bundle | single native binary |
-| Storage | cloud-dependent | one local JSON file |
-| Tracking | analytics + telemetry | none |
+### vs Postman / Insomnia / Bruno
 
-Highlights: tabbed request editor, per-environment variables + cookie jar,
+|                   | Postman | Insomnia | Bruno | **Rusty Requester** |
+|-------------------|---------|----------|-------|---------------------|
+| Runtime           | Electron | Electron | Electron | **Rust + egui (native)** |
+| Download size     | ~500 MB | ~200 MB | ~200 MB | **~15 MB** |
+| Idle RAM          | 400–800 MB | 300–500 MB | 200–400 MB | **~30 MB** |
+| Cold start        | 2–5 s | 1–3 s | 1–2 s | **<100 ms** |
+| Account required  | yes (for sync) | yes (gated 2023) | no | **no** |
+| Telemetry         | yes | yes | off by default | **none** |
+| Storage           | cloud-first | cloud or local | git-native files | **one local JSON file** |
+| Supply chain      | ~1000+ npm deps | ~1000+ npm deps | ~800 npm deps | **~150 Rust crates** |
+| Response HTML     | Chromium webview | Chromium webview | Chromium webview | **egui text/markup — no JS engine** |
+
+Bruno is the closest match in spirit (offline, file-based, OSS) — it's
+a good product. The differentiator is runtime: it still ships Chromium.
+
+### Why Rust for an API client?
+
+- **Memory safety.** A malformed response can't buffer-overflow the
+  parser the way a C client could. Rust's bounds checks and
+  borrow-checker eliminate a whole class of CVE.
+- **No JS runtime means no JS CVEs.** Response HTML renders as markup
+  in `egui`, not in a Chromium webview. A hostile server can't hit
+  you with a V8 exploit because there's no V8.
+- **Smaller attack surface.** ~150 Rust crates vs ~1000+ npm packages
+  per Electron competitor. Fewer transitive deps = fewer places for a
+  supply-chain compromise to land.
+- **Well-audited networking.** `reqwest` + `rustls` (or `native-tls`)
+  handle TLS and redirects — both heavily used across the Rust
+  ecosystem.
+- **Honest caveat.** Rust isn't magically safe from supply-chain
+  attacks. We mitigate with `Cargo.lock` pinning, sticking to
+  widely-used crates (`reqwest`, `tokio`, `serde`, `egui`), and
+  running `cargo audit` before every release — but a compromised
+  upstream would still bite us.
+
+### Highlights
+
+Tabbed request editor, per-environment variables + cookie jar,
 Postman Collection v2.1 import, syntax-highlighted JSON / Tree / HTML /
-SSE views, **Server-Sent Events streaming** for LLM APIs, **Cancel** mid-
-flight, **Response diff** across sends, **⌘P request finder** + **⇧⌘P
-actions palette**, and a native macOS menu bar. Full catalog in
+SSE views, **Server-Sent Events streaming** for LLM APIs, **Cancel**
+mid-flight, **Response diff** across sends, **⌘P request finder** +
+**⇧⌘P actions palette**, and a native macOS menu bar. Full catalog in
 [`docs/FEATURES.md`](docs/FEATURES.md).
+
+---
+
+## 🔐 Security
+
+An API client lives on a trust boundary — you type a URL, a stranger's
+server sends bytes back. We treat that boundary seriously. This is the
+threat model, stated plainly.
+
+### What a hostile server CAN'T do to you
+
+- **No auto-download.** Response bytes never touch disk on their own.
+  Every "save response" goes through the OS save dialog (`rfd`) where
+  *you* pick the path and filename. There is no `Content-Disposition`
+  auto-save path — a server cannot write `~/.ssh/authorized_keys` or
+  drop a binary into your Startup folder.
+- **No code execution on response content.** JSON / HTML / XML / SSE
+  are parsed as data. The HTML preview renders as markup in `egui` —
+  no DOM, no JavaScript engine, no MIME sniffing. A response
+  containing `<script>` just shows the tag as text.
+- **No memory-corruption path.** HTTP and TLS are handled by
+  `reqwest` → `hyper` → `rustls` / `native-tls`. All safe Rust (or
+  OS-audited for native-tls on macOS). A malformed chunked-transfer
+  body, oversized header, or junk TLS record can't buffer-overflow
+  the client the way a C-based user agent could.
+- **No shell execution on curl import.** Pasting a `curl` command
+  parses its flags as data — we never `exec` the command. Worst case
+  is the same as typing the URL yourself.
+
+### What you ARE still responsible for
+
+- **SSRF from your own machine.** If you send a request to
+  `http://localhost:6379`, an internal IP, or `file://` (where
+  supported), we'll do it — same as `curl`. The app is a hardened
+  boundary on *inbound* bytes, not a policy engine on *outbound*
+  destinations. Don't blindly send requests from URLs you haven't
+  read.
+- **Saved-then-opened files.** If you explicitly save a response and
+  then open that file in a vulnerable downstream app (Preview, an
+  editor plugin, a media player), that's on the downstream app. We
+  don't auto-open, don't `chmod +x`, and don't set the
+  `com.apple.quarantine` bypass on anything we write.
+- **Local `data.json`.** Your tokens, env vars, and cookies live in a
+  plaintext JSON file under your home directory at `0600` perms. If
+  someone has shell access as your user, they can read it. See the
+  *Security note* under [Quickstart](#-quickstart).
+- **Supply chain on our deps.** Rust isn't magic. A compromised
+  upstream (`reqwest`, `tokio`, `serde`, `egui`) would ship in our
+  binary. We mitigate with pinned `Cargo.lock`, widely-used crates
+  only, and `cargo audit` before each release — but we can't
+  eliminate the risk.
+
+### Reporting vulnerabilities
+
+Found a security issue? Open a **private** security advisory via
+GitHub: **Security → Report a vulnerability** on the repo. Please
+don't file a public issue for exploitable bugs.
 
 ---
 
