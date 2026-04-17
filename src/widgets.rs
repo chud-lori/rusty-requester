@@ -373,25 +373,22 @@ pub fn render_single_tab(
     let mut action = TabAction::None;
 
     if ui.is_rect_visible(rect) {
-        // Active tab has an elevated fill so it visibly "lifts" out
-        // of the flat tab strip (strip and content share `bg()`).
-        // Hovered inactives get a faint elevation too, but less
-        // saturated. Inactive = transparent so the strip bg shows
-        // through (matches Postman's flat chrome).
-        // Active tab fill — in dark mode `elevated()` reads as a subtle
-        // "lift" against the bg. In light mode the same elevation is
-        // visually DARKER than the near-white canvas, which reads as a
-        // muddy grey block (the "8-bit" tab look). Instead, use a pale
-        // amber tint that echoes the accent bar above — selection reads
-        // as intentional + warm, not as dithered grey.
+        // Tab chrome — Postman-style underline.
+        //   * Active:     transparent fill + bottom accent bar.
+        //   * Hover:      faint elevation so the tab registers as interactive.
+        //   * Inactive:   transparent; strip bg shows through.
+        // The previous top-accent + tinted-fill combo stacked three
+        // accent colors (red bar + peach fill + green method text +
+        // amber draft dot) and read as chaotic. Single bottom accent
+        // marks selection cleanly in both themes.
         let tab_bg = if is_active {
-            if is_light() {
-                egui::Color32::from_rgba_unmultiplied(206, 66, 43, 26)
-            } else {
-                elevated()
-            }
+            egui::Color32::TRANSPARENT
         } else if resp.hovered() {
-            elevated().linear_multiply(0.5)
+            if is_light() {
+                elevated().gamma_multiply(0.5)
+            } else {
+                elevated().linear_multiply(0.5)
+            }
         } else {
             egui::Color32::TRANSPARENT
         };
@@ -404,8 +401,18 @@ pub fn render_single_tab(
         ui.painter().rect_filled(rect, rounding, tab_bg);
 
         if is_active {
-            let top = egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), 2.0));
-            ui.painter().rect_filled(top, rounding, C_ACCENT);
+            // Bottom underline, inset slightly so it doesn't butt against
+            // the content frame below. 2.5 px matches the inline
+            // `tab_button` indicator used for Body / Headers / Tests.
+            let y = rect.bottom() - 1.5;
+            let pad = 10.0;
+            ui.painter().line_segment(
+                [
+                    egui::pos2(rect.left() + pad, y),
+                    egui::pos2(rect.right() - pad, y),
+                ],
+                egui::Stroke::new(2.5, C_ACCENT),
+            );
         }
 
         // Method as bold colored text. `egui::TextStyle::Button` is
