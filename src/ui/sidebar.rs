@@ -16,15 +16,15 @@ impl ApiClient {
             .default_width(320.0)
             .width_range(260.0..=640.0)
             .resizable(true)
-            // Disabled — egui adds a gutter/reserve region around the
-            // separator line that used to surface as a dark strip between
-            // sidebar and central panel. The base-layer bg paint in
-            // update() plus matching panel colors make the boundary invisible
-            // without the separator.
-            .show_separator_line(false)
+            // Re-enabled — we now paint the sidebar with `panel_dark()`
+            // (elevated card) which is BRIGHTER than the central canvas
+            // in both themes. That gives a visible hierarchy (card lifts
+            // off the canvas) so the separator line is no longer the
+            // only cue between panels.
+            .show_separator_line(true)
             .frame(
                 egui::Frame::none()
-                    .fill(bg())
+                    .fill(panel_dark())
                     // Asymmetric: less right-padding so sidebar content
                     // butts close to the (invisible) boundary with central.
                     // On macOS, extra top padding so the traffic-light
@@ -45,9 +45,11 @@ impl ApiClient {
             .show(ctx, |ui| {
                 // Defensive floor — paint the full sidebar rect before any
                 // children, so scroll tracks / code editors etc. don't
-                // surface with egui-default near-black fills.
+                // surface with egui-default near-black fills. Uses
+                // `panel_dark()` so sub-regions match the sidebar card
+                // color, not the central-panel canvas.
                 ui.painter()
-                    .rect_filled(ui.max_rect(), egui::Rounding::ZERO, bg());
+                    .rect_filled(ui.max_rect(), egui::Rounding::ZERO, panel_dark());
                 ui.add_space(4.0);
                 ui.horizontal(|ui| {
                     if let Some(tex) = &self.app_icon {
@@ -98,7 +100,7 @@ impl ApiClient {
                                         .strong()
                                         .color(egui::Color32::WHITE),
                                     )
-                                    .fill(C_ACCENT)
+                                    .fill(accent())
                                     .stroke(egui::Stroke::NONE)
                                     .rounding(egui::Rounding::same(4.0))
                                     .min_size(egui::vec2(0.0, 18.0));
@@ -176,7 +178,7 @@ impl ApiClient {
                             .color(if coll_selected { text() } else { muted() }),
                     )
                     .fill(if coll_selected {
-                        C_ACCENT.linear_multiply(0.18)
+                        accent().linear_multiply(0.18)
                     } else {
                         egui::Color32::TRANSPARENT
                     })
@@ -200,7 +202,7 @@ impl ApiClient {
                             .color(if hist_selected { text() } else { muted() }),
                     )
                     .fill(if hist_selected {
-                        C_ACCENT.linear_multiply(0.18)
+                        accent().linear_multiply(0.18)
                     } else {
                         egui::Color32::TRANSPARENT
                     })
@@ -230,7 +232,7 @@ impl ApiClient {
                                 .color(egui::Color32::WHITE)
                                 .strong(),
                         )
-                        .fill(C_ACCENT)
+                        .fill(accent())
                         .rounding(egui::Rounding::same(8.0))
                         .stroke(egui::Stroke::NONE),
                     )
@@ -664,7 +666,7 @@ impl ApiClient {
                     ui.painter().rect_stroke(
                         rect,
                         egui::Rounding::same(5.0),
-                        egui::Stroke::new(1.5, C_ACCENT),
+                        egui::Stroke::new(1.5, accent()),
                     );
                 }
                 // While *another* row is being dragged and the pointer
@@ -680,7 +682,7 @@ impl ApiClient {
                                 egui::pos2(rect.left() + 4.0, rect.top() + 1.0),
                                 egui::pos2(rect.right() - 4.0, rect.top() + 1.0),
                             ],
-                            egui::Stroke::new(2.0, C_ACCENT),
+                            egui::Stroke::new(2.0, accent()),
                         );
                     }
                 }
@@ -692,7 +694,7 @@ impl ApiClient {
 
                 if ui.is_rect_visible(rect) {
                     let bg = if is_selected {
-                        C_ACCENT.linear_multiply(0.18)
+                        accent().linear_multiply(0.18)
                     } else if resp.hovered() {
                         elevated()
                     } else {
@@ -705,7 +707,7 @@ impl ApiClient {
                         let bar =
                             egui::Rect::from_min_size(rect.min, egui::vec2(3.0, rect.height()));
                         ui.painter()
-                            .rect_filled(bar, egui::Rounding::same(2.0), C_ACCENT);
+                            .rect_filled(bar, egui::Rounding::same(2.0), accent());
                     }
 
                     // Method as bold colored TEXT (no pill background).
@@ -751,7 +753,7 @@ impl ApiClient {
                     ui.painter().rect_stroke(
                         edit_rect,
                         egui::Rounding::same(4.0),
-                        egui::Stroke::new(1.5, C_ACCENT),
+                        egui::Stroke::new(1.5, accent()),
                     );
                     let inner = edit_rect.shrink2(egui::vec2(6.0, 2.0));
                     let edit_resp = ui.put(

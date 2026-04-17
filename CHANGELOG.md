@@ -11,6 +11,49 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Changed
+- **Refined palette for both themes.**
+  - **Dark "Editor Dark"**: canvas `#1A1A1A` (was `#16181D`),
+    elevated cards `#252525`, inputs `#333333`, borders `#404040`,
+    primary text `#F3F4F6`, secondary `#9CA3AF`. Flipped the layer
+    model — panels and cards are now *brighter* than the canvas
+    (modern elevation convention: lift = light), not darker.
+    Reduces the harsh near-black bg, keeps the sleek terminal feel.
+  - **Light "Paper Light"**: canvas `#E9ECEF` (was `#FCFCFD`),
+    cards pure white `#FFFFFF` so they pop as defined containers
+    against the cool-gray canvas. Inputs use filled `#F3F4F6` on
+    the white cards for structure. Borders `#D1D5DB`, primary
+    text `#2D3748` dark slate, secondary `#6B7280` medium slate
+    (was `#656D76`, now legible without being washed out).
+- **Accent color is now theme-aware.**
+  - Dark: `#D85539` warm rust (first coral-red swing `#EF5350`
+    overshot into pink; this lands between original saturated
+    `#CE422B` and the coral-pink, keeping the "rusty" feel).
+  - Light: `#C43C28` deep rust (consistent rust family across
+    themes, darker for WCAG AA vs white button text).
+  - `C_ACCENT` is now a legacy compile-time constant (kept for
+    `const` contexts like icon SVGs); all UI call sites use the
+    new theme-aware `accent()` function. 47 sites swept.
+- **Sidebar is now an elevated card.** Previously the sidebar
+  shared the same `bg()` color as the central canvas, producing a
+  flat uniform page. Now it uses `panel_dark()` — pure white in
+  light mode (clearly lifted against the gray canvas), `#252525`
+  elevated in dark mode. Re-enabled the separator line between
+  sidebar and central panel since they're now different colors.
+- **KV table inputs are frameless** (Params / Headers / Cookies).
+  Each cell inherits the canvas color instead of showing as a
+  filled pill. Column-header row + separator line above provide
+  table structure; hint text shows through empty cells. Matches
+  Postman's "ghost cells" look and fixes the "white pills on
+  white / gray canvas" noise in the central panel.
+- **URL bar input is frameless** — blends into its outer rounded
+  container. The outer container's `fill` matches the canvas
+  exactly so no dark-on-dark mismatch inside vs outside the
+  rectangle. Method combo + Send/Code buttons keep their own
+  visible widget frames.
+
 ## [0.16.5] — 2026-04-18
 
 ### Added

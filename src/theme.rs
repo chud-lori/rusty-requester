@@ -1,25 +1,45 @@
 use crate::model::{HttpMethod, Theme};
 use eframe::egui;
 
-// ====== Dark palette, rust only as accent ======
-// Neutral near-black surfaces (no warm tint across the chrome), with
-// rust orange reserved for the interactive accent — selected tab
+// ====== Dark palette — "Editor Dark" ======
+// Neutral warm-charcoal surfaces (no pure blacks, no blue tint) with a
+// coral-red accent reserved for interactive elements — selected tab
 // underline, "New Collection" button, Send button, focus ring, etc.
-// Keep sidebar and central panel on the *same* base so there's no
-// visible seam between them. `C_PANEL_DARK` stays a shade lower for
-// sunken surfaces (response body frame, code editors).
-pub const C_BG: egui::Color32 = egui::Color32::from_rgb(22, 24, 29); // #16181D app bg
-pub const C_PANEL_DARK: egui::Color32 = egui::Color32::from_rgb(15, 16, 20); // #0F1014 sunken
-pub const C_ELEVATED: egui::Color32 = egui::Color32::from_rgb(42, 45, 52); // #2A2D34 hover / active row
-pub const C_BORDER: egui::Color32 = egui::Color32::from_rgb(52, 55, 63); // #34373F subtle divider
-pub const C_ACCENT: egui::Color32 = egui::Color32::from_rgb(206, 66, 43); // #CE422B rust orange — THE accent
+// Layers follow the modern "elevated = brighter" convention: bg is the
+// darkest canvas, `panel_dark` is brighter (cards / response body lift
+// off the canvas), `elevated` is brightest (inputs stand out).
+pub const C_BG: egui::Color32 = egui::Color32::from_rgb(26, 26, 26); // #1A1A1A app canvas (dark mode)
+pub const C_PANEL_DARK: egui::Color32 = egui::Color32::from_rgb(37, 37, 37); // #252525 elevated card / sidebar
+pub const C_ELEVATED: egui::Color32 = egui::Color32::from_rgb(51, 51, 51); // #333333 inputs / hover
+pub const C_BORDER: egui::Color32 = egui::Color32::from_rgb(64, 64, 64); // #404040 subtle divider
 pub const C_PURPLE: egui::Color32 = egui::Color32::from_rgb(186, 120, 80); // #BA7850 burnt sienna — PATCH
 pub const C_GREEN: egui::Color32 = egui::Color32::from_rgb(134, 172, 113); // #86AC71 patina green — GET
 pub const C_ORANGE: egui::Color32 = egui::Color32::from_rgb(245, 158, 11); // #F59E0B amber — POST
 pub const C_PINK: egui::Color32 = egui::Color32::from_rgb(183, 65, 14); // #B7410E deep rust — PUT
 pub const C_RED: egui::Color32 = egui::Color32::from_rgb(220, 38, 38); // #DC2626 crimson — DELETE / errors
-pub const C_MUTED: egui::Color32 = egui::Color32::from_rgb(143, 148, 162); // #8F94A2 neutral muted text (WCAG AA ~5.3:1 on C_BG)
-pub const C_TEXT: egui::Color32 = egui::Color32::from_rgb(224, 226, 232); // #E0E2E8 neutral light
+pub const C_MUTED: egui::Color32 = egui::Color32::from_rgb(156, 163, 175); // #9CA3AF neutral muted text (WCAG AA ~5.5:1 on C_BG)
+pub const C_TEXT: egui::Color32 = egui::Color32::from_rgb(243, 244, 246); // #F3F4F6 near-white, non-vibrating
+
+// Theme-aware accent — a warm rust-red in both modes, softened from
+// the original saturated `#CE422B` that was "bleeding" on dark. Dark
+// value leans slightly warmer / more orange to keep the "rusty" feel
+// (the first coral-red #EF5350 swing overshot into pink territory).
+// Light value is deeper red for WCAG AA against white button text.
+const C_ACCENT_DARK: egui::Color32 = egui::Color32::from_rgb(216, 85, 57); // #D85539 warm rust — dark-mode accent
+const C_ACCENT_LIGHT: egui::Color32 = egui::Color32::from_rgb(196, 60, 40); // #C43C28 deep rust — light-mode accent
+
+pub fn accent() -> egui::Color32 {
+    if is_light() {
+        C_ACCENT_LIGHT
+    } else {
+        C_ACCENT_DARK
+    }
+}
+
+/// Legacy constant kept as a compile-time fallback for call sites
+/// that can't call a function (e.g. SVG embeds, `const` contexts).
+/// Prefer `accent()` everywhere the theme can be read at render time.
+pub const C_ACCENT: egui::Color32 = C_ACCENT_DARK;
 
 /// Theme-aware placeholder color. Earlier `#50545F` was too dark on
 /// the dark bg (dropped below WCAG AA ~2.5:1) and egui's default
@@ -149,24 +169,28 @@ pub const DARK_PALETTE: Palette = Palette {
     muted: C_MUTED,
 };
 
-/// Light palette — tuned against Postman's light mode. Earlier
-/// iterations landed too grey (`#D9DCE3`) and made every KV input
-/// render as a visible grey pill — the "8-bit" look. Postman's
-/// canvas is essentially white; structure comes from borders and
-/// content, not from chunky input fills.
-///   * `bg`         #FCFCFD — canvas (faint off-white, not clinical)
-///   * `panel_dark` #F3F4F7 — sidebar / sunken (response body, code)
-///   * `elevated`   #EDEFF2 — inputs / hover / active rows
-///   * `border`     #D1D5DB — clear dividers (GitHub-ish)
-///   * `text`       #1F2328 — body text, high contrast on bg
-///   * `muted`      #656D76 — secondary labels
+/// Light palette — "Paper Light", tuned for visible hierarchy. The
+/// previous try had the canvas near-white (`#F4F5F7`) with both
+/// panels and inputs also pure white — cards bled into the
+/// background, inputs looked like white pills floating on white.
+///
+/// Fixes:
+///   - Canvas deepened to `#F0F2F5` — clearly cooler-gray, so the
+///     pure-white sidebar / response panels pop as defined cards.
+///   - Inputs use the "Filled" approach (`#F3F4F6`) — light gray
+///     boxes on the white card, with a subtle border for structure.
+///   - Secondary text darkened to `#6B7280` (medium slate) so
+///     placeholders and labels no longer feel washed out.
 pub const LIGHT_PALETTE: Palette = Palette {
-    bg: egui::Color32::from_rgb(252, 252, 253),
-    panel_dark: egui::Color32::from_rgb(243, 244, 247),
-    elevated: egui::Color32::from_rgb(237, 239, 242),
+    // #E9ECEF — deeper cool gray so the pure-white cards pop clearly
+    // as defined containers. Earlier `#F0F2F5` was still too close
+    // to white; panels bled into the canvas.
+    bg: egui::Color32::from_rgb(233, 236, 239),
+    panel_dark: egui::Color32::from_rgb(255, 255, 255),
+    elevated: egui::Color32::from_rgb(243, 244, 246),
     border: egui::Color32::from_rgb(209, 213, 219),
-    text: egui::Color32::from_rgb(31, 35, 40),
-    muted: egui::Color32::from_rgb(101, 109, 118),
+    text: egui::Color32::from_rgb(45, 55, 72),
+    muted: egui::Color32::from_rgb(107, 114, 128),
 };
 
 pub fn palette_for(theme: Theme) -> Palette {

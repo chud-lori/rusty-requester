@@ -123,7 +123,7 @@ impl ApiClient {
                     ui.horizontal(|ui| {
                         let time = ui.ctx().input(|i| i.time);
                         let pulse = ((time * 2.0).sin() * 0.5 + 0.5) as f32;
-                        let dot = C_ACCENT.linear_multiply(0.4 + 0.6 * pulse);
+                        let dot = accent().linear_multiply(0.4 + 0.6 * pulse);
                         let (rect, _) =
                             ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
                         ui.painter().circle_filled(rect.center(), 4.0, dot);
@@ -523,7 +523,7 @@ impl ApiClient {
                     let inner_h = ui.available_height();
                     ui.vertical_centered(|ui| {
                         ui.add_space((inner_h * 0.30).max(24.0));
-                        ui.add(egui::Spinner::new().size(26.0).color(C_ACCENT));
+                        ui.add(egui::Spinner::new().size(26.0).color(accent()));
                         ui.add_space(10.0);
                         ui.label(
                             egui::RichText::new("Sending request…")
@@ -743,7 +743,7 @@ impl ApiClient {
                                 );
                             } else {
                                 // Softer header pane: keys use `muted()`
-                                // instead of saturated C_ACCENT (the rust
+                                // instead of saturated accent() (the rust
                                 // red on every row felt harsh), and we
                                 // drop the built-in `.striped(true)`
                                 // zebra in favor of a single 1-px
