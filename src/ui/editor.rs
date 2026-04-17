@@ -274,13 +274,11 @@ impl ApiClient {
 
                 if let Some(i) = activate {
                     if let Some(tab) = self.state.open_tabs.get(i).cloned() {
-                        self.selected_folder_path = tab.folder_path;
-                        self.selected_request_id = Some(tab.request_id);
-                        self.load_request_for_editing();
-                        self.response_text.clear();
-                        self.response_status.clear();
-                        self.response_time.clear();
-                        self.response_headers.clear();
+                        // Route through `open_request` so the per-tab
+                        // response cache stash/restore fires — the
+                        // previous inline clear path wiped the response
+                        // on every tab switch.
+                        self.open_request(tab.folder_path, tab.request_id);
                     }
                 }
                 if let Some(i) = close {
