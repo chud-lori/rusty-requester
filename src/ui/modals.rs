@@ -57,7 +57,7 @@ impl ApiClient {
                                 egui::Button::new(
                                     egui::RichText::new("+ New environment")
                                         .size(11.0)
-                                        .color(C_ACCENT),
+                                        .color(accent()),
                                 )
                                 .fill(egui::Color32::TRANSPARENT)
                                 .stroke(egui::Stroke::new(1.0, border())),
@@ -138,7 +138,7 @@ impl ApiClient {
                                     .color(egui::Color32::WHITE)
                                     .strong(),
                             )
-                            .fill(C_ACCENT)
+                            .fill(accent())
                             .min_size(egui::vec2(80.0, 28.0)),
                         )
                         .clicked()
@@ -309,7 +309,7 @@ impl ApiClient {
                             egui::Button::new(
                                 egui::RichText::new("Create").color(egui::Color32::WHITE),
                             )
-                            .fill(if enabled { C_ACCENT } else { elevated() })
+                            .fill(if enabled { accent() } else { elevated() })
                             .min_size(egui::vec2(72.0, 26.0)),
                         )
                         .clicked()
@@ -326,7 +326,7 @@ impl ApiClient {
                     egui::Button::new(
                         egui::RichText::new("+ New folder")
                             .size(12.0)
-                            .color(C_ACCENT),
+                            .color(accent()),
                     )
                     .fill(egui::Color32::TRANSPARENT)
                     .stroke(egui::Stroke::NONE),
@@ -355,7 +355,7 @@ impl ApiClient {
                         .color(egui::Color32::WHITE)
                         .strong(),
                 )
-                .fill(if can_save { C_ACCENT } else { elevated() })
+                .fill(if can_save { accent() } else { elevated() })
                 .min_size(egui::vec2(80.0, 28.0));
                 if ui.add_enabled(can_save, save_btn).clicked() {
                     do_save = true;
@@ -484,7 +484,7 @@ impl ApiClient {
         );
         if ui.is_rect_visible(rect) {
             let bg = if is_selected {
-                C_ACCENT.linear_multiply(0.18)
+                accent().linear_multiply(0.18)
             } else if resp.hovered() {
                 elevated()
             } else {
@@ -501,7 +501,7 @@ impl ApiClient {
                 egui::Rect::from_min_size(egui::pos2(icon_x, text_y - 4.0), egui::vec2(14.0, 10.0));
             let icon_tab =
                 egui::Rect::from_min_size(egui::pos2(icon_x, text_y - 7.0), egui::vec2(6.0, 3.5));
-            let icon_color = if is_selected { C_ACCENT } else { muted() };
+            let icon_color = if is_selected { accent() } else { muted() };
             ui.painter()
                 .rect_filled(icon_tab, egui::Rounding::same(1.5), icon_color);
             ui.painter()
@@ -934,7 +934,7 @@ impl ApiClient {
                             egui::Button::new(
                                 egui::RichText::new("Save changes").color(egui::Color32::WHITE),
                             )
-                            .fill(C_ACCENT),
+                            .fill(accent()),
                         );
                         if save_btn.clicked() {
                             self.confirm_close_draft_idx = None;
@@ -1047,7 +1047,7 @@ impl ApiClient {
                                     .color(egui::Color32::WHITE)
                                     .strong(),
                             )
-                            .fill(C_ACCENT)
+                            .fill(accent())
                             .min_size(egui::vec2(140.0, 30.0)),
                         )
                         .clicked()
@@ -1249,7 +1249,7 @@ impl ApiClient {
                         .color(egui::Color32::WHITE)
                         .strong(),
                 )
-                .fill(C_ACCENT)
+                .fill(accent())
                 .min_size(egui::vec2(80.0, 28.0));
                 if ui.add(save_btn).clicked() {
                     do_save = true;
@@ -1478,7 +1478,7 @@ impl ApiClient {
             };
             let link_row = |ui: &mut egui::Ui, label: &str, url: &str, ctx: &egui::Context| {
                 if ui
-                    .link(egui::RichText::new(label).size(12.5).color(C_ACCENT))
+                    .link(egui::RichText::new(label).size(12.5).color(accent()))
                     .on_hover_cursor(egui::CursorIcon::PointingHand)
                     .clicked()
                 {
@@ -1702,7 +1702,7 @@ impl ApiClient {
                                         ne: 0.0,
                                         se: 0.0,
                                     },
-                                    C_ACCENT,
+                                    accent(),
                                 );
                             }
                             // Method
@@ -1890,7 +1890,7 @@ impl ApiClient {
                                         ne: 0.0,
                                         se: 0.0,
                                     },
-                                    C_ACCENT,
+                                    accent(),
                                 );
                             }
                             ui.painter().text(
@@ -1956,7 +1956,7 @@ impl ApiClient {
             .show(ctx, |ui| {
                 egui::Frame::none()
                     .fill(bg())
-                    .stroke(egui::Stroke::new(1.0, C_ACCENT))
+                    .stroke(egui::Stroke::new(1.0, accent()))
                     .rounding(10.0)
                     .inner_margin(10.0)
                     .show(ui, |ui| {

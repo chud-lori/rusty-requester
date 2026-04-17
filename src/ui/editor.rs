@@ -117,7 +117,7 @@ impl ApiClient {
                         if ui.is_rect_visible(handle_resp.rect) {
                             let line_y = handle_resp.rect.center().y;
                             let line_color = if handle_resp.hovered() || handle_resp.dragged() {
-                                C_ACCENT
+                                accent()
                             } else {
                                 border()
                             };
@@ -311,6 +311,11 @@ impl ApiClient {
 
     /// Open the "Save to folder" modal for the draft at tab index `idx`.
     fn render_url_bar(&mut self, ui: &mut egui::Ui) {
+        // Rounded container around the URL row. Fill matches the
+        // canvas exactly (`bg()`) so there's no visible shade
+        // mismatch inside vs outside the rectangle; the thin border
+        // is the only differentiator. This gives the row structure
+        // without the previous dark-on-dark contrast illusion.
         egui::Frame::none()
             .fill(bg())
             .inner_margin(12.0)
@@ -364,7 +369,8 @@ impl ApiClient {
                             .hint_text(hint(
                                 "https://api.example.com/endpoint  (or paste a cURL command)",
                             ))
-                            .font(egui::TextStyle::Monospace),
+                            .font(egui::TextStyle::Monospace)
+                            .frame(false),
                     );
                     if url_edit.changed() {
                         let trimmed = self.editing_url.trim_start();
@@ -427,7 +433,7 @@ impl ApiClient {
                         // C_PURPLE (burnt-sienna PATCH color) which
                         // made Send look like a different family
                         // from the rest of the primary CTAs.
-                        ("Send", C_ACCENT, "Send (⌘/Ctrl + Enter)")
+                        ("Send", accent(), "Send (⌘/Ctrl + Enter)")
                     };
                     let send_btn = egui::Button::new(
                         egui::RichText::new(label)
@@ -644,7 +650,7 @@ impl ApiClient {
                 // Postman-style subtle action links on the right, not
                 // tacked-on buttons.
                 if ui
-                    .link(egui::RichText::new("Beautify").size(11.5).color(C_ACCENT))
+                    .link(egui::RichText::new("Beautify").size(11.5).color(accent()))
                     .on_hover_cursor(egui::CursorIcon::PointingHand)
                     .on_hover_text("Pretty-print JSON")
                     .clicked()
@@ -865,7 +871,7 @@ impl ApiClient {
     fn render_auth_tab(&mut self, ui: &mut egui::Ui) {
         let mut kind = AuthKind::from(&self.editing_auth);
         ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("Type").color(C_ACCENT));
+            ui.label(egui::RichText::new("Type").color(accent()));
             egui::ComboBox::from_id_salt("auth_kind")
                 .selected_text(match kind {
                     AuthKind::None => "No Auth",
@@ -921,7 +927,7 @@ impl ApiClient {
                 );
             }
             Auth::Bearer { token } => {
-                ui.label(egui::RichText::new("Token").color(C_ACCENT));
+                ui.label(egui::RichText::new("Token").color(accent()));
                 if ui
                     .add(
                         egui::TextEdit::singleline(token)
@@ -984,7 +990,7 @@ impl ApiClient {
             }
             Auth::Basic { username, password } => {
                 ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new("Username").color(C_ACCENT));
+                    ui.label(egui::RichText::new("Username").color(accent()));
                     if ui
                         .add(
                             egui::TextEdit::singleline(username)
@@ -996,7 +1002,7 @@ impl ApiClient {
                     }
                 });
                 ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new("Password").color(C_ACCENT));
+                    ui.label(egui::RichText::new("Password").color(accent()));
                     if ui
                         .add(
                             egui::TextEdit::singleline(password)
@@ -1021,7 +1027,7 @@ impl ApiClient {
                     password: bool,
                 ) -> bool {
                     ui.horizontal(|ui| {
-                        ui.label(egui::RichText::new(label).color(C_ACCENT));
+                        ui.label(egui::RichText::new(label).color(accent()));
                         let mut edit = egui::TextEdit::singleline(value)
                             .desired_width(ui.available_width() - 140.0)
                             .hint_text(hint);
@@ -1110,7 +1116,7 @@ impl ApiClient {
                                 .color(egui::Color32::WHITE)
                                 .strong(),
                         )
-                        .fill(C_ACCENT)
+                        .fill(accent())
                         .min_size(egui::vec2(140.0, 28.0));
                         let resp = ui.add_enabled(!busy, btn);
                         if resp.clicked() {

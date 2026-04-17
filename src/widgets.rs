@@ -80,7 +80,7 @@ pub fn tab_button<T: PartialEq + Copy>(ui: &mut egui::Ui, current: &mut T, value
                 egui::pos2(rect.left() + pad, y),
                 egui::pos2(rect.right() - pad, y),
             ],
-            egui::Stroke::new(2.5, C_ACCENT),
+            egui::Stroke::new(2.5, accent()),
         );
     }
     if resp.clicked() {
@@ -270,12 +270,19 @@ pub fn render_kv_table(
 
                     let text_color = if row.enabled { text() } else { muted() };
 
+                    // Frameless inputs — no filled bg, no border. Cells
+                    // inherit the canvas color, structure comes from the
+                    // column-header row + faint separator line above.
+                    // Matches Postman's "ghost cells" look, avoids the
+                    // "white pill on white/gray" appearance inputs had
+                    // when they used `elevated()` as a fill.
                     let key_resp = ui.add_sized(
                         [key_w, row_h],
                         egui::TextEdit::singleline(&mut row.key)
                             .id(id_salt.with((i, "key")))
                             .hint_text(if is_last_blank { hint("Key") } else { hint("") })
-                            .text_color(text_color),
+                            .text_color(text_color)
+                            .frame(false),
                     );
                     if key_resp.changed() {
                         sanitize_pasted(&mut row.key);
@@ -292,7 +299,8 @@ pub fn render_kv_table(
                             } else {
                                 hint("")
                             })
-                            .text_color(text_color),
+                            .text_color(text_color)
+                            .frame(false),
                     );
                     if val_resp.changed() {
                         sanitize_pasted(&mut row.value);
@@ -310,7 +318,8 @@ pub fn render_kv_table(
                                 } else {
                                     hint("")
                                 })
-                                .text_color(text_color),
+                                .text_color(text_color)
+                                .frame(false),
                         );
                         if desc_resp.changed() {
                             sanitize_pasted(&mut row.description);
@@ -412,7 +421,7 @@ pub fn render_single_tab(
                     egui::pos2(rect.left() + pad, y),
                     egui::pos2(rect.right() - pad, y),
                 ],
-                egui::Stroke::new(2.5, C_ACCENT),
+                egui::Stroke::new(2.5, accent()),
             );
         }
 
@@ -436,7 +445,7 @@ pub fn render_single_tab(
                 egui::Align2::LEFT_CENTER,
                 egui_phosphor::regular::PUSH_PIN_SIMPLE,
                 egui::FontId::proportional(11.5),
-                C_ACCENT,
+                accent(),
             );
             pad_left += 14.0;
         }
@@ -712,7 +721,7 @@ pub fn body_view_pill(ui: &mut egui::Ui, current: &mut BodyView, value: BodyView
                 egui::pos2(rect.left() + pad, y),
                 egui::pos2(rect.right() - pad, y),
             ],
-            egui::Stroke::new(1.5, C_ACCENT),
+            egui::Stroke::new(1.5, accent()),
         );
     }
     if resp.clicked() {
@@ -808,11 +817,11 @@ fn render_json_tree_inner(
                     let key_text = format!("{}:", key);
                     let key_galley =
                         ui.painter()
-                            .layout_no_wrap(key_text.clone(), font.clone(), C_ACCENT);
+                            .layout_no_wrap(key_text.clone(), font.clone(), accent());
                     ui.painter().galley(
                         egui::pos2(x, y - key_galley.size().y / 2.0),
                         key_galley.clone(),
-                        C_ACCENT,
+                        accent(),
                     );
                     x += key_galley.size().x + 6.0;
                 }
