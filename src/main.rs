@@ -2174,7 +2174,9 @@ fn collect_flat_requests(
 /// (including any network / parse / rate-limit failures — an update
 /// check that noisily fails on offline machines would be worse than
 /// no check at all).
-fn spawn_update_check(rt: &tokio::runtime::Runtime) -> std::sync::mpsc::Receiver<String> {
+pub(crate) fn spawn_update_check(
+    rt: &tokio::runtime::Runtime,
+) -> std::sync::mpsc::Receiver<String> {
     let (tx, rx) = std::sync::mpsc::channel();
     let current = env!("CARGO_PKG_VERSION").to_string();
     rt.spawn(async move {

@@ -9,7 +9,7 @@ use crate::model::*;
 use crate::snippet::{build_snippet_layout_job_content_only, render_snippet, SnippetLang};
 use crate::theme::*;
 use crate::widgets::*;
-use crate::ApiClient;
+use crate::{spawn_update_check, ApiClient};
 use eframe::egui;
 use uuid::Uuid;
 
@@ -1102,6 +1102,7 @@ impl ApiClient {
         let mut open = self.show_settings_modal;
         let mut do_save = false;
         let mut do_cancel = false;
+        let mut do_check_updates = false;
 
         egui::Window::new(
             egui::RichText::new("SETTINGS")
@@ -1216,6 +1217,25 @@ impl ApiClient {
                 .size(10.5)
                 .color(muted()),
             );
+            ui.add_space(4.0);
+            // Manual "Check now" — forces a fresh GitHub API call
+            // without restarting. Useful after dismissing a pill, or
+            // when the launch check is turned off.
+            if ui
+                .add(
+                    egui::Button::new(
+                        egui::RichText::new("Check for updates now")
+                            .size(11.0)
+                            .color(text()),
+                    )
+                    .fill(elevated())
+                    .min_size(egui::vec2(0.0, 26.0)),
+                )
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .clicked()
+            {
+                do_check_updates = true;
+            }
 
             ui.add_space(14.0);
             ui.separator();
@@ -1253,6 +1273,18 @@ impl ApiClient {
         }
         if do_cancel || !self.show_settings_modal {
             self.show_settings_modal = false;
+        }
+        if do_check_updates {
+            // Fresh GitHub API call — replaces any in-flight rx.
+            // The polling loop in `update()` picks up the result and
+            // sets `update_available` / surfaces the sidebar pill.
+            // Also clears any previous per-version dismissal so a
+            // manual re-check always reveals a pending update.
+            self.update_check_rx = Some(spawn_update_check(&self.http_runtime));
+            self.state.settings.dismissed_update_version = None;
+            self.editing_settings.dismissed_update_version = None;
+            self.save_state();
+            self.show_toast("Checking for updates…");
         }
     }
 

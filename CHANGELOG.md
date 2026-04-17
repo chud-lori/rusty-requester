@@ -11,38 +11,180 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
-## [0.16.4] — 2026-04-18
+## Unreleased
 
 ### Added
-- **Redesigned app icon** — Phosphor hammer striking a thick steel plate
-  on a rust-orange plinth. Matches the app's `C_ACCENT` brand color.
-  SVG source at `assets/icon.svg`; rendered PNG embedded into the
-  binary via `include_bytes!`. `scripts/generate_icon.py` renders the
-  SVG → PNG via `resvg-py` (pure-Rust, preserves transparency).
-- **Update-available pill** in the sidebar header. When the launch
-  update-check finds a newer tag, a rust-orange pill with the version
-  appears next to the running version number. Click → opens an
-  instructions modal with the official `curl | bash` one-line
-  installer command, a "Copy command" button (clipboard), and a
-  "Release notes" button (opens the GitHub release page). Pill also
-  has a ✕ to dismiss just that version — suppressed in
-  `AppSettings.dismissed_update_version` until a newer tag drops.
-- **Settings toggle: "Check for updates on launch"** — defaults on.
-  Disables the one silent GET to `api.github.com/.../releases/latest`
-  for users who want strict offline operation.
-- **CHANGELOG-driven release notes** — `deploy.sh` now refuses to
+- **"Check for updates now" button in Settings.** Forces an immediate
+  GitHub API call without restarting the app. Useful after dismissing
+  the pill, or for users who turned off the launch check. Clears any
+  stored per-version dismissal so a manual re-check always reveals a
+  pending update.
+- **CHANGELOG-driven release notes.** `deploy.sh` now refuses to
   release if `CHANGELOG.md` has no `## Unreleased` section with
-  content. Promotes that section to `## [X.Y.Z] — YYYY-MM-DD` on
-  release. `.github/workflows/release.yml` extracts the matching
-  section and passes it as the GitHub release `body_path`, so the
-  release page shows the human-written notes plus GitHub's
-  auto-generated PR/commit list below.
+  content. On deploy, the section is promoted to
+  `## [X.Y.Z] — YYYY-MM-DD` and committed alongside the version
+  bump. `.github/workflows/release.yml` extracts the matching
+  section at release time and passes it to action-gh-release via
+  `body_path`, so the GitHub release page shows human-written notes
+  above GitHub's auto-generated PR/commit list.
 
 ### Changed
-- **Send button color** — now uses `C_ACCENT` (rust orange) instead
-  of `C_PURPLE` (burnt sienna). Matches the "New Collection" button
-  and the active-tab underline; the primary-CTA family is now
-  visually consistent.
+- **Update-available pill: no auto-modal.** Earlier attempt to
+  auto-open the install-instructions modal on first detection was
+  reverted — a modal on launch blocks users from getting to work.
+  The persistent sidebar pill alone is now the notification; users
+  click when ready.
+- **Update pill is dismissible per-version.** New
+  `AppSettings.dismissed_update_version` field stores the last
+  version the user explicitly ✕'d from the pill. Suppresses the
+  pill for that exact version until a newer tag drops, so users
+  who defer updates don't see the same pill every launch.
+- **Update pill arrow glyph** switched from U+2191 (`↑`) to
+  Phosphor `ARROW_UP` — egui's bundled font lacks U+2191 and
+  rendered it as a "tofu" square.
+
+## [0.16.3] — Send-button color parity
+
+### Fixed
+- **Send button color** now uses `C_ACCENT` (rust orange) instead of
+  `C_PURPLE` (burnt sienna — the PATCH method color repurposed).
+  Matches "New Collection" + the active-tab underline; the
+  primary-CTA family is finally visually consistent.
+
+## [0.16.2] — Update-modal polish
+
+### Changed
+- **Accurate update-modal installer description.** Previous copy
+  lied — said the installer "relaunches" the app (it doesn't —
+  `install.sh` tells the user to launch from Spotlight after
+  it finishes). Rewrote the modal help text to honestly describe
+  what the one-line installer does: quits running app, downloads
+  DMG / tarball, replaces the installed binary, strips Gatekeeper
+  quarantine, refreshes Launch Services. Also calls out
+  explicitly that `data.json` (collections, history, OAuth tokens,
+  env vars) is untouched on upgrade. Cross-platform accurate:
+  mentions macOS `/Applications` and Linux `~/.local/bin` paths.
+
+## [0.16.1] — Update-check toggle + sidebar pill
+
+### Added
+- **Settings toggle: "Check for updates on launch"** (defaults on).
+  Disables the one silent GET to `api.github.com/.../releases/latest`
+  on startup for users who want strict offline operation — no
+  outbound traffic from the app unless this is enabled.
+- **Sidebar update pill.** When the update-check finds a newer tag,
+  a rust-orange pill with the version appears next to the running
+  version number in the sidebar header. Persistent (not a toast) —
+  stays visible for the whole session.
+- **Update-instructions modal.** Click the pill → modal shows the
+  running vs available version, the official `curl | bash` one-line
+  installer as a copyable code block, a "Copy command" button
+  (clipboard + toast confirmation), and a "Release notes" button
+  that opens the GitHub release page in the user's default browser.
+
+## [0.16.0] — App icon redesign
+
+### Changed
+- **New app icon: Phosphor hammer striking a steel plate.** Replaces
+  the old lettermark-heavy alphabet `R`. The plinth uses the app's
+  `C_ACCENT` rust orange for brand cohesion — glance at the Dock,
+  glance at the Send button inside, same color. Same approach
+  Postman takes with their purple. The hammer glyph is MIT-licensed
+  from Phosphor Icons (already a dep for in-app UI icons); the
+  strike plate is a hand-drawn cream slab with top-highlight +
+  bottom-shadow for 3-D depth. SVG source is now the canonical
+  master at `assets/icon.svg` (alternatives kept as archives at
+  `assets/icon-v*.svg` / `.png` for comparison).
+- **Icon pipeline.** `scripts/generate_icon.py` rewritten to render
+  `icon.svg` → 1024×1024 transparent PNG via `resvg-py` (pure-Rust
+  renderer, no libcairo). Makefile's `sips`-based downscaling to
+  the 10 iconset sizes is unchanged.
+
+## [0.15.12] — Polish: response, tree, headers, placeholders
+
+### Changed
+- **Response-wipe on tab re-click fixed.** Clicking the
+  already-active tab was calling `open_request`, which then called
+  `restore_response_for` with an empty cache and wiped the live
+  response. `open_request` now early-returns when the clicked tab
+  matches `selected_request_id`.
+- **Tree view spacing tightened.** Indent per level 16 → 10 px,
+  single space (not two) between key and summary, vertical
+  item spacing 1 px inside tree rows. Nested JSON now stacks
+  densely like a real tree.
+- **Headers pane softened.** Keys changed from saturated `C_ACCENT`
+  to `muted()`, dropped the `.striped(true)` zebra in favor of the
+  default grid with 6-px row gap. Much calmer table.
+- **16-px right-edge rule** standardized across the response chips
+  row and KV-row trailing margin (was 6 / 12 px respectively). No
+  more chips or `×` buttons sitting flush against the scrollbar.
+
+### Added
+- **Theme-aware placeholder color** (`hint_color()`). Previously
+  `C_HINT = #50545F` — too dark on the dark canvas (contrast below
+  WCAG AA), and egui's default `weak_text_color` was too pale on
+  the near-white light canvas. New values: `#8A8E98` on dark,
+  `#8C949E` on light — both hit ~4.5:1 contrast. Every
+  `.hint_text("…")` call site in the app was swept to use the
+  `hint()` helper, so all 12 placeholder strings benefit.
+
+## [0.15.11] — Body tab: syntax highlight + radio rows
+
+### Added
+- **Request body JSON syntax highlighting.** Same layouter the
+  response-body view uses — keys / strings / numbers /
+  `true / false / null` all colored (Monokai on dark, GitHub-ish
+  dark-on-paper on light). Non-JSON raw text still highlights
+  quoted strings and numbers as a sensible fallback.
+- **Response JSON: two-column gutter/content layout.** Line
+  numbers in a separate left column, content TextEdit wraps inside
+  its own right column. Same pattern the snippet panel already
+  used. Fixes the previous diagonal-drag-scroll glitch caused by
+  the nested horizontal ScrollArea.
+
+### Changed
+- **Body-type selector → Postman-style radio rows.** Dropped the
+  `"Body type"` prefix label + the saturated `selectable_value`
+  pill; now a simple radio row with `ui.radio_value`. Less visual
+  noise, matches how Postman does it.
+
+## [0.15.10] — Response cache on tab switch
+
+### Added
+- **Per-request response cache.** Switching tabs previously wiped
+  the response; now a `CachedResponse` snapshot (body, status,
+  timings, headers, SSE events, assertion results) is stashed on
+  tab-switch and restored on tab re-activation. In-memory only,
+  not persisted to `data.json`. Matches Postman's session-scoped
+  behavior. Closed tabs drop their cache entry.
+
+### Fixed
+- **Tab-strip click ignored the cache.** `open_request` had the
+  stash/restore wired, but the tab-strip click path in
+  `editor.rs:275` bypassed it with an inline clear. Routed through
+  `open_request` so every tab switch uses the cache.
+
+## [0.15.9] — Blank-row exclusion in tab counts
+
+### Fixed
+- **Params / Headers / Cookies count** excluded the trailing blank
+  "ghost" row that `render_kv_table` always appends. A brand-new
+  request was showing "Params (1)" even though no params existed.
+  Now filters with `!r.is_blank()` before counting.
+
+## [0.15.8] — Palette-row polish
+
+### Changed
+- **Softer palette-row selection.** Selected row now uses a
+  translucent accent-tint fill (`Color32::from_rgba_unmultiplied`
+  ~14 %) plus a 3 px left accent bar. Previously the saturated
+  `C_ACCENT.linear_multiply(0.18)` red block read as "destructive"
+  rather than "selected". Row height bumped 34 → 44 px so the
+  breadcrumb has padding instead of sitting flush against the
+  bottom edge of the fill.
+- **Palette footer arrows.** `↑ ↓` (U+2191 / U+2193) were missing
+  from the bundled font and rendered as tofu squares. Swapped for
+  Phosphor `ARROW_UP` / `ARROW_DOWN`.
 
 ## [0.15.7] — Tab-chrome simplification
 
