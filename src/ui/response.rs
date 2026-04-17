@@ -641,8 +641,7 @@ impl ApiClient {
                                     // diagonal drag-scrolling that felt
                                     // broken.
                                     let gutter_w = 44.0;
-                                    let line_count =
-                                        self.response_text.split('\n').count().max(1);
+                                    let line_count = self.response_text.split('\n').count().max(1);
                                     ui.horizontal_top(|ui| {
                                         ui.vertical(|ui| {
                                             ui.spacing_mut().item_spacing.y = 0.0;
