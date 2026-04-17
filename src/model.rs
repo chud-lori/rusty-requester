@@ -420,6 +420,12 @@ pub struct AppSettings {
     /// operation — no outbound traffic from this app on startup.
     #[serde(default = "default_check_updates")]
     pub check_updates_on_launch: bool,
+    /// Version tag the user last dismissed from the sidebar pill
+    /// (e.g. "v0.16.3"). Suppresses the pill for that exact version —
+    /// so users who deferred updating don't see the same pill every
+    /// launch. Reappears automatically when a newer version drops.
+    #[serde(default)]
+    pub dismissed_update_version: Option<String>,
 }
 
 /// UI theme — drives `apply_style`'s choice of `Visuals`.
@@ -452,6 +458,7 @@ impl Default for AppSettings {
             proxy_url: String::new(),
             theme: Theme::Dark,
             check_updates_on_launch: default_check_updates(),
+            dismissed_update_version: None,
         }
     }
 }

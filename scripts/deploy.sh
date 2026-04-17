@@ -61,7 +61,26 @@ if git ls-remote --exit-code --tags origin "$TAG" >/dev/null 2>&1; then
     die "tag $TAG already exists on origin"
 fi
 
-dim "  branch=main · tree clean · $TAG is new"
+# --- CHANGELOG sanity check ---------------------------------------------
+# Require an `## Unreleased` block with real content at the top of
+# CHANGELOG.md. Forces us to document every release instead of shipping
+# empty tag messages. The block gets renamed to `## [X.Y.Z] — date`
+# right before we commit so the committed CHANGELOG matches the tag.
+if ! grep -q '^## Unreleased' CHANGELOG.md; then
+    die "CHANGELOG.md has no '## Unreleased' section. Add one with this release's notes before deploying."
+fi
+# Count non-empty, non-header lines between `## Unreleased` and the
+# next `##` — if zero, the block is empty and we refuse to release.
+UNRELEASED_LINES=$(awk '
+    /^## Unreleased/ { capture=1; next }
+    capture && /^## / { exit }
+    capture && NF > 0 { print }
+' CHANGELOG.md | wc -l | tr -d ' ')
+if [ "$UNRELEASED_LINES" -lt 1 ]; then
+    die "CHANGELOG.md '## Unreleased' section is empty. Document this release before deploying."
+fi
+
+dim "  branch=main · tree clean · $TAG is new · changelog has $UNRELEASED_LINES line(s)"
 
 # --- Bump Cargo.toml & Makefile -----------------------------------------
 blue "→ Bumping version to $VERSION"
@@ -88,6 +107,19 @@ awk -v new="$VERSION" '
     }
     { print }
 ' Cargo.toml > Cargo.toml.new && mv Cargo.toml.new Cargo.toml
+
+# Promote CHANGELOG's `## Unreleased` heading to `## [X.Y.Z] — date`.
+# Only the heading changes; the bullet list underneath is already the
+# release notes as written during development.
+TODAY=$(date +%Y-%m-%d)
+awk -v ver="$VERSION" -v day="$TODAY" '
+    /^## Unreleased/ && !done {
+        print "## [" ver "] — " day
+        done = 1
+        next
+    }
+    { print }
+' CHANGELOG.md > CHANGELOG.md.new && mv CHANGELOG.md.new CHANGELOG.md
 
 # Makefile no longer needs bumping — it reads VERSION from Cargo.toml
 # via `awk` at parse time. This avoids drift between the two. If you
@@ -148,7 +180,7 @@ esac
 
 # --- Commit + tag + push -------------------------------------------------
 blue "→ Committing"
-git add Cargo.toml Cargo.lock Makefile
+git add Cargo.toml Cargo.lock Makefile CHANGELOG.md
 git commit -m "Release $TAG"
 
 blue "→ Tagging"

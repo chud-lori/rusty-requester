@@ -67,11 +67,35 @@ jobs:
           ls -la target/bundle/
           file target/bundle/*.dmg
 
+      # Extract the section for this tag from CHANGELOG.md so the
+      # release notes on GitHub are the same human-written text shown
+      # in-app. Falls back to GitHub's auto-generated notes below the
+      # extracted section (action-gh-release appends when both
+      # `body_path` and `generate_release_notes` are set).
+      - name: Extract release notes from CHANGELOG
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          VERSION="${GITHUB_REF##refs/tags/v}"
+          awk -v ver="$VERSION" '
+              /^## \[/ {
+                  if (capture) { exit }
+                  if (index($0, "[" ver "]")) { capture = 1; next }
+              }
+              capture { print }
+          ' CHANGELOG.md > RELEASE_NOTES.md
+          # Soft-warn if empty; action-gh-release will still run and
+          # fall back to auto-generated notes.
+          if [ ! -s RELEASE_NOTES.md ]; then
+            echo "::warning::no CHANGELOG section found for v$VERSION — using auto-generated notes only"
+          fi
+          cat RELEASE_NOTES.md
+
       - name: Upload to release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: target/bundle/RustyRequester-v*-macos-universal.dmg
+          body_path: RELEASE_NOTES.md
           generate_release_notes: true
           draft: false
           prerelease: false
@@ -138,11 +162,30 @@ jobs:
           ls -la target/bundle/
           file target/bundle/*.tar.gz
 
+      # Linux job also reads CHANGELOG (runs in parallel with the
+      # macOS job; action-gh-release merges the file list on the
+      # release page, `body_path` on either run is idempotent).
+      - name: Extract release notes from CHANGELOG
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          VERSION="${GITHUB_REF##refs/tags/v}"
+          awk -v ver="$VERSION" '
+              /^## \[/ {
+                  if (capture) { exit }
+                  if (index($0, "[" ver "]")) { capture = 1; next }
+              }
+              capture { print }
+          ' CHANGELOG.md > RELEASE_NOTES.md
+          if [ ! -s RELEASE_NOTES.md ]; then
+            echo "::warning::no CHANGELOG section found for v$VERSION — using auto-generated notes only"
+          fi
+
       - name: Upload to release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: target/bundle/RustyRequester-v*-linux-x86_64.tar.gz
+          body_path: RELEASE_NOTES.md
           generate_release_notes: true
           draft: false
           prerelease: false

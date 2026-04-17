@@ -76,30 +76,61 @@ impl ApiClient {
                                     .color(muted()),
                             );
                             if let Some(latest) = self.update_available.clone() {
-                                // Phosphor arrow glyph — egui's bundled
-                                // font lacks U+2191 (↑) and renders it
-                                // as a tofu square.
-                                let pill = egui::Button::new(
-                                    egui::RichText::new(format!(
-                                        "{} {}",
-                                        egui_phosphor::regular::ARROW_UP,
-                                        latest
-                                    ))
-                                    .size(10.0)
-                                    .strong()
-                                    .color(egui::Color32::WHITE),
-                                )
-                                .fill(C_ACCENT)
-                                .stroke(egui::Stroke::NONE)
-                                .rounding(egui::Rounding::same(4.0))
-                                .min_size(egui::vec2(0.0, 18.0));
-                                if ui
-                                    .add(pill)
-                                    .on_hover_cursor(egui::CursorIcon::PointingHand)
-                                    .on_hover_text("Click to see update instructions")
-                                    .clicked()
-                                {
-                                    self.show_update_modal = true;
+                                // Hide the pill once the user has
+                                // explicitly dismissed THIS version —
+                                // avoids pill-fatigue for people who
+                                // defer updates. Reappears when a
+                                // newer tag shows up.
+                                let suppressed =
+                                    self.state.settings.dismissed_update_version.as_deref()
+                                        == Some(latest.as_str());
+                                if !suppressed {
+                                    // Phosphor arrow glyph — egui's bundled
+                                    // font lacks U+2191 (↑) and renders it
+                                    // as a tofu square.
+                                    let pill = egui::Button::new(
+                                        egui::RichText::new(format!(
+                                            "{} {}",
+                                            egui_phosphor::regular::ARROW_UP,
+                                            latest
+                                        ))
+                                        .size(10.0)
+                                        .strong()
+                                        .color(egui::Color32::WHITE),
+                                    )
+                                    .fill(C_ACCENT)
+                                    .stroke(egui::Stroke::NONE)
+                                    .rounding(egui::Rounding::same(4.0))
+                                    .min_size(egui::vec2(0.0, 18.0));
+                                    if ui
+                                        .add(pill)
+                                        .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                        .on_hover_text("Click to see update instructions")
+                                        .clicked()
+                                    {
+                                        self.show_update_modal = true;
+                                    }
+                                    // Small ✕ to dismiss just this
+                                    // version's pill without opening
+                                    // the modal. Uses Phosphor X.
+                                    let dismiss = egui::Button::new(
+                                        egui::RichText::new(egui_phosphor::regular::X)
+                                            .size(10.0)
+                                            .color(muted()),
+                                    )
+                                    .fill(egui::Color32::TRANSPARENT)
+                                    .stroke(egui::Stroke::NONE)
+                                    .min_size(egui::vec2(14.0, 18.0));
+                                    if ui
+                                        .add(dismiss)
+                                        .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                        .on_hover_text("Dismiss (reappears on next version)")
+                                        .clicked()
+                                    {
+                                        self.state.settings.dismissed_update_version =
+                                            Some(latest.clone());
+                                        self.save_state();
+                                    }
                                 }
                             }
                         });

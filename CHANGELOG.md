@@ -11,6 +11,39 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Added
+- **Redesigned app icon** — Phosphor hammer striking a thick steel plate
+  on a rust-orange plinth. Matches the app's `C_ACCENT` brand color.
+  SVG source at `assets/icon.svg`; rendered PNG embedded into the
+  binary via `include_bytes!`. `scripts/generate_icon.py` renders the
+  SVG → PNG via `resvg-py` (pure-Rust, preserves transparency).
+- **Update-available pill** in the sidebar header. When the launch
+  update-check finds a newer tag, a rust-orange pill with the version
+  appears next to the running version number. Click → opens an
+  instructions modal with the official `curl | bash` one-line
+  installer command, a "Copy command" button (clipboard), and a
+  "Release notes" button (opens the GitHub release page). Pill also
+  has a ✕ to dismiss just that version — suppressed in
+  `AppSettings.dismissed_update_version` until a newer tag drops.
+- **Settings toggle: "Check for updates on launch"** — defaults on.
+  Disables the one silent GET to `api.github.com/.../releases/latest`
+  for users who want strict offline operation.
+- **CHANGELOG-driven release notes** — `deploy.sh` now refuses to
+  release if `CHANGELOG.md` has no `## Unreleased` section with
+  content. Promotes that section to `## [X.Y.Z] — YYYY-MM-DD` on
+  release. `.github/workflows/release.yml` extracts the matching
+  section and passes it as the GitHub release `body_path`, so the
+  release page shows the human-written notes plus GitHub's
+  auto-generated PR/commit list below.
+
+### Changed
+- **Send button color** — now uses `C_ACCENT` (rust orange) instead
+  of `C_PURPLE` (burnt sienna). Matches the "New Collection" button
+  and the active-tab underline; the primary-CTA family is now
+  visually consistent.
+
 ## [0.15.7] — Tab-chrome simplification
 
 ### Changed

@@ -1743,10 +1743,9 @@ impl eframe::App for ApiClient {
         if let Some(rx) = &self.update_check_rx {
             if let Ok(new_version) = rx.try_recv() {
                 self.update_available = Some(new_version);
-                // Auto-open the update modal on first detection so the
-                // user can't miss it. The sidebar pill persists after
-                // dismissal for follow-up access.
-                self.show_update_modal = true;
+                // No auto-open: a modal on launch blocks users from
+                // getting to work. The persistent sidebar pill is
+                // unmissable but non-blocking — click it when ready.
                 self.update_check_rx = None;
             } else if matches!(
                 rx.try_recv(),
