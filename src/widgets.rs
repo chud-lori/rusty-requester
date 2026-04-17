@@ -140,6 +140,38 @@ pub fn find_request_info(
         .map(|r| (r.method.clone(), r.name.clone(), r.url.clone()))
 }
 
+/// Strip invisible / non-printable Unicode characters that sneak in
+/// from rich sources like Chrome DevTools' Network tab (e.g. zero-width
+/// spaces, bidi marks, ASCII control bytes). egui's bundled font
+/// doesn't have glyphs for most of these, so they render as "tofu"
+/// rectangles — and they'd also break URLs silently if sent.
+///
+/// Kept: all printable characters + normal space. Dropped: controls
+/// (< 0x20 except none — none are useful in a KV value), DEL (0x7F),
+/// BOM/ZWSP family (U+200B–U+200F, U+202A–U+202E, U+2060, U+FEFF).
+fn sanitize_pasted(s: &mut String) {
+    if s
+        .chars()
+        .all(|c| c >= ' ' && c != '\u{007F}' && !is_invisible_unicode(c))
+    {
+        return; // fast path — already clean
+    }
+    let cleaned: String = s
+        .chars()
+        .filter(|&c| c >= ' ' && c != '\u{007F}' && !is_invisible_unicode(c))
+        .collect();
+    *s = cleaned;
+}
+
+fn is_invisible_unicode(c: char) -> bool {
+    matches!(c as u32,
+        0x200B..=0x200F    // zero-width / LTR / RTL marks
+        | 0x202A..=0x202E  // bidi overrides
+        | 0x2060           // word joiner
+        | 0xFEFF           // BOM / ZWNBSP
+    )
+}
+
 pub fn render_kv_table(
     ui: &mut egui::Ui,
     title: &str,
@@ -241,6 +273,7 @@ pub fn render_kv_table(
                             .text_color(text_color),
                     );
                     if key_resp.changed() {
+                        sanitize_pasted(&mut row.key);
                         changed = true;
                     }
                     ui.add_space(cell_pad);
@@ -257,6 +290,7 @@ pub fn render_kv_table(
                             .text_color(text_color),
                     );
                     if val_resp.changed() {
+                        sanitize_pasted(&mut row.value);
                         changed = true;
                     }
 
@@ -274,6 +308,7 @@ pub fn render_kv_table(
                                 .text_color(text_color),
                         );
                         if desc_resp.changed() {
+                            sanitize_pasted(&mut row.description);
                             changed = true;
                         }
                     }

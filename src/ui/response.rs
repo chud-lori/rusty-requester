@@ -409,6 +409,27 @@ impl ApiClient {
                     if icon_btn(ui, egui_phosphor::regular::COPY, "Copy response body").clicked() {
                         copy_clicked = true;
                     }
+                    // Inline "Copied!" flash, visible for ~1.5s after
+                    // the click. The bottom-right toast is easy to miss
+                    // when focus is on the response pane; a label right
+                    // next to the button isn't.
+                    if let Some(t0) = self.response_copied_at {
+                        let now = ui.ctx().input(|i| i.time);
+                        let age = now - t0;
+                        if age < 1.5 {
+                            ui.label(
+                                egui::RichText::new(format!(
+                                    "{} Copied",
+                                    egui_phosphor::regular::CHECK
+                                ))
+                                .color(C_GREEN)
+                                .size(12.0),
+                            );
+                            ui.ctx().request_repaint();
+                        } else {
+                            self.response_copied_at = None;
+                        }
+                    }
                     ui.add_space(2.0);
                     if icon_btn(
                         ui,
@@ -434,7 +455,7 @@ impl ApiClient {
         if copy_clicked {
             ui.ctx()
                 .output_mut(|o| o.copied_text = self.response_text.clone());
-            self.show_toast("Copied response body");
+            self.response_copied_at = Some(ui.ctx().input(|i| i.time));
         }
         if save_clicked {
             let ext = match self
@@ -616,26 +637,36 @@ impl ApiClient {
                                     // handles those shortcuts itself
                                     // (the macOS Edit menu used to
                                     // intercept them; we removed that).
+                                    //
+                                    // Wrapping is DISABLED for JSON:
+                                    // wrapped continuation rows have no
+                                    // line-number gutter, so a single
+                                    // very long line (e.g. a minified
+                                    // encoded coordinate blob) visually
+                                    // overlaps the gutter column. VS
+                                    // Code solves this with horizontal
+                                    // scroll — so do we.
                                     let mut buf: &str = &self.response_text;
                                     let search = self.body_search_query.clone();
                                     let mut layouter =
-                                        move |ui: &egui::Ui, s: &str, wrap_width: f32| {
+                                        move |ui: &egui::Ui, s: &str, _wrap_width: f32| {
                                             let mut job =
                                                 build_json_layout_job_with_search(s, &search);
-                                            job.wrap.max_width = wrap_width;
+                                            job.wrap.max_width = f32::INFINITY;
                                             ui.fonts(|f| f.layout_job(job))
                                         };
-                                    ui.add_sized(
-                                        egui::vec2(
-                                            ui.available_width(),
-                                            ui.available_height().max(120.0),
-                                        ),
-                                        egui::TextEdit::multiline(&mut buf)
-                                            .frame(false)
-                                            .desired_width(f32::INFINITY)
-                                            .font(egui::TextStyle::Monospace)
-                                            .layouter(&mut layouter),
-                                    );
+                                    egui::ScrollArea::horizontal()
+                                        .id_salt("resp_json_hscroll")
+                                        .auto_shrink([false, false])
+                                        .show(ui, |ui| {
+                                            ui.add(
+                                                egui::TextEdit::multiline(&mut buf)
+                                                    .frame(false)
+                                                    .desired_width(f32::INFINITY)
+                                                    .font(egui::TextStyle::Monospace)
+                                                    .layouter(&mut layouter),
+                                            );
+                                        });
                                 }
                                 BodyView::Tree => {
                                     if let Some(v) = parsed {

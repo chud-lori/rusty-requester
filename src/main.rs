@@ -40,10 +40,32 @@ pub struct OAuth2TokenUpdate {
     pub expires_at: Option<i64>,
 }
 use snippet::SnippetLang;
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use uuid::Uuid;
 use widgets::*;
+
+/// In-memory snapshot of a request's last response so switching tabs
+/// doesn't wipe what the user was reading. Keyed by `request_id` on
+/// `ApiClient.response_cache`; NOT persisted to `data.json` (response
+/// bodies can be large, and "last response" is a session concern).
+#[derive(Clone, Default)]
+struct CachedResponse {
+    text: String,
+    status: String,
+    time: String,
+    headers: Vec<(String, String)>,
+    headers_bytes: usize,
+    body_bytes: usize,
+    prepare_ms: u64,
+    waiting_ms: u64,
+    download_ms: u64,
+    total_ms: u64,
+    previous_text: Option<String>,
+    streaming_events: Vec<crate::sse::SseEvent>,
+    assertion_results: Vec<Option<AssertionResult>>,
+}
 
 struct ApiClient {
     state: AppState,
@@ -113,6 +135,21 @@ struct ApiClient {
 
     show_snippet_panel: bool,
     snippet_lang: SnippetLang,
+    /// Wall-clock (egui `input.time`) at which the snippet copy button
+    /// was last pressed. Drives the transient "Copied!" label that
+    /// flashes next to the button. `None` = never copied this session,
+    /// or flash already expired.
+    snippet_copied_at: Option<f64>,
+    /// Same idea for the response-body copy button. Kept separate so
+    /// copying one doesn't flash the other.
+    response_copied_at: Option<f64>,
+
+    /// Per-request last-response cache. When the user switches tabs we
+    /// stash the outgoing request's live response fields here, and pull
+    /// them back when the tab re-activates. In-memory only — not
+    /// persisted (keeps `data.json` lean, matches Postman's
+    /// session-scoped behavior).
+    response_cache: HashMap<String, CachedResponse>,
 
     sidebar_view: SidebarView,
     show_env_modal: bool,
@@ -333,6 +370,9 @@ impl Default for ApiClient {
             paste_error: String::new(),
             show_snippet_panel: false,
             snippet_lang: SnippetLang::Curl,
+            snippet_copied_at: None,
+            response_copied_at: None,
+            response_cache: HashMap::new(),
             sidebar_view: SidebarView::Collections,
             show_env_modal: false,
             selected_env_for_edit: None,
@@ -1011,6 +1051,11 @@ impl ApiClient {
     fn open_request(&mut self, folder_path: Vec<String>, request_id: String) {
         // Any request activation leaves the collection overview mode.
         self.viewing_folder_id = None;
+
+        // Stash the outgoing tab's live response so switching back
+        // restores it — the old behavior wiped it on every switch.
+        let outgoing_id = self.selected_request_id.clone();
+
         if let Some(existing) = self
             .state
             .open_tabs
@@ -1029,11 +1074,83 @@ impl ApiClient {
             self.selected_folder_path = folder_path;
             self.selected_request_id = Some(request_id);
         }
+        if let Some(prev) = outgoing_id {
+            if Some(prev.as_str()) != self.selected_request_id.as_deref() {
+                self.stash_response_for(&prev);
+            }
+        }
         self.load_request_for_editing();
+        let new_id = self.selected_request_id.clone();
+        self.restore_response_for(new_id.as_deref());
+    }
+
+    /// Copy current live response state into `response_cache` under the
+    /// given request id.
+    fn stash_response_for(&mut self, request_id: &str) {
+        // Don't cache a blank/loading slot — an empty entry does
+        // nothing useful and just gets overwritten on next restore.
+        if self.response_text.is_empty() && self.response_status.is_empty() {
+            self.response_cache.remove(request_id);
+            return;
+        }
+        let snap = CachedResponse {
+            text: self.response_text.clone(),
+            status: self.response_status.clone(),
+            time: self.response_time.clone(),
+            headers: self.response_headers.clone(),
+            headers_bytes: self.response_headers_bytes,
+            body_bytes: self.response_body_bytes,
+            prepare_ms: self.response_prepare_ms,
+            waiting_ms: self.response_waiting_ms,
+            download_ms: self.response_download_ms,
+            total_ms: self.response_total_ms,
+            previous_text: self.previous_response_text.clone(),
+            streaming_events: self.streaming_events.clone(),
+            assertion_results: self.assertion_results.clone(),
+        };
+        self.response_cache.insert(request_id.to_string(), snap);
+    }
+
+    /// Restore live response state from `response_cache` for the given
+    /// request id, or clear everything if there's no cached entry.
+    fn restore_response_for(&mut self, request_id: Option<&str>) {
+        let Some(id) = request_id else {
+            self.clear_response_fields();
+            return;
+        };
+        if let Some(snap) = self.response_cache.get(id).cloned() {
+            self.response_text = snap.text;
+            self.response_status = snap.status;
+            self.response_time = snap.time;
+            self.response_headers = snap.headers;
+            self.response_headers_bytes = snap.headers_bytes;
+            self.response_body_bytes = snap.body_bytes;
+            self.response_prepare_ms = snap.prepare_ms;
+            self.response_waiting_ms = snap.waiting_ms;
+            self.response_download_ms = snap.download_ms;
+            self.response_total_ms = snap.total_ms;
+            self.previous_response_text = snap.previous_text;
+            self.streaming_events = snap.streaming_events;
+            self.assertion_results = snap.assertion_results;
+        } else {
+            self.clear_response_fields();
+        }
+    }
+
+    fn clear_response_fields(&mut self) {
         self.response_text.clear();
         self.response_status.clear();
         self.response_time.clear();
         self.response_headers.clear();
+        self.response_headers_bytes = 0;
+        self.response_body_bytes = 0;
+        self.response_prepare_ms = 0;
+        self.response_waiting_ms = 0;
+        self.response_download_ms = 0;
+        self.response_total_ms = 0;
+        self.previous_response_text = None;
+        self.streaming_events.clear();
+        self.assertion_results.clear();
     }
 
     fn close_tab(&mut self, idx: usize) {
@@ -1078,6 +1195,9 @@ impl ApiClient {
             self.state.drafts.retain(|d| d.id != closing.request_id);
         }
         let was_active = self.selected_request_id.as_deref() == Some(closing.request_id.as_str());
+        // Closed tab's cached response is no longer reachable — drop
+        // it so the cache doesn't leak memory across long sessions.
+        self.response_cache.remove(&closing.request_id);
         if was_active {
             if self.state.open_tabs.is_empty() {
                 self.clear_selection();
@@ -1087,10 +1207,8 @@ impl ApiClient {
                 self.selected_folder_path = tab.folder_path;
                 self.selected_request_id = Some(tab.request_id);
                 self.load_request_for_editing();
-                self.response_text.clear();
-                self.response_status.clear();
-                self.response_time.clear();
-                self.response_headers.clear();
+                let new_id = self.selected_request_id.clone();
+                self.restore_response_for(new_id.as_deref());
             }
         }
     }

@@ -691,6 +691,29 @@ impl ApiClient {
                         if icon_btn(ui, egui_phosphor::regular::COPY, "Copy snippet").clicked() {
                             copy_clicked = true;
                         }
+                        // "Copied!" flash sits to the LEFT of the button
+                        // (layout is right-to-left). Visible for ~1.5s
+                        // after click, then fades out. Gives inline
+                        // feedback — the bottom-right toast gets hidden
+                        // behind this side panel so it wasn't noticed.
+                        if let Some(t0) = self.snippet_copied_at {
+                            let now = ui.ctx().input(|i| i.time);
+                            let age = now - t0;
+                            if age < 1.5 {
+                                ui.add_space(6.0);
+                                ui.label(
+                                    egui::RichText::new(format!(
+                                        "{} Copied",
+                                        egui_phosphor::regular::CHECK
+                                    ))
+                                    .color(C_GREEN)
+                                    .size(12.0),
+                                );
+                                ui.ctx().request_repaint();
+                            } else {
+                                self.snippet_copied_at = None;
+                            }
+                        }
                     });
                 });
                 ui.add_space(8.0);
@@ -760,7 +783,7 @@ impl ApiClient {
 
         if copy_clicked {
             ctx.output_mut(|o| o.copied_text = snippet);
-            self.show_toast("Snippet copied");
+            self.snippet_copied_at = Some(ctx.input(|i| i.time));
         }
         if close_clicked {
             self.show_snippet_panel = false;
