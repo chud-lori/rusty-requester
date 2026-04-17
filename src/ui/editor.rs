@@ -422,7 +422,12 @@ impl ApiClient {
                     let (label, fill, tooltip) = if self.is_loading {
                         ("Cancel", C_RED, "Cancel the in-flight request")
                     } else {
-                        ("Send", C_PURPLE, "Send (⌘/Ctrl + Enter)")
+                        // Brand-accent rust orange — matches "New
+                        // Collection" + active-tab underline. Was
+                        // C_PURPLE (burnt-sienna PATCH color) which
+                        // made Send look like a different family
+                        // from the rest of the primary CTAs.
+                        ("Send", C_ACCENT, "Send (⌘/Ctrl + Enter)")
                     };
                     let send_btn = egui::Button::new(
                         egui::RichText::new(label)
