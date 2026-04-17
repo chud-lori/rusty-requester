@@ -4,14 +4,66 @@ use eframe::egui;
 use egui::text::{LayoutJob, TextFormat};
 use egui::{Color32, FontId};
 
-// Syntax-highlight palette — Monokai-ish, tuned to the app's dark panel.
-const HL_TEXT: Color32 = Color32::from_rgb(224, 226, 232); // default
-const HL_STRING: Color32 = Color32::from_rgb(230, 219, 116); // yellow
-const HL_FLAG: Color32 = Color32::from_rgb(102, 217, 239); // cyan — CLI flags
-const HL_NUMBER: Color32 = Color32::from_rgb(174, 129, 255); // purple
-const HL_KEYWORD: Color32 = Color32::from_rgb(249, 38, 114); // pink — lang keywords
-const HL_COMMENT: Color32 = Color32::from_rgb(117, 113, 94); // grey — shell comments
-const HL_LINENO: Color32 = Color32::from_rgb(100, 105, 115); // dim grey
+// Syntax-highlight palette. Dark values are Monokai-ish (original);
+// light values are GitHub-ish (dark ink on soft paper). Functions read
+// the global active theme so response/snippet views flip automatically
+// when the user toggles Settings → Theme.
+fn hl_text() -> Color32 {
+    if crate::theme::is_light() {
+        Color32::from_rgb(31, 35, 42) // #1F232A — matches palette text
+    } else {
+        Color32::from_rgb(224, 226, 232)
+    }
+}
+fn hl_string() -> Color32 {
+    if crate::theme::is_light() {
+        Color32::from_rgb(10, 48, 105) // #0A3069 — dark blue strings
+    } else {
+        Color32::from_rgb(230, 219, 116) // Monokai yellow
+    }
+}
+fn hl_flag() -> Color32 {
+    if crate::theme::is_light() {
+        Color32::from_rgb(17, 99, 41) // #116329 — dark green
+    } else {
+        Color32::from_rgb(102, 217, 239) // Monokai cyan
+    }
+}
+fn hl_number() -> Color32 {
+    if crate::theme::is_light() {
+        Color32::from_rgb(149, 56, 0) // #953800 — dark orange
+    } else {
+        Color32::from_rgb(174, 129, 255) // Monokai purple
+    }
+}
+fn hl_keyword() -> Color32 {
+    if crate::theme::is_light() {
+        Color32::from_rgb(207, 34, 46) // #CF222E — dark red
+    } else {
+        Color32::from_rgb(249, 38, 114) // Monokai pink
+    }
+}
+fn hl_comment() -> Color32 {
+    if crate::theme::is_light() {
+        Color32::from_rgb(110, 119, 129) // #6E7781 — mid gray
+    } else {
+        Color32::from_rgb(117, 113, 94) // Monokai comment grey
+    }
+}
+fn hl_lineno() -> Color32 {
+    if crate::theme::is_light() {
+        Color32::from_rgb(140, 149, 159) // #8C959F — dim gray on paper
+    } else {
+        Color32::from_rgb(100, 105, 115)
+    }
+}
+fn hl_json_key() -> Color32 {
+    if crate::theme::is_light() {
+        Color32::from_rgb(5, 80, 174) // #0550AE — medium blue keys
+    } else {
+        Color32::from_rgb(166, 226, 46) // Monokai pale green
+    }
+}
 
 // `build_snippet_layout_job` (the with-embedded-gutter variant) was
 // replaced by `build_snippet_layout_job_content_only` paired with a
@@ -23,10 +75,10 @@ pub fn build_snippet_layout_job(text: &str, lang: SnippetLang, _wrap_width: f32)
     let mut job = LayoutJob::default();
     for (line_idx, line) in text.split('\n').enumerate() {
         if line_idx > 0 {
-            append(&mut job, "\n", &font, HL_TEXT);
+            append(&mut job, "\n", &font, hl_text());
         }
         let lineno = format!("{:>3}  ", line_idx + 1);
-        append(&mut job, &lineno, &font, HL_LINENO);
+        append(&mut job, &lineno, &font, hl_lineno());
         highlight_line(&mut job, line, lang, &font);
     }
     job
@@ -43,7 +95,7 @@ pub fn build_snippet_layout_job_content_only(text: &str, lang: SnippetLang) -> L
     let mut job = LayoutJob::default();
     for (line_idx, line) in text.split('\n').enumerate() {
         if line_idx > 0 {
-            append(&mut job, "\n", &font, HL_TEXT);
+            append(&mut job, "\n", &font, hl_text());
         }
         highlight_line(&mut job, line, lang, &font);
     }
@@ -67,7 +119,7 @@ fn highlight_line(job: &mut LayoutJob, line: &str, lang: SnippetLang, font: &Fon
     if matches!(lang, SnippetLang::HttpieShell | SnippetLang::Curl)
         && line.trim_start().starts_with('#')
     {
-        append(job, line, font, HL_COMMENT);
+        append(job, line, font, hl_comment());
         return;
     }
     let bytes = line.as_bytes();
@@ -76,7 +128,7 @@ fn highlight_line(job: &mut LayoutJob, line: &str, lang: SnippetLang, font: &Fon
 
     let flush_default = |job: &mut LayoutJob, line: &str, start: usize, end: usize| {
         if end > start {
-            append(job, &line[start..end], font, HL_TEXT);
+            append(job, &line[start..end], font, hl_text());
         }
     };
 
@@ -98,7 +150,7 @@ fn highlight_line(job: &mut LayoutJob, line: &str, lang: SnippetLang, font: &Fon
             if i < bytes.len() {
                 i += 1; // closing quote
             }
-            append(job, &line[start..i], font, HL_STRING);
+            append(job, &line[start..i], font, hl_string());
             default_run_start = i;
             continue;
         }
@@ -121,7 +173,7 @@ fn highlight_line(job: &mut LayoutJob, line: &str, lang: SnippetLang, font: &Fon
                 }
                 if i > name_start {
                     flush_default(job, line, default_run_start, start);
-                    append(job, &line[start..i], font, HL_FLAG);
+                    append(job, &line[start..i], font, hl_flag());
                     default_run_start = i;
                     continue;
                 }
@@ -140,7 +192,7 @@ fn highlight_line(job: &mut LayoutJob, line: &str, lang: SnippetLang, font: &Fon
                 while i < bytes.len() && (bytes[i].is_ascii_digit() || bytes[i] == b'.') {
                     i += 1;
                 }
-                append(job, &line[start..i], font, HL_NUMBER);
+                append(job, &line[start..i], font, hl_number());
                 default_run_start = i;
                 continue;
             }
@@ -158,7 +210,7 @@ fn highlight_line(job: &mut LayoutJob, line: &str, lang: SnippetLang, font: &Fon
                 let word = &line[start..i];
                 if is_keyword(word, lang) {
                     flush_default(job, line, default_run_start, start);
-                    append(job, word, font, HL_KEYWORD);
+                    append(job, word, font, hl_keyword());
                     default_run_start = i;
                 }
                 continue;
@@ -188,10 +240,10 @@ pub fn build_json_layout_job_with_search(text: &str, search: &str) -> LayoutJob 
 
     for (line_idx, line) in text.split('\n').enumerate() {
         if line_idx > 0 {
-            append(&mut job, "\n", &font, HL_TEXT);
+            append(&mut job, "\n", &font, hl_text());
         }
         let lineno = format!("{:>4}  ", line_idx + 1);
-        append(&mut job, &lineno, &font, HL_LINENO);
+        append(&mut job, &lineno, &font, hl_lineno());
         highlight_json_line(&mut job, line, &font);
     }
     if let Some(q) = search_opt {
@@ -250,7 +302,7 @@ fn highlight_json_line(job: &mut LayoutJob, line: &str, font: &FontId) {
 
     let flush = |job: &mut LayoutJob, line: &str, start: usize, end: usize| {
         if end > start {
-            append(job, &line[start..end], font, HL_TEXT);
+            append(job, &line[start..end], font, hl_text());
         }
     };
 
@@ -281,7 +333,7 @@ fn highlight_json_line(job: &mut LayoutJob, line: &str, font: &FontId) {
                 peek += 1;
             }
             let is_key = peek < bytes.len() && bytes[peek] == b':';
-            let color = if is_key { HL_JSON_KEY } else { HL_STRING };
+            let color = if is_key { hl_json_key() } else { hl_string() };
             append(job, &line[start..i], font, color);
             default_start = i;
             continue;
@@ -299,7 +351,7 @@ fn highlight_json_line(job: &mut LayoutJob, line: &str, font: &FontId) {
                 let word = &line[start..i];
                 if matches!(word, "true" | "false" | "null") {
                     flush(job, line, default_start, start);
-                    append(job, word, font, HL_KEYWORD);
+                    append(job, word, font, hl_keyword());
                     default_start = i;
                 }
                 continue;
@@ -324,7 +376,7 @@ fn highlight_json_line(job: &mut LayoutJob, line: &str, font: &FontId) {
                 i += 1;
             }
             flush(job, line, default_start, start);
-            append(job, &line[start..i], font, HL_NUMBER);
+            append(job, &line[start..i], font, hl_number());
             default_start = i;
             continue;
         }
@@ -336,9 +388,6 @@ fn highlight_json_line(job: &mut LayoutJob, line: &str, font: &FontId) {
     }
     flush(job, line, default_start, bytes.len());
 }
-
-// Slightly warmer key color — makes keys stand out from value strings.
-const HL_JSON_KEY: Color32 = Color32::from_rgb(166, 226, 46); // pale green
 
 fn is_keyword(word: &str, lang: SnippetLang) -> bool {
     match lang {

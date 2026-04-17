@@ -138,22 +138,24 @@ pub const DARK_PALETTE: Palette = Palette {
     muted: C_MUTED,
 };
 
-/// Light palette — warm gray canvas (no pure whites). Initial
-/// `#F6F7F9` was too bright and clinical; `#EBEDF1` keeps surfaces
-/// obviously light but doesn't glare in a dim room.
-///   * `bg`         #EBEDF1 — app canvas
-///   * `panel_dark` #E0E3E9 — slightly sunken (response body, code)
-///   * `elevated`   #D1D6DE — inputs / hover / active rows
-///   * `border`     #BEC4CE — divider lines
-///   * `text`       #2E3138 — body text, ~11:1 contrast on bg
-///   * `muted`      #5C6270 — secondary labels, ~5.3:1 on bg
+/// Light palette — warm mid-gray canvas. Earlier `#EBEDF1` was still
+/// too bright and washed out the syntax-highlighted response. This
+/// softer `#D9DCE3` reads like paper under warm light — surfaces are
+/// still unambiguously "light" but don't glare, and the text colors
+/// below keep 4.5:1+ WCAG AA contrast.
+///   * `bg`         #D9DCE3 — app canvas
+///   * `panel_dark` #CED2DA — sunken surface (response body, code)
+///   * `elevated`   #BEC3CD — inputs / hover / active rows
+///   * `border`     #A7ADB8 — divider lines
+///   * `text`       #1F232A — body text, high contrast on bg
+///   * `muted`      #545A68 — secondary labels
 pub const LIGHT_PALETTE: Palette = Palette {
-    bg: egui::Color32::from_rgb(235, 237, 241),
-    panel_dark: egui::Color32::from_rgb(224, 227, 233),
-    elevated: egui::Color32::from_rgb(209, 214, 222),
-    border: egui::Color32::from_rgb(190, 196, 206),
-    text: egui::Color32::from_rgb(46, 49, 56),
-    muted: egui::Color32::from_rgb(92, 98, 112),
+    bg: egui::Color32::from_rgb(217, 220, 227),
+    panel_dark: egui::Color32::from_rgb(206, 210, 218),
+    elevated: egui::Color32::from_rgb(190, 195, 205),
+    border: egui::Color32::from_rgb(167, 173, 184),
+    text: egui::Color32::from_rgb(31, 35, 42),
+    muted: egui::Color32::from_rgb(84, 90, 104),
 };
 
 pub fn palette_for(theme: Theme) -> Palette {
@@ -189,6 +191,12 @@ pub fn active_palette() -> Palette {
         1 => LIGHT_PALETTE,
         _ => DARK_PALETTE,
     }
+}
+
+/// `true` when light theme is active. Syntax-highlight call sites use
+/// this to branch palettes (Monokai on dark, GitHub-ish on light).
+pub fn is_light() -> bool {
+    ACTIVE_THEME.load(std::sync::atomic::Ordering::Relaxed) == 1
 }
 
 /// Theme-aware "text" color — the replacement for `C_TEXT` at call
