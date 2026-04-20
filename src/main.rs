@@ -247,8 +247,12 @@ struct ApiClient {
     /// rather than filtering out non-matches.
     body_search_query: String,
     /// Whether the inline search input is visible (toggled by the 🔍
-    /// icon button in the body toolbar).
+    /// icon button in the body toolbar, or Cmd/Ctrl+F).
     body_search_visible: bool,
+    /// Set for one frame when Cmd/Ctrl+F fires — tells the response
+    /// view to call `request_focus()` on the search TextEdit so the
+    /// user can start typing immediately. Cleared after consumption.
+    body_search_focus_pending: bool,
 
     /// Long-lived HTTP client built from `state.settings`. Rebuilt on
     /// app startup and whenever the Settings modal saves. Reused across
@@ -410,6 +414,7 @@ impl Default for ApiClient {
             body_tree_filter: String::new(),
             body_search_query: String::new(),
             body_search_visible: false,
+            body_search_focus_pending: false,
             http_client: net::build_client(&AppSettings::default()),
             http_runtime: net::build_runtime(),
             show_settings_modal: false,
@@ -1808,6 +1813,7 @@ impl eframe::App for ApiClient {
             cmd_n,
             cmd_w,
             cmd_d,
+            cmd_f,
             f2,
             arrow_up,
             arrow_down,
@@ -1821,6 +1827,9 @@ impl eframe::App for ApiClient {
                 i.modifiers.command && i.key_pressed(egui::Key::N),
                 i.modifiers.command && i.key_pressed(egui::Key::W),
                 i.modifiers.command && i.key_pressed(egui::Key::D),
+                // egui's `modifiers.command` maps to Cmd on macOS and
+                // Ctrl on Linux / Windows, so one bind covers all three.
+                i.modifiers.command && i.key_pressed(egui::Key::F),
                 i.key_pressed(egui::Key::F2),
                 !i.modifiers.command && !i.modifiers.alt && i.key_pressed(egui::Key::ArrowUp),
                 !i.modifiers.command && !i.modifiers.alt && i.key_pressed(egui::Key::ArrowDown),
@@ -1849,6 +1858,17 @@ impl eframe::App for ApiClient {
         }
         if cmd_enter && self.selected_request_id.is_some() && !self.is_loading {
             self.send_request();
+        }
+        // Cmd/Ctrl+F — Find in response body. Opens the inline search
+        // bar, switches to the Body tab if we're on Headers, and
+        // focuses the input so the user can type immediately. Pressing
+        // it again while already open just re-focuses the input
+        // (convenient if focus drifted elsewhere). Escape closes, same
+        // as the magnifying-glass button.
+        if cmd_f {
+            self.response_tab = ResponseTab::Body;
+            self.body_search_visible = true;
+            self.body_search_focus_pending = true;
         }
         // Cmd+N — new request (cross-platform; macOS also fires via menu accelerator).
         if cmd_n {

@@ -14,6 +14,15 @@ upgrades read old files cleanly.
 ## [0.16.10] — 2026-04-20
 
 ### Added
+- **Find in response body** (`Cmd/Ctrl+F`). The inline search bar
+  was previously click-only via the magnifying-glass button, so
+  Linux / Windows users (who never reach for clickable search
+  icons first) effectively had no find-in-response. Now bound to
+  `Cmd+F` on macOS and `Ctrl+F` on Linux / Windows — one
+  `i.modifiers.command` check covers both since egui maps
+  "command" to the platform-appropriate meta key. Switches to
+  the Body tab if you're on Headers, focuses the search input
+  immediately, and Escape closes.
 - **Clean uninstall path.** The Linux tarball now ships
   `uninstall-local.sh` alongside `install-local.sh`, and
   `install.sh` gained an `UNINSTALL=1` mode so the one-liner

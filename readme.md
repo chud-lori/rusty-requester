@@ -276,7 +276,9 @@ All edits auto-save to a single local JSON file — nothing leaves your machine:
 
 ### Useful shortcuts
 
-**⌘⏎** Send · **⌘N** New request · **⌘W** Close tab · **⌘D** Duplicate tab · **⌘K** Focus search · **⌘P** Command palette · **⇧⌘P** Actions palette · **F2** Rename · **Esc** Dismiss modals
+**⌘⏎** Send · **⌘N** New request · **⌘W** Close tab · **⌘D** Duplicate tab · **⌘F** Find in response · **⌘K** Focus search · **⌘P** Command palette · **⇧⌘P** Actions palette · **F2** Rename · **Esc** Dismiss modals
+
+(Use **Ctrl** instead of **⌘** on Linux / Windows — the app binds both.)
 
 The ⇧⌘P actions palette is self-discoverable — open it and start
 typing to see every available action.

@@ -488,11 +488,22 @@ impl ApiClient {
         if body_active && self.body_search_visible {
             ui.add_space(4.0);
             ui.horizontal(|ui| {
-                ui.add(
+                let search_resp = ui.add(
                     egui::TextEdit::singleline(&mut self.body_search_query)
                         .hint_text(hint("Find in body…"))
                         .desired_width(ui.available_width() - 40.0),
                 );
+                // Cmd/Ctrl+F sets `body_search_focus_pending` in main —
+                // consume it here so the TextEdit actually grabs focus.
+                if self.body_search_focus_pending {
+                    self.body_search_focus_pending = false;
+                    search_resp.request_focus();
+                }
+                // Escape while focused → close (mirrors browser Find).
+                if search_resp.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                    self.body_search_visible = false;
+                    self.body_search_query.clear();
+                }
                 if icon_btn(ui, egui_phosphor::regular::X, "Close search").clicked() {
                     self.body_search_visible = false;
                     self.body_search_query.clear();
