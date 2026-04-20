@@ -14,12 +14,33 @@ upgrades read old files cleanly.
 ## [0.16.7] — 2026-04-20
 
 ### Fixed
+- **Collection / folder rename input is now readable + the confirm
+  button renders.** The inline rename row was constrained to the
+  header's tight text-width rect, so the TextEdit clipped to a
+  sliver; and the ✓ / ✖ glyphs (U+2713 / U+2716) aren't in egui's
+  bundled font on some systems, so the confirm button showed as a
+  blank rectangle (same failure mode as the pre-0.16.5 update-pill
+  arrow). Now the rename row spans the full sidebar width and the
+  buttons use Phosphor `CHECK` / `X`. Also added Escape-to-cancel
+  parity with the request rename UX.
 - **Linux install works on older glibc.** Release builds now run on
   `ubuntu-22.04` (glibc 2.35) instead of `ubuntu-latest` (which
   silently upgraded to 24.04 / glibc 2.39). Users on Ubuntu 22.04,
   Debian 12, Fedora 36+, and RHEL 9 no longer hit
   `libc.so.6: version 'GLIBC_2.39' not found` when launching the
   binary installed by `install.sh`.
+- **App icon now shows in Ubuntu / GNOME launchers.** Previous
+  install path relied on freedesktop icon-theme lookup
+  (`Icon=rusty-requester` + PNG in `hicolor/512x512/apps/`), which
+  silently failed on GNOME until `gtk-update-icon-cache` was run
+  manually or the user logged out. `install-local.sh` now: (1)
+  rewrites the `.desktop` file's `Icon=` line to an absolute
+  `~/.local/share/pixmaps/rusty-requester.png` path (bypasses
+  theme lookup + icon cache entirely — always resolves), (2)
+  drops the PNG into both `hicolor/512x512/apps/` and
+  `pixmaps/` (legacy fallback for DEs that skip single-size
+  hicolor themes), (3) runs `gtk-update-icon-cache` if available
+  as a belt-and-suspenders refresh.
 - **`install.sh` one-liner works on Linux.** Two install-time bugs:
   - `curl … | awk '{… exit}'` triggered `SIGPIPE` (curl exit 23
     "Failed writing body") because awk closed the pipe after the

@@ -154,6 +154,13 @@ tarball-linux:
 	   $(BUNDLE_DIR)/linux-stage/$(APP_NAME)/rusty-requester
 	chmod +x $(BUNDLE_DIR)/linux-stage/$(APP_NAME)/rusty-requester
 	cp $(ICON_PNG) $(BUNDLE_DIR)/linux-stage/$(APP_NAME)/icon.png
+	@# NOTE: the Icon= line is a placeholder — install-local.sh
+	@# rewrites it to an ABSOLUTE path at install time (`$HOME` is
+	@# user-dependent so we can't hardcode it here). Absolute paths
+	@# bypass freedesktop icon-theme lookup entirely, avoiding the
+	@# "icon not shown until icon cache refreshed / logout" trap on
+	@# GNOME/Ubuntu. Also drop into pixmaps/ as a legacy fallback
+	@# for DEs that ignore hicolor 512x512-only themes.
 	@printf '%s\n' \
 	  '[Desktop Entry]' \
 	  'Type=Application' \
@@ -172,13 +179,18 @@ tarball-linux:
 	  'BIN="$$HOME/.local/share/rusty-requester"' \
 	  'LAUNCHER="$$HOME/.local/bin"' \
 	  'DESKTOP="$$HOME/.local/share/applications"' \
-	  'ICONS="$$HOME/.local/share/icons/hicolor/512x512/apps"' \
-	  'mkdir -p "$$BIN" "$$LAUNCHER" "$$DESKTOP" "$$ICONS"' \
+	  'ICONS_HICOLOR="$$HOME/.local/share/icons/hicolor/512x512/apps"' \
+	  'PIXMAPS="$$HOME/.local/share/pixmaps"' \
+	  'mkdir -p "$$BIN" "$$LAUNCHER" "$$DESKTOP" "$$ICONS_HICOLOR" "$$PIXMAPS"' \
 	  'install -m 755 "$$STAGE/rusty-requester" "$$BIN/rusty-requester"' \
-	  'install -m 644 "$$STAGE/icon.png" "$$ICONS/rusty-requester.png"' \
-	  'install -m 644 "$$STAGE/rusty-requester.desktop" "$$DESKTOP/rusty-requester.desktop"' \
+	  'install -m 644 "$$STAGE/icon.png" "$$ICONS_HICOLOR/rusty-requester.png"' \
+	  'install -m 644 "$$STAGE/icon.png" "$$PIXMAPS/rusty-requester.png"' \
+	  '# Rewrite Icon= to an absolute path — bypasses icon-theme lookup + caching.' \
+	  'sed "s|^Icon=.*|Icon=$$PIXMAPS/rusty-requester.png|" "$$STAGE/rusty-requester.desktop" > "$$DESKTOP/rusty-requester.desktop"' \
+	  'chmod 644 "$$DESKTOP/rusty-requester.desktop"' \
 	  'ln -sf "$$BIN/rusty-requester" "$$LAUNCHER/rusty-requester"' \
-	  'command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$$DESKTOP" || true' \
+	  'command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$$DESKTOP" >/dev/null 2>&1 || true' \
+	  'command -v gtk-update-icon-cache >/dev/null 2>&1 && gtk-update-icon-cache -f -t "$$HOME/.local/share/icons/hicolor" >/dev/null 2>&1 || true' \
 	  'echo "Installed. If $$LAUNCHER is on your PATH, run: rusty-requester"' \
 	  > $(BUNDLE_DIR)/linux-stage/$(APP_NAME)/install-local.sh
 	chmod +x $(BUNDLE_DIR)/linux-stage/$(APP_NAME)/install-local.sh

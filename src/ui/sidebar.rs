@@ -889,25 +889,51 @@ impl ApiClient {
         }
 
         if is_renaming {
-            let rect = header_response.header_response.rect;
-            let mut rename_rect = rect;
-            rename_rect.min.x += 25.0;
+            // Header rect is tight to the label text. Stretch the rename
+            // area to the sidebar's full width so the TextEdit + buttons
+            // actually fit. Also: `✓`/`✖` unicode glyphs aren't in egui's
+            // bundled font on some systems (tofu rectangles) — use
+            // Phosphor CHECK / X which we already ship.
+            let header_rect = header_response.header_response.rect;
+            let right_edge = ui.max_rect().right();
+            let rename_rect = egui::Rect::from_min_max(
+                egui::pos2(header_rect.left() + 25.0, header_rect.top()),
+                egui::pos2(right_edge - 4.0, header_rect.bottom()),
+            );
             let mut child_ui = ui.new_child(egui::UiBuilder::new().max_rect(rename_rect));
             child_ui.horizontal(|ui| {
+                let btn_size = egui::vec2(22.0, 22.0);
+                // Reserve space for the two action buttons, everything
+                // else goes to the TextEdit.
+                let edit_width = (rename_rect.width() - (btn_size.x * 2.0) - 12.0).max(80.0);
                 let response = ui.add(
                     egui::TextEdit::singleline(&mut self.rename_folder_text)
-                        .desired_width(150.0)
+                        .desired_width(edit_width)
                         .font(egui::TextStyle::Body),
                 );
-                if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                let (enter, escape) = ui.input(|i| {
+                    (
+                        i.key_pressed(egui::Key::Enter),
+                        i.key_pressed(egui::Key::Escape),
+                    )
+                });
+                if response.lost_focus() && enter {
+                    self.rename_folder(&folder.id, self.rename_folder_text.clone());
+                    self.renaming_folder_id = None;
+                } else if escape {
+                    self.renaming_folder_id = None;
+                }
+                if ui
+                    .add_sized(btn_size, egui::Button::new(egui_phosphor::regular::CHECK))
+                    .clicked()
+                {
                     self.rename_folder(&folder.id, self.rename_folder_text.clone());
                     self.renaming_folder_id = None;
                 }
-                if ui.button("✓").clicked() {
-                    self.rename_folder(&folder.id, self.rename_folder_text.clone());
-                    self.renaming_folder_id = None;
-                }
-                if ui.button("✖").clicked() {
+                if ui
+                    .add_sized(btn_size, egui::Button::new(egui_phosphor::regular::X))
+                    .clicked()
+                {
                     self.renaming_folder_id = None;
                 }
             });
