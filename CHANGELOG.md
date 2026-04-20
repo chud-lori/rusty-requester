@@ -11,7 +11,7 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
-## Unreleased
+## [0.17.0] — 2026-04-20
 
 ### Added
 - **Find in response body** (`Cmd/Ctrl+F`). The inline search bar
