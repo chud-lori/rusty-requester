@@ -11,7 +11,7 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
-## [0.16.8] — 2026-04-20
+## Unreleased
 
 ### Fixed
 - **Request rename + Enter now commits the new name** (issue #16).
@@ -21,6 +21,10 @@ upgrades read old files cleanly.
   silently dropped. Rename appeared to do nothing. Switched to
   the canonical egui `lost_focus() && enter` pattern (same one
   the folder rename uses) so Enter reliably commits.
+
+## [0.16.8] — 2026-04-20
+
+### Fixed
 - **Collection / folder rename input is now readable + the confirm
   button renders** (issue #15). The inline rename row was constrained to the
   header's tight text-width rect, so the TextEdit clipped to a
