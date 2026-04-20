@@ -14,6 +14,14 @@ and of managing a wall of raw <code>curl</code> commands in my terminal.
 </p>
 
 <p align="center">
+<i>Why "Rusty"?</i> It's a double pun on <b>Rust</b> (the language) and
+<b>rust-as-in-old-stuff-that-still-works</b>. Plenty of developers
+are on older / low-spec machines that can't stomach a 500 MB Electron
+app with half a gig of idle RAM — so this is built for them first.
+~15 MB binary, ~30 MB idle RAM, &lt;100 ms cold start.
+</p>
+
+<p align="center">
   <img src="https://img.shields.io/badge/rust-%23000000.svg?style=for-the-badge&logo=rust&logoColor=white" alt="Rust" />
   <img src="https://img.shields.io/badge/mac%20os-000000?style=for-the-badge&logo=macos&logoColor=F0F0F0" alt="macOS" />
   <img src="https://img.shields.io/badge/linux-000000?style=for-the-badge&logo=linux&logoColor=F0F0F0" alt="Linux" />
@@ -151,11 +159,15 @@ asset:
   running instance, strips the Gatekeeper quarantine attribute, and
   re-registers with Launch Services so Dock / Spotlight pick up the
   new bundle.
-- **Linux** (x86_64 glibc) — `RustyRequester-vX.Y.Z-linux-x86_64.tar.gz`.
-  Extracts to `~/.local/share/rusty-requester`, symlinks the binary
-  into `~/.local/bin`, installs a `.desktop` entry into
-  `~/.local/share/applications`. No `sudo`. If `~/.local/bin` isn't on
-  your `PATH`, the script tells you how to add it.
+- **Linux** (x86_64 glibc 2.35+, so Ubuntu 22.04 / Debian 12 /
+  Fedora 36+ / RHEL 9 and newer) —
+  `RustyRequester-vX.Y.Z-linux-x86_64.tar.gz`. Installs the binary
+  directly at `~/.local/bin/rusty-requester`, drops a `.desktop`
+  entry into `~/.local/share/applications`, and puts icons in both
+  `hicolor/512x512/apps/` and `pixmaps/`. User data lives
+  separately at `~/.local/share/rusty-requester/data.json` so the
+  two never get tangled. No `sudo`. If `~/.local/bin` isn't on your
+  `PATH`, the script tells you how to add it.
 
 Install a specific version:
 
@@ -203,6 +215,28 @@ If you used the manual install, work around it once:
   **"Open Anyway"** next to the Rusty Requester entry
 
 You only need to do this once.
+
+### Uninstall
+
+The same one-liner in `UNINSTALL=1` mode removes the app and
+preserves your `data.json` (collections, history, OAuth tokens):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/chud-lori/rusty-requester/main/install.sh | UNINSTALL=1 bash
+```
+
+Add `PURGE=1` to wipe user data too:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/chud-lori/rusty-requester/main/install.sh | UNINSTALL=1 PURGE=1 bash
+```
+
+Or, if you still have the extracted Linux tarball around, run
+`./uninstall-local.sh` (pass `--purge` to also delete data). macOS:
+the one-liner removes `RustyRequester.app` from `/Applications`
+(or `~/Applications`), quits any running instance, and
+— with `PURGE=1` — clears
+`~/Library/Application Support/rusty-requester`.
 
 ### Build from source
 
@@ -275,9 +309,12 @@ with a documented migration path:
   existing fields keep their names, types, and serde tags.
 - **Install paths and bundle identity** — `/Applications/RustyRequester.app`,
   bundle ID `com.rustyrequester.app`, fallback `~/Applications/`,
-  Linux `~/.local/share/rusty-requester/` and `~/.local/bin/rusty-requester`.
+  Linux binary at `~/.local/bin/rusty-requester` (distinct from
+  the user-data dir `~/.local/share/rusty-requester/` which holds
+  `data.json`).
 - **CLI surface** — `--version` / `-V` flag, environment variables read by
-  `install.sh` (`VERSION`, `SKIP_QUARANTINE_STRIP`, `RUSTY_REPO`).
+  `install.sh` (`VERSION`, `SKIP_QUARANTINE_STRIP`, `RUSTY_REPO`,
+  `UNINSTALL`, `PURGE`).
 - **Import / export formats** — JSON / YAML round-trip, Postman
   Collection v2.1 import.
 - **Public macOS menu shortcuts** — `⌘⏎` Send, `⌘N` New request,
