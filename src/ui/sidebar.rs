@@ -774,7 +774,13 @@ impl ApiClient {
                             i.key_pressed(egui::Key::Escape),
                         )
                     });
-                    if enter && edit_resp.has_focus() {
+                    // Canonical egui "Enter-to-submit" pattern: check
+                    // `lost_focus() && enter` together. egui's singleline
+                    // TextEdit de-focuses in the SAME frame Enter fires, so
+                    // the earlier `enter && has_focus()` check would see
+                    // `has_focus() == false` and silently drop the commit —
+                    // the rename appeared to do nothing. (Issue #16.)
+                    if edit_resp.lost_focus() && enter {
                         let id = req.id.clone();
                         let new_name = self.rename_request_text.trim().to_string();
                         if !new_name.is_empty() {
