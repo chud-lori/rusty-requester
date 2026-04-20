@@ -9,11 +9,6 @@ a Postman alternative that doesn't chew through hundreds of MB of RAM just to ma
 </p>
 
 <p align="center">
-Vibe-coded because I got tired of Postman's bloat and cloud sync I never wanted,
-and of managing a wall of raw <code>curl</code> commands in my terminal.
-</p>
-
-<p align="center">
 <i>Why "Rusty"?</i> It's a double pun on <b>Rust</b> (the language) and
 <b>rust-as-in-old-stuff-that-still-works</b>. Plenty of developers
 are on older / low-spec machines that can't stomach a 500 MB Electron
