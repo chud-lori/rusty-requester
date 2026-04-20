@@ -1189,6 +1189,7 @@ impl ApiClient {
                 let mut t = self.editing_settings.theme;
                 ui.selectable_value(&mut t, Theme::Dark, "Dark");
                 ui.selectable_value(&mut t, Theme::Light, "Light");
+                ui.selectable_value(&mut t, Theme::Postman, "Postman");
                 self.editing_settings.theme = t;
             });
             ui.label(
@@ -2064,6 +2065,10 @@ fn palette_frame(theme: Theme) -> egui::Frame {
             egui::Color32::from_rgb(253, 253, 254),
             egui::Color32::from_rgb(208, 212, 220),
         ),
+        Theme::Postman => (
+            egui::Color32::from_rgb(255, 255, 255),
+            egui::Color32::from_rgb(221, 221, 224),
+        ),
     };
     egui::Frame::none()
         .fill(fill)
@@ -2080,6 +2085,7 @@ fn palette_frame(theme: Theme) -> egui::Frame {
             color: egui::Color32::from_black_alpha(match theme {
                 Theme::Dark => 180,
                 Theme::Light => 80,
+                Theme::Postman => 60,
             }),
         })
 }
