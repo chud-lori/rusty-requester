@@ -111,7 +111,12 @@ jobs:
 
   linux:
     name: Build Linux x86_64 tarball
-    runs-on: ubuntu-latest
+    # Pin to Ubuntu 22.04 (glibc 2.35) so the produced binary runs on
+    # Debian 12, Ubuntu 22.04+, Fedora 36+, RHEL 9, and most "modern"
+    # desktop distros. `ubuntu-latest` now resolves to 24.04 whose
+    # glibc 2.39 is NOT present on older systems, giving users
+    # `libc.so.6: version GLIBC_2.39 not found`.
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
 

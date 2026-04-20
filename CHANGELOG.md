@@ -11,6 +11,26 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Fixed
+- **Linux install works on older glibc.** Release builds now run on
+  `ubuntu-22.04` (glibc 2.35) instead of `ubuntu-latest` (which
+  silently upgraded to 24.04 / glibc 2.39). Users on Ubuntu 22.04,
+  Debian 12, Fedora 36+, and RHEL 9 no longer hit
+  `libc.so.6: version 'GLIBC_2.39' not found` when launching the
+  binary installed by `install.sh`.
+- **`install.sh` one-liner works on Linux.** Two install-time bugs:
+  - `curl … | awk '{… exit}'` triggered `SIGPIPE` (curl exit 23
+    "Failed writing body") because awk closed the pipe after the
+    first match. Under `set -o pipefail` that killed the script on
+    Linux. Now captures curl's body first, then parses.
+  - `mktemp -d -t rusty-requester` fails on Linux ("too few X's")
+    since GNU mktemp requires the template to contain `XXXXXX`.
+    macOS mktemp is lenient. Switched to an explicit
+    `${TMPDIR:-/tmp}/rusty-requester.XXXXXX` template that works on
+    both.
+
 ## [0.16.6] — 2026-04-18
 
 ### Changed

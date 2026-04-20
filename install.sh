@@ -68,7 +68,10 @@ fi
 green "  using ${TAG}"
 VERSION_BARE="${TAG#v}"
 
-TMP=$(mktemp -d -t rusty-requester)
+# Portable mktemp: Linux requires the template to contain `XXXXXX`;
+# macOS `mktemp -d -t foo` silently appends them. Use an explicit
+# path template that works on both.
+TMP=$(mktemp -d "${TMPDIR:-/tmp}/rusty-requester.XXXXXX")
 MOUNT_DIR=""
 cleanup() {
     if [ -n "$MOUNT_DIR" ] && [ -d "$MOUNT_DIR" ]; then
