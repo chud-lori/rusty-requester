@@ -55,8 +55,12 @@ require curl
 # --- Resolve release tag -------------------------------------------------
 if [ -z "${TAG}" ]; then
     blue "→ Resolving latest release from github.com/${REPO}..."
-    TAG=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" \
-          | awk -F'"' '/"tag_name"/{print $4; exit}')
+    # Capture the full response first — piping curl directly into `awk '... exit}'`
+    # triggers SIGPIPE (curl exit 23 "Failed writing body") under `set -o pipefail`
+    # on Linux, because awk closes the pipe before curl finishes writing.
+    RELEASE_JSON=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest") \
+        || die "couldn't reach GitHub API (rate-limited or offline?)"
+    TAG=$(printf '%s' "$RELEASE_JSON" | awk -F'"' '/"tag_name"/{print $4; exit}')
 fi
 if [ -z "${TAG}" ]; then
     die "couldn't resolve a release tag (rate-limited or repo has no releases yet?)"
