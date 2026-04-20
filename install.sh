@@ -17,10 +17,16 @@
 #     install-local.sh which puts the binary in ~/.local/bin and
 #     registers a .desktop entry in ~/.local/share/applications.
 #
+# Uninstall:
+#   curl -fsSL https://raw.githubusercontent.com/chud-lori/rusty-requester/main/install.sh | UNINSTALL=1 bash
+#   # add PURGE=1 to also wipe ~/.local/share/rusty-requester (collections, history, tokens)
+#
 # Env knobs:
 #   VERSION=vX.Y.Z                pin a specific release tag
 #   SKIP_QUARANTINE_STRIP=1       (macOS) keep Gatekeeper's attribute
 #   RUSTY_REPO=owner/name         override repo (default chud-lori/rusty-requester)
+#   UNINSTALL=1                   remove the installed app instead of installing
+#   PURGE=1                       (with UNINSTALL=1) also delete user data
 
 set -euo pipefail
 
@@ -51,6 +57,60 @@ if [ "$PLATFORM" = "linux" ] && [ "$ARCH" != "x86_64" ]; then
 fi
 
 require curl
+
+# --- Uninstall mode ------------------------------------------------------
+# UNINSTALL=1 → remove the installed app instead of installing. Self-
+# contained (doesn't need the release tarball), so works via
+# `curl … | UNINSTALL=1 bash` even after the tarball's been deleted.
+# Preserves user data at ~/.local/share/rusty-requester by default;
+# PURGE=1 wipes that too.
+if [ "${UNINSTALL:-0}" = "1" ]; then
+    if [ "$PLATFORM" = "macos" ]; then
+        APP_NAME="RustyRequester.app"
+        blue "→ Quitting any running instance..."
+        osascript -e 'tell application "RustyRequester" to quit' 2>/dev/null || true
+        pkill -x RustyRequester 2>/dev/null || true
+        REMOVED=0
+        for TARGET in "/Applications/$APP_NAME" "$HOME/Applications/$APP_NAME"; do
+            if [ -d "$TARGET" ]; then
+                blue "→ Removing $TARGET..."
+                rm -rf "$TARGET" && REMOVED=1
+            fi
+        done
+        [ "$REMOVED" = "1" ] || dim "  (no installed $APP_NAME found in /Applications or ~/Applications)"
+        if [ "${PURGE:-0}" = "1" ]; then
+            # macOS app data lives under ~/Library/Application Support/rusty-requester
+            DATA="$HOME/Library/Application Support/rusty-requester"
+            [ -d "$DATA" ] && rm -rf "$DATA" && echo "Purged user data at $DATA"
+        else
+            dim "  User data at ~/Library/Application Support/rusty-requester preserved (PURGE=1 to wipe)."
+        fi
+        green "✓ Uninstalled $APP_NAME"
+    else
+        # Linux: replicate uninstall-local.sh inline so we don't need the tarball.
+        BIN_FILE="$HOME/.local/bin/rusty-requester"
+        DESKTOP="$HOME/.local/share/applications/rusty-requester.desktop"
+        ICON_HICOLOR="$HOME/.local/share/icons/hicolor/512x512/apps/rusty-requester.png"
+        ICON_PIXMAP="$HOME/.local/share/pixmaps/rusty-requester.png"
+        DATA_DIR="$HOME/.local/share/rusty-requester"
+        # Legacy pre-0.16.9 binary path (lived alongside data.json).
+        LEGACY_BIN="$DATA_DIR/rusty-requester"
+        blue "→ Removing installed files..."
+        rm -f "$BIN_FILE" "$DESKTOP" "$ICON_HICOLOR" "$ICON_PIXMAP" "$LEGACY_BIN"
+        if [ "${PURGE:-0}" = "1" ]; then
+            rm -rf "$DATA_DIR"
+            echo "Purged user data at $DATA_DIR"
+        elif [ -d "$DATA_DIR" ]; then
+            dim "  User data at $DATA_DIR preserved (PURGE=1 to wipe)."
+        fi
+        command -v update-desktop-database >/dev/null 2>&1 \
+            && update-desktop-database "$HOME/.local/share/applications" >/dev/null 2>&1 || true
+        command -v gtk-update-icon-cache >/dev/null 2>&1 \
+            && gtk-update-icon-cache -f -t "$HOME/.local/share/icons/hicolor" >/dev/null 2>&1 || true
+        green "✓ Uninstalled rusty-requester"
+    fi
+    exit 0
+fi
 
 # --- Resolve release tag -------------------------------------------------
 if [ -z "${TAG}" ]; then

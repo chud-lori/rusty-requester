@@ -2324,7 +2324,14 @@ fn main() -> Result<(), eframe::Error> {
     let mut viewport = egui::ViewportBuilder::default()
         .with_inner_size([1280.0, 820.0])
         .with_min_inner_size([900.0, 600.0])
-        .with_title("Rusty Requester");
+        .with_title("Rusty Requester")
+        // Wayland app_id / X11 WM_CLASS. Must match the `.desktop`
+        // file's `StartupWMClass=` so GNOME / KDE can associate the
+        // running window with the installed launcher and show the
+        // right icon in the dock / Activities. Without this, Ubuntu
+        // under Wayland shows a generic cog as the window icon even
+        // though `_NET_WM_ICON` is set (issue #18).
+        .with_app_id("rusty-requester");
     if let Some(icon) = load_window_icon() {
         viewport = viewport.with_icon(std::sync::Arc::new(icon));
     }

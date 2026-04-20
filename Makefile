@@ -161,6 +161,11 @@ tarball-linux:
 	@# "icon not shown until icon cache refreshed / logout" trap on
 	@# GNOME/Ubuntu. Also drop into pixmaps/ as a legacy fallback
 	@# for DEs that ignore hicolor 512x512-only themes.
+	@# StartupWMClass must match the app's Wayland `app_id` /
+	@# X11 `WM_CLASS` (see `with_app_id` in main.rs). Without this,
+	@# GNOME on Wayland can't associate the running window with
+	@# the launcher and shows a generic cog as the dock icon
+	@# (issue #18), regardless of `_NET_WM_ICON`.
 	@printf '%s\n' \
 	  '[Desktop Entry]' \
 	  'Type=Application' \
@@ -168,31 +173,72 @@ tarball-linux:
 	  'Comment=Native, offline, lightweight API client' \
 	  'Exec=rusty-requester' \
 	  'Icon=rusty-requester' \
+	  'StartupWMClass=rusty-requester' \
 	  'Categories=Development;Network;' \
 	  'Terminal=false' \
 	  > $(BUNDLE_DIR)/linux-stage/$(APP_NAME)/rusty-requester.desktop
+	@# install-local.sh: installs the binary DIRECTLY into
+	@# ~/.local/bin (previously it sat in ~/.local/share/rusty-requester/
+	@# next to data.json, so uninstalling was footgun-y — `rm -rf` the
+	@# dir wiped user collections). Binary path is now purely
+	@# executable; ~/.local/share/rusty-requester/ is reserved for
+	@# user data (data.json). No symlink indirection needed.
 	@printf '%s\n' \
 	  '#!/bin/sh' \
 	  '# Installer invoked by install.sh. Idempotent.' \
 	  'set -e' \
 	  'STAGE=$$(cd "$$(dirname "$$0")" && pwd)' \
-	  'BIN="$$HOME/.local/share/rusty-requester"' \
-	  'LAUNCHER="$$HOME/.local/bin"' \
+	  'BIN="$$HOME/.local/bin"' \
 	  'DESKTOP="$$HOME/.local/share/applications"' \
 	  'ICONS_HICOLOR="$$HOME/.local/share/icons/hicolor/512x512/apps"' \
 	  'PIXMAPS="$$HOME/.local/share/pixmaps"' \
-	  'mkdir -p "$$BIN" "$$LAUNCHER" "$$DESKTOP" "$$ICONS_HICOLOR" "$$PIXMAPS"' \
+	  'mkdir -p "$$BIN" "$$DESKTOP" "$$ICONS_HICOLOR" "$$PIXMAPS"' \
+	  '# Migrate from pre-v0.16.9 layout (binary lived in ~/.local/share/rusty-requester/' \
+	  '# alongside data.json). Remove the old binary + symlink; data.json stays put.' \
+	  'OLD_BIN="$$HOME/.local/share/rusty-requester/rusty-requester"' \
+	  '[ -f "$$OLD_BIN" ] && rm -f "$$OLD_BIN" || true' \
+	  '[ -L "$$BIN/rusty-requester" ] && rm -f "$$BIN/rusty-requester" || true' \
 	  'install -m 755 "$$STAGE/rusty-requester" "$$BIN/rusty-requester"' \
 	  'install -m 644 "$$STAGE/icon.png" "$$ICONS_HICOLOR/rusty-requester.png"' \
 	  'install -m 644 "$$STAGE/icon.png" "$$PIXMAPS/rusty-requester.png"' \
 	  '# Rewrite Icon= to an absolute path — bypasses icon-theme lookup + caching.' \
 	  'sed "s|^Icon=.*|Icon=$$PIXMAPS/rusty-requester.png|" "$$STAGE/rusty-requester.desktop" > "$$DESKTOP/rusty-requester.desktop"' \
 	  'chmod 644 "$$DESKTOP/rusty-requester.desktop"' \
-	  'ln -sf "$$BIN/rusty-requester" "$$LAUNCHER/rusty-requester"' \
 	  'command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$$DESKTOP" >/dev/null 2>&1 || true' \
 	  'command -v gtk-update-icon-cache >/dev/null 2>&1 && gtk-update-icon-cache -f -t "$$HOME/.local/share/icons/hicolor" >/dev/null 2>&1 || true' \
-	  'echo "Installed. If $$LAUNCHER is on your PATH, run: rusty-requester"' \
+	  'echo "Installed. If $$BIN is on your PATH, run: rusty-requester"' \
+	  'echo "To uninstall later: $$STAGE/uninstall-local.sh   (or curl | UNINSTALL=1 bash)"' \
 	  > $(BUNDLE_DIR)/linux-stage/$(APP_NAME)/install-local.sh
 	chmod +x $(BUNDLE_DIR)/linux-stage/$(APP_NAME)/install-local.sh
+	@# uninstall-local.sh: removes everything install-local.sh drops,
+	@# but preserves user data at ~/.local/share/rusty-requester/
+	@# (collections, history, OAuth tokens). Pass `--purge` to wipe
+	@# user data too.
+	@printf '%s\n' \
+	  '#!/bin/sh' \
+	  '# Uninstaller for Rusty Requester. Safe by default: preserves' \
+	  '# ~/.local/share/rusty-requester/data.json. Pass --purge to wipe it.' \
+	  'set -e' \
+	  'PURGE=0' \
+	  '[ "$$1" = "--purge" ] && PURGE=1' \
+	  'BIN="$$HOME/.local/bin/rusty-requester"' \
+	  'DESKTOP="$$HOME/.local/share/applications/rusty-requester.desktop"' \
+	  'ICON_HICOLOR="$$HOME/.local/share/icons/hicolor/512x512/apps/rusty-requester.png"' \
+	  'ICON_PIXMAP="$$HOME/.local/share/pixmaps/rusty-requester.png"' \
+	  'DATA_DIR="$$HOME/.local/share/rusty-requester"' \
+	  'rm -f "$$BIN" "$$DESKTOP" "$$ICON_HICOLOR" "$$ICON_PIXMAP"' \
+	  '# Legacy binary location (pre-v0.16.9) — clean up if present.' \
+	  'rm -f "$$DATA_DIR/rusty-requester"' \
+	  'if [ "$$PURGE" = "1" ]; then' \
+	  '  rm -rf "$$DATA_DIR"' \
+	  '  echo "Purged user data at $$DATA_DIR"' \
+	  'else' \
+	  '  [ -d "$$DATA_DIR" ] && echo "Kept user data at $$DATA_DIR (use --purge to remove)" || true' \
+	  'fi' \
+	  'command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$$HOME/.local/share/applications" >/dev/null 2>&1 || true' \
+	  'command -v gtk-update-icon-cache >/dev/null 2>&1 && gtk-update-icon-cache -f -t "$$HOME/.local/share/icons/hicolor" >/dev/null 2>&1 || true' \
+	  'echo "Uninstalled rusty-requester."' \
+	  > $(BUNDLE_DIR)/linux-stage/$(APP_NAME)/uninstall-local.sh
+	chmod +x $(BUNDLE_DIR)/linux-stage/$(APP_NAME)/uninstall-local.sh
 	tar -czf $(LINUX_TARBALL) -C $(BUNDLE_DIR)/linux-stage $(APP_NAME)
 	@echo "Linux tarball ready: $(LINUX_TARBALL)"

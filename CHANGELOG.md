@@ -11,6 +11,43 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Added
+- **Clean uninstall path.** The Linux tarball now ships
+  `uninstall-local.sh` alongside `install-local.sh`, and
+  `install.sh` gained an `UNINSTALL=1` mode so the one-liner
+  works both ways:
+  ```
+  curl … | UNINSTALL=1 bash           # keep user data
+  curl … | UNINSTALL=1 PURGE=1 bash   # also wipe data.json
+  ```
+  Works on macOS too (removes `RustyRequester.app` from
+  `/Applications` or `~/Applications`; optional purge of
+  `~/Library/Application Support/rusty-requester`).
+
+### Fixed
+- **Ubuntu dock / Activities icon** (issue #18). GNOME under
+  Wayland ignores `_NET_WM_ICON` set by the app — it matches
+  the running window to a `.desktop` file via `app_id` /
+  `StartupWMClass`, then pulls the icon from there. Neither
+  side was set, so the dock fell back to a generic cog. Fixed
+  by adding `.with_app_id("rusty-requester")` on the
+  `ViewportBuilder` AND `StartupWMClass=rusty-requester` in
+  the installed `.desktop` file. Both must match — one without
+  the other is a no-op.
+- **Linux binary no longer sits next to `data.json`.** Before,
+  the installer put the binary at
+  `~/.local/share/rusty-requester/rusty-requester` and
+  symlinked it into `~/.local/bin`. That's the same directory
+  the app writes `data.json` to, so a naive
+  `rm -rf ~/.local/share/rusty-requester` uninstall also
+  nuked user collections / history / OAuth tokens. Binary is
+  now installed directly to `~/.local/bin/rusty-requester`
+  (no symlink, no shared dir). `install-local.sh` migrates
+  the old layout automatically on upgrade — leaves
+  `data.json` untouched.
+
 ## [0.16.9] — 2026-04-20
 
 ### Fixed
