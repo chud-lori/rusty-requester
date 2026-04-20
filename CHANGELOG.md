@@ -11,7 +11,7 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
-## [0.16.7] — 2026-04-20
+## Unreleased
 
 ### Fixed
 - **Collection / folder rename input is now readable + the confirm
@@ -23,12 +23,6 @@ upgrades read old files cleanly.
   arrow). Now the rename row spans the full sidebar width and the
   buttons use Phosphor `CHECK` / `X`. Also added Escape-to-cancel
   parity with the request rename UX.
-- **Linux install works on older glibc.** Release builds now run on
-  `ubuntu-22.04` (glibc 2.35) instead of `ubuntu-latest` (which
-  silently upgraded to 24.04 / glibc 2.39). Users on Ubuntu 22.04,
-  Debian 12, Fedora 36+, and RHEL 9 no longer hit
-  `libc.so.6: version 'GLIBC_2.39' not found` when launching the
-  binary installed by `install.sh`.
 - **App icon now shows in Ubuntu / GNOME launchers.** Previous
   install path relied on freedesktop icon-theme lookup
   (`Icon=rusty-requester` + PNG in `hicolor/512x512/apps/`), which
@@ -41,6 +35,16 @@ upgrades read old files cleanly.
   `pixmaps/` (legacy fallback for DEs that skip single-size
   hicolor themes), (3) runs `gtk-update-icon-cache` if available
   as a belt-and-suspenders refresh.
+
+## [0.16.7] — 2026-04-20
+
+### Fixed
+- **Linux install works on older glibc.** Release builds now run on
+  `ubuntu-22.04` (glibc 2.35) instead of `ubuntu-latest` (which
+  silently upgraded to 24.04 / glibc 2.39). Users on Ubuntu 22.04,
+  Debian 12, Fedora 36+, and RHEL 9 no longer hit
+  `libc.so.6: version 'GLIBC_2.39' not found` when launching the
+  binary installed by `install.sh`.
 - **`install.sh` one-liner works on Linux.** Two install-time bugs:
   - `curl … | awk '{… exit}'` triggered `SIGPIPE` (curl exit 23
     "Failed writing body") because awk closed the pipe after the
