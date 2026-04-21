@@ -11,6 +11,18 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Fixed
+- **App no longer crashes when a response body contains an emoji.**
+  `push_history_entry` truncated the response preview to 256 *bytes*
+  via `String::truncate`, which panics when byte 256 lands mid-UTF-8
+  (e.g. a `👋` straddling the cut). Position-dependent: emojis sitting
+  fully before or after byte 256 were fine, but any that spanned the
+  cut brought the app down immediately after Send. Now walks back to
+  the nearest char boundary before truncating — safe for any emoji /
+  non-ASCII text at any byte position.
+
 ## [0.18.0] — 2026-04-21
 
 ### Added

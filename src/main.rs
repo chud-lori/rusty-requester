@@ -997,7 +997,14 @@ impl ApiClient {
         };
         let mut preview = self.response_text.clone();
         if preview.len() > 256 {
-            preview.truncate(256);
+            // Walk back to the nearest UTF-8 char boundary ≤ 256 — a
+            // raw truncate(256) panics when byte 256 lands mid-codepoint
+            // (e.g. a response body with an emoji straddling the cut).
+            let mut cut = 256;
+            while !preview.is_char_boundary(cut) {
+                cut -= 1;
+            }
+            preview.truncate(cut);
             preview.push('…');
         }
         let time_ms = self
