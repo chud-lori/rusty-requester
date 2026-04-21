@@ -56,8 +56,6 @@ pub fn hint_color() -> egui::Color32 {
     } else {
         egui::Color32::from_rgb(138, 142, 152) // #8A8E98 — lifted grey on dark
     }
-    // Note: `is_light()` covers both Light and Postman themes, so the
-    // Postman canvas gets the same paper-grey placeholder treatment.
 }
 
 /// Styled placeholder text for TextEdit hint_text — dim but legible
@@ -250,11 +248,10 @@ fn set_active_theme(theme: Theme) {
     ACTIVE_THEME.store(val, std::sync::atomic::Ordering::Relaxed);
 }
 
-/// Current active theme. Kept private outside the module because most
-/// callers want a palette or a boolean test, not the enum — but we use
-/// it locally in accent() / method_color() to branch on `Postman`
-/// specifically.
-pub fn current_theme() -> Theme {
+/// Current active theme. Scoped to the crate because most callers want
+/// a palette or a boolean test, not the enum — but we use it locally in
+/// `accent()` / `method_color()` to branch on `Postman` specifically.
+pub(crate) fn current_theme() -> Theme {
     match ACTIVE_THEME.load(std::sync::atomic::Ordering::Relaxed) {
         1 => Theme::Light,
         2 => Theme::Postman,
@@ -269,7 +266,10 @@ pub fn active_palette() -> Palette {
 /// `true` when a light-based theme (Light or Postman) is active.
 /// Syntax-highlight call sites use this to branch palettes (Monokai on
 /// dark, GitHub-ish on light/Postman); widget code uses it to pick the
-/// "paper" render path over the "dark canvas" one.
+/// "paper" render path over the "dark canvas" one. The Postman theme
+/// intentionally rides this same paper path — e.g. `hint_color()`
+/// gives the Postman canvas the same paper-grey placeholder treatment
+/// as the Light theme, since both are near-white surfaces.
 pub fn is_light() -> bool {
     !matches!(current_theme(), Theme::Dark)
 }
@@ -391,11 +391,11 @@ pub fn apply_style(ctx: &egui::Context, theme: Theme) {
     style.spacing.scroll.bar_inner_margin = 2.0;
     style.spacing.scroll.bar_outer_margin = 0.0;
 
-    // Per-theme text sizes. Inter (Postman theme) has heavier strokes
-    // and wider metrics than egui's default sans in ab_glyph, so the
-    // same point size reads noticeably bolder. Scale body/button/heading
-    // down a touch under the Postman theme so it matches the Postman
-    // web UI's comfortable reading weight.
+    // Per-theme text sizes. The Postman theme is tuned a step smaller
+    // than Dark/Light to match the reading density of the Postman web
+    // UI (12-13px body, 17px headings). Weight is handled separately
+    // by shipping `Inter-Light.ttf` for the font itself — this block
+    // is purely about point-size, not weight compensation.
     let (heading, body, mono, button, small) = if matches!(theme, Theme::Postman) {
         (17.0, 12.5, 12.0, 12.0, 10.5)
     } else {
