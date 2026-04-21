@@ -11,6 +11,17 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Changed
+- **Key-value tables (Params / Headers / Cookies / Form-data) now
+  show a row separator.** Previously rows floated on the same canvas
+  color with no divider — short values like `1` or `true` forced the
+  eye to trace 1000+ px of empty space to pair them with their key.
+  Added a thin 1 px bottom border per row matching the header
+  separator, so pairings read at a glance. Matches the convention
+  used by Postman / Insomnia / Bruno / Hoppscotch.
+
 ## [0.18.1] — 2026-04-21
 
 ### Fixed

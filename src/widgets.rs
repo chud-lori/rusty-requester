@@ -335,6 +335,22 @@ pub fn render_kv_table(
                     }
                 });
             });
+        // Thin separator below each row so short values stay visually
+        // grouped with their key — without it, `page_num / 1` forces
+        // the eye to trace 1000px across empty canvas to pair them.
+        // Suppressed on the trailing blank row (nothing below to
+        // separate from).
+        if !is_last_blank {
+            ui.add_space(2.0);
+            let y = ui.cursor().top();
+            ui.painter().line_segment(
+                [
+                    egui::pos2(ui.cursor().left(), y),
+                    egui::pos2(ui.cursor().left() + ui.available_width(), y),
+                ],
+                egui::Stroke::new(1.0, border().linear_multiply(0.6)),
+            );
+        }
         ui.add_space(2.0);
     }
 
