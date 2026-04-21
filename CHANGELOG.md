@@ -11,6 +11,17 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Added
+- **Postman theme.** Third theme option alongside Dark and Light,
+  mirroring the Postman web UI: pure-white main canvas, warm-gray
+  sidebar chrome (`#F9F9F9`), Postman-blue accent (`#3A82E6`
+  sampled from the live Send button), and Inter-Light as the UI
+  font for matching reading density. Rides the same paper-path
+  syntax highlight (GitHub-ish palette) as the Light theme.
+  Contributed by @fauzannadhif in #19.
+
 ## [0.17.0] — 2026-04-20
 
 ### Added
