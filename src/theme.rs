@@ -402,11 +402,23 @@ pub fn apply_style(ctx: &egui::Context, theme: Theme) {
         (20.0, 13.5, 12.5, 13.0, 11.0)
     };
     style.text_styles = [
-        (TextStyle::Heading, FontId::new(heading, FontFamily::Proportional)),
+        (
+            TextStyle::Heading,
+            FontId::new(heading, FontFamily::Proportional),
+        ),
         (TextStyle::Body, FontId::new(body, FontFamily::Proportional)),
-        (TextStyle::Monospace, FontId::new(mono, FontFamily::Monospace)),
-        (TextStyle::Button, FontId::new(button, FontFamily::Proportional)),
-        (TextStyle::Small, FontId::new(small, FontFamily::Proportional)),
+        (
+            TextStyle::Monospace,
+            FontId::new(mono, FontFamily::Monospace),
+        ),
+        (
+            TextStyle::Button,
+            FontId::new(button, FontFamily::Proportional),
+        ),
+        (
+            TextStyle::Small,
+            FontId::new(small, FontFamily::Proportional),
+        ),
     ]
     .into();
 
