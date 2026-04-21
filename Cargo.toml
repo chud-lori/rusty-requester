@@ -1,6 +1,6 @@
 [package]
 name = "rusty-requester"
-version = "0.18.1"
+version = "0.18.2"
 edition = "2021"
 rust-version = "1.73"
 description = "A native, offline, lightweight Postman alternative built with Rust and egui — full HTTP client, Postman Collection v2.1 import, SSE streaming, OAuth 2.0, cookie jar, assertions, extractors, and a command palette."
