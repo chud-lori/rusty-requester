@@ -11,7 +11,7 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
-## Unreleased
+## [0.18.0] — 2026-04-21
 
 ### Added
 - **Postman theme.** Third theme option alongside Dark and Light,
