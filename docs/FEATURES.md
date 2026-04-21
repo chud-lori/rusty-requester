@@ -8,7 +8,7 @@ Full feature catalog for Rusty Requester. For a quick pitch see the
 
 - 🚀 **Truly native** — Rust + `egui`, no Electron, no Chromium
 - 💾 **Fully offline** — all data lives in one local JSON file, no cloud sync, no telemetry
-- 🎨 **Dark + light themes** — rust-orange / amber accents on either a deep Monokai-style dark canvas or a GitHub-ish near-white canvas (toggle in Settings). Syntax-highlighted response body adapts: Monokai on dark, dark-on-paper on light.
+- 🎨 **Dark / Light / Postman themes** — rust-orange / amber accents on either a deep Monokai-style dark canvas *(v0.1)* or a GitHub-ish near-white canvas *(v0.14)*; plus a **Postman** theme (pure-white canvas, warm-gray sidebar chrome, Postman-blue accent, Inter-Light UI font) *(v0.18)*. Toggle in Settings. Syntax-highlighted response body adapts: Monokai on dark, dark-on-paper on the paper themes.
 - 🍎 Builds for Apple Silicon, Intel Mac, Linux, and Windows
 - 🪟 **Native macOS title-bar integration** — traffic-light buttons float over the app content (no dark stub strip above the workspace).
 
@@ -19,13 +19,13 @@ Full feature catalog for Rusty Requester. For a quick pitch see the
 - 🔗 **Bidirectional URL ↔ Params sync** (Postman-style): type `?foo=bar` in the URL bar → params populate the table; edit the table → URL bar rebuilds. Auto-growing "ghost" row.
 - 🍪 Cookies list (merged into a `Cookie` header on send)
 - 🔐 Auth presets: **No Auth · Bearer Token · Basic Auth · OAuth 2.0** + **JWT decoder** (Bearer tokens auto-decode below the input — header & payload pretty JSON, scope/exp at a glance)
-- 🪪 **OAuth 2.0 Authorization Code + PKCE** — click **Get New Token** in the Auth tab; browser opens the provider's authorize URL, loopback listener catches the redirect, code is exchanged for a token via the provider's `token_url`. Access token auto-injected as `Authorization: Bearer <token>` on every send. Live status badge (valid / expired / refreshing soon). No client secret required for PKCE clients.
+- 🪪 **OAuth 2.0 Authorization Code + PKCE** *(v0.15)* — click **Get New Token** in the Auth tab; browser opens the provider's authorize URL, loopback listener catches the redirect, code is exchanged for a token via the provider's `token_url`. Access token auto-injected as `Authorization: Bearer <token>` on every send. Live status badge (valid / expired / refreshing soon). No client secret required for PKCE clients.
 - 📦 **Body modes**: Raw / `x-www-form-urlencoded` / `multipart/form-data` / **GraphQL** (query + variables, sent as `application/json`)
 - 📐 **Line-numbered request body** with subtle `Beautify` / `Minify` action links
 - 🌱 **Environment variables** — define key/value vars per environment, reference them anywhere with `{{varname}}`. Switch active env from the sidebar.
 - 📜 **Request history** — every send is logged (method, URL, status, time, response preview); browse the last 200 from the sidebar's History tab.
-- 🔗 **Post-response extractors (Tests tab)** — dot/bracket paths (`data.token`, `items[0].id`, `$.x`) or header names that pull a value from the response and write it into the active environment, so the next request can `{{token}}` it.
-- ✅ **Assertions (Tests tab)** — pass/fail rules against the response: status equals/`>`/`<`, header exists, body-path equals / contains / matches `^2..$`. Result-dot per row (green / red / amber); toast summarizes after each send.
+- 🔗 **Post-response extractors (Tests tab)** *(v0.4)* — dot/bracket paths (`data.token`, `items[0].id`, `$.x`) or header names that pull a value from the response and write it into the active environment, so the next request can `{{token}}` it.
+- ✅ **Assertions (Tests tab)** *(v0.4)* — pass/fail rules against the response: status equals/`>`/`<`, header exists, body-path equals / contains / matches `^2..$`. Result-dot per row (green / red / amber); toast summarizes after each send.
 
 ## Responses
 
@@ -33,10 +33,10 @@ Full feature catalog for Rusty Requester. For a quick pitch see the
 - 🛈 **Size hover tooltip** — breakdown of response headers/body and request headers/body bytes
 - 🛈 **Time hover tooltip** — gantt-style phase breakdown: Prepare · Waiting (TTFB) · Download
 - 🧩 **Body view modes**: **JSON** (syntax-highlighted code editor with line numbers; horizontal scroll for long minified lines so the gutter never overlaps), **Tree** (collapsible JSON tree with filter + right-click "Copy path"), **Preview** (HTML rendered as readable text for error pages / login challenges), **Events** (structured log for `text/event-stream` / SSE responses), **Diff** (unified +/− against the previous response), **Raw** (verbatim) — pills are inline with the section tabs and don't scroll away
-- 🧠 **Per-request response cache** — switching tabs preserves each request's last response (body, status, timings, headers, SSE events, assertion results). Session-only; closed tabs drop their cache.
-- 📡 **Server-Sent Events (SSE)** — native streaming support for LLM / event-stream APIs. Auto-detected by `Content-Type: text/event-stream`; events flow into a collapsible-per-row Events view with auto-scroll, per-event timestamps, and JSON-pretty-printed data. Cancel aborts the stream instantly.
-- 🔀 **Response diff** — send a request twice to compare. The **Diff** pill shows a unified `+/-` line-diff of the current response against the previous one, with `+A −B` summary.
-- 🛑 **Cancel button** — Send flips to Cancel while a request is in flight. Instantly aborts the tokio task + underlying hyper connection (no per-chunk polling).
+- 🧠 **Per-request response cache** *(v0.15.6)* — switching tabs preserves each request's last response (body, status, timings, headers, SSE events, assertion results). Session-only; closed tabs drop their cache.
+- 📡 **Server-Sent Events (SSE)** *(v0.10)* — native streaming support for LLM / event-stream APIs. Auto-detected by `Content-Type: text/event-stream`; events flow into a collapsible-per-row Events view with auto-scroll, per-event timestamps, and JSON-pretty-printed data. Cancel aborts the stream instantly.
+- 🔀 **Response diff** *(v0.11)* — send a request twice to compare. The **Diff** pill shows a unified `+/-` line-diff of the current response against the previous one, with `+A −B` summary.
+- 🛑 **Cancel button** *(v0.7)* — Send flips to Cancel while a request is in flight. Instantly aborts the tokio task + underlying hyper connection (no per-chunk polling).
 - 🖼 **Failed/cancelled state** — dedicated illustrated screen with status headline + error-detail pill instead of opaque text, for network failures, TLS issues, or user cancels.
 - 🔍 **Find in body** — toolbar search icon highlights all matches inline
 - 📋 **Copy response body** + 💾 **Save response to file** (Content-Type → file extension auto-suggested)
@@ -45,6 +45,8 @@ Full feature catalog for Rusty Requester. For a quick pitch see the
 - 🎨 Auto-pretty-printed JSON responses; click into the view to position caret, select, ⌘A / ⌘C
 
 ## Cookie jar (per-environment)
+
+*(v0.5)*
 
 - 🪪 **`Set-Cookie` auto-persisted** into the active environment with name/domain/path/expiry tracked
 - 🔄 **Auto-replayed** on the next request that matches host (suffix-match) + path (prefix-match) — same model browsers use
@@ -74,21 +76,22 @@ Full feature catalog for Rusty Requester. For a quick pitch see the
 ## Tabs
 
 - 📑 **Multi-tab workspace** — open many requests in parallel; tabs persist across quit/relaunch
-- ⚓ **Pinned tabs** — right-click → **Pin tab** keeps a tab around; ⌘W and "Close all" skip pinned tabs (accent-colored pin glyph in the tab strip)
-- 🧬 **Duplicate tab** — **⌘D** (or right-click → Duplicate tab) clones the current request as a new draft with `(copy)` appended to the name
-- 💾 **"Save changes?" confirmation** — closing a draft tab with unsaved content opens a modal (Don't save · Cancel · Save changes)
+- ⚓ **Pinned tabs** *(v0.9.1)* — right-click → **Pin tab** keeps a tab around; ⌘W and "Close all" skip pinned tabs (accent-colored pin glyph in the tab strip)
+- 🧬 **Duplicate tab** *(v0.9.1)* — **⌘D** (or right-click → Duplicate tab) clones the current request as a new draft with `(copy)` appended to the name
+- 💾 **"Save changes?" confirmation** *(v0.8)* — closing a draft tab with unsaved content opens a modal (Don't save · Cancel · Save changes)
 
 ## Workflow
 
-- 🎛 **Settings modal** — request timeout, max body size cap (50 MB default; truncates with banner), proxy URL, TLS verification toggle. All persisted to disk.
-- 🔌 **Reused HTTP client + tokio runtime** — no per-request connection-pool / runtime spinup; faster repeated sends.
-- ⌨️ **⌘P command palette** — fuzzy-find any request across every collection, ↑↓ navigate, Enter to open
-- ⌨️ **⇧⌘P actions palette** — fuzzy-find an app **action** (New request, Duplicate tab, Toggle snippet panel, Copy as cURL, Open environments, Clear history, …). Fully discoverable — open the palette and start typing.
+- 🎛 **Settings modal** *(v0.3)* — request timeout, max body size cap (50 MB default; truncates with banner), proxy URL, TLS verification toggle. All persisted to disk.
+- 🔌 **Reused HTTP client + tokio runtime** *(v0.3 / v0.5)* — no per-request connection-pool / runtime spinup; faster repeated sends.
+- ⌨️ **⌘P command palette** *(v0.5)* — fuzzy-find any request across every collection, ↑↓ navigate, Enter to open
+- ⌨️ **⇧⌘P actions palette** *(v0.11)* — fuzzy-find an app **action** (New request, Duplicate tab, Toggle snippet panel, Copy as cURL, Open environments, Clear history, …). Fully discoverable — open the palette and start typing.
 - ⌨️ **↑ / ↓ arrow nav** — step through every request across every collection when nothing's focused; wraps at both ends
 - ⌨️ Standard shortcuts: **⌘⏎** Send · **⌘N** New request · **⌘W** Close tab · **⌘D** Duplicate tab · **⌘K** Focus search · **⌘S** Save draft · **⌘P** Command palette · **⇧⌘P** Actions palette · **F2** Rename · **Esc** Dismiss modals
-- 🍎 **Native macOS NSMenu bar** (Rusty Requester · File · View · Request · Help) via `muda`; in-window menu on Linux
-- 🎨 **Phosphor icon font** — 1,200+ tintable icons rendered as font glyphs; crisp at every DPI, zero image assets to ship
+- 🍎 **Native macOS NSMenu bar** *(v0.3)* — (Rusty Requester · File · View · Request · Help) via `muda`; in-window menu on Linux
+- 🎨 **Phosphor icon font** *(v0.9)* — 1,200+ tintable icons rendered as font glyphs; crisp at every DPI, zero image assets to ship
 - ℹ **Help → About** opens a custom modal with creator credit + Contribute / Report-issue links
+- 🔔 **Update check + sidebar pill** *(v0.13 / v0.16.1)* — on-launch GitHub-latest-release check (one silent GET, off-switch in Settings); sidebar pill when a newer tag lands, with a copyable install-one-liner modal. Dismissible per-version so deferring doesn't re-pester.
 
 ---
 
@@ -224,7 +227,7 @@ because it animates its rotation openness as the folder expands.
 
 ## Roadmap
 
-**Shipped through v0.10:**
+**Shipped** (by category — see [`CHANGELOG.md`](../CHANGELOG.md) for the per-version log):
 
 Foundations
 - [x] Full HTTP methods, tabbed editor (Params / Headers / Cookies / Body / Auth / Tests)
@@ -276,14 +279,18 @@ UI
 - [x] **Light theme** (Settings → Theme) — flips egui's chrome; saturated accents stay constant across themes
 
 Platform
-- [x] macOS + Linux one-line installer (`install.sh`); auto-detects platform
-- [x] Universal macOS DMG (Apple Silicon + Intel) and Linux x86_64 tarball built by GitHub Actions
-- [x] **Native macOS NSMenu bar** (App / File / View / Request / Help) with ⌘N, ⌘W, ⌘P, ⌘⏎, ⇧⌘C accelerators
-- [x] Custom **About modal** with creator credit + Contribute / Report-issue links
+- [x] macOS + Linux one-line installer (`install.sh`); auto-detects platform *(v0.2.x)*
+- [x] Universal macOS DMG (Apple Silicon + Intel) and Linux x86_64 tarball built by GitHub Actions *(v0.2.x)*
+- [x] **Native macOS NSMenu bar** (App / File / View / Request / Help) with ⌘N, ⌘W, ⌘P, ⌘⏎, ⇧⌘C accelerators *(v0.3)*
+- [x] Custom **About modal** with creator credit + Contribute / Report-issue links *(v0.3)*
+- [x] **Native macOS title-bar integration** — traffic-light buttons float over app content *(v0.15.1)*
+- [x] **New app icon** — Phosphor hammer on a steel plate with rust-orange plinth *(v0.16)*
+- [x] **Launch update check + sidebar pill + dismissible per version** *(v0.13 / v0.16.1)*
+- [x] **Clean Linux uninstall** — `UNINSTALL=1` / `UNINSTALL=1 PURGE=1` modes *(v0.17)*
 
 **On the v1.0 pathway:**
 
-_Nothing — v0.15.0 ships OAuth 2.0 Auth Code + PKCE, which was the last v1.0 item._
+_Nothing open — OAuth 2.0 Auth Code + PKCE *(v0.15)* was the last v1.0 item._
 
 **Post-1.0:**
 

@@ -83,57 +83,22 @@ mid-flight, **Response diff** across sends, **⌘P request finder** +
 ## 🔐 Security
 
 An API client lives on a trust boundary — you type a URL, a stranger's
-server sends bytes back. We treat that boundary seriously. This is the
-threat model, stated plainly.
+server sends bytes back. The headline guarantees:
 
-### What a hostile server CAN'T do to you
+- **No auto-download / no code execution on response content** — save
+  goes through the OS dialog, HTML renders as markup (no DOM, no JS
+  engine), `<script>` tags display as text.
+- **No memory-corruption path** — TLS + HTTP via
+  `reqwest`/`hyper`/`rustls`, all safe Rust. No C-client buffer-overflow
+  class of CVE.
+- **No shell execution on `curl` paste** — flags are parsed as data,
+  never `exec`'d.
 
-- **No auto-download.** Response bytes never touch disk on their own.
-  Every "save response" goes through the OS save dialog (`rfd`) where
-  *you* pick the path and filename. There is no `Content-Disposition`
-  auto-save path — a server cannot write `~/.ssh/authorized_keys` or
-  drop a binary into your Startup folder.
-- **No code execution on response content.** JSON / HTML / XML / SSE
-  are parsed as data. The HTML preview renders as markup in `egui` —
-  no DOM, no JavaScript engine, no MIME sniffing. A response
-  containing `<script>` just shows the tag as text.
-- **No memory-corruption path.** HTTP and TLS are handled by
-  `reqwest` → `hyper` → `rustls` / `native-tls`. All safe Rust (or
-  OS-audited for native-tls on macOS). A malformed chunked-transfer
-  body, oversized header, or junk TLS record can't buffer-overflow
-  the client the way a C-based user agent could.
-- **No shell execution on curl import.** Pasting a `curl` command
-  parses its flags as data — we never `exec` the command. Worst case
-  is the same as typing the URL yourself.
-
-### What you ARE still responsible for
-
-- **SSRF from your own machine.** If you send a request to
-  `http://localhost:6379`, an internal IP, or `file://` (where
-  supported), we'll do it — same as `curl`. The app is a hardened
-  boundary on *inbound* bytes, not a policy engine on *outbound*
-  destinations. Don't blindly send requests from URLs you haven't
-  read.
-- **Saved-then-opened files.** If you explicitly save a response and
-  then open that file in a vulnerable downstream app (Preview, an
-  editor plugin, a media player), that's on the downstream app. We
-  don't auto-open, don't `chmod +x`, and don't set the
-  `com.apple.quarantine` bypass on anything we write.
-- **Local `data.json`.** Your tokens, env vars, and cookies live in a
-  plaintext JSON file under your home directory at `0600` perms. If
-  someone has shell access as your user, they can read it. See the
-  *Security note* under [Quickstart](#-quickstart).
-- **Supply chain on our deps.** Rust isn't magic. A compromised
-  upstream (`reqwest`, `tokio`, `serde`, `egui`) would ship in our
-  binary. We mitigate with pinned `Cargo.lock`, widely-used crates
-  only, and `cargo audit` before each release — but we can't
-  eliminate the risk.
-
-### Reporting vulnerabilities
-
-Found a security issue? Open a **private** security advisory via
-GitHub: **Security → Report a vulnerability** on the repo. Please
-don't file a public issue for exploitable bugs.
+You still own: SSRF from your own machine (`localhost`, internal IPs),
+files you explicitly save and then open in a vulnerable downstream app,
+and the plaintext `data.json` under your home directory (`0600` perms
+only). Full threat model + vulnerability reporting in
+[`SECURITY.md`](./SECURITY.md).
 
 ---
 
@@ -291,37 +256,12 @@ export, and UI conventions in [`docs/FEATURES.md`](docs/FEATURES.md).
 ## 🛡 Compatibility & stability
 
 Rusty Requester follows [Semantic Versioning](https://semver.org/).
-
-**Pre-1.0 (current).** Format additions are guarded with `#[serde(default)]`
-so old `data.json` files load cleanly into newer builds, but breaking
-changes (renames, type widening, removed fields) can still happen at any
-minor bump if necessary. Don't pin a specific feature shape across 0.x
-releases.
-
-**From 1.0 onward.** The following are stable across the entire `1.x`
-series — anything breaking them requires a major-version bump (`2.0`)
-with a documented migration path:
-
-- **`data.json` schema** — the on-disk format. New fields can be added;
-  existing fields keep their names, types, and serde tags.
-- **Install paths and bundle identity** — `/Applications/RustyRequester.app`,
-  bundle ID `com.rustyrequester.app`, fallback `~/Applications/`,
-  Linux binary at `~/.local/bin/rusty-requester` (distinct from
-  the user-data dir `~/.local/share/rusty-requester/` which holds
-  `data.json`).
-- **CLI surface** — `--version` / `-V` flag, environment variables read by
-  `install.sh` (`VERSION`, `SKIP_QUARANTINE_STRIP`, `RUSTY_REPO`,
-  `UNINSTALL`, `PURGE`).
-- **Import / export formats** — JSON / YAML round-trip, Postman
-  Collection v2.1 import.
-- **Public macOS menu shortcuts** — `⌘⏎` Send, `⌘N` New request,
-  `⌘W` Close tab, `⌘D` Duplicate tab, `⌘P` Command palette,
-  `⌘K` Sidebar search, `⌘S` Save draft, `⇧⌘C` toggle snippet panel.
-
-Anything *not* in this list (UI layout, internal module structure, exact
-binary size, theme colors, syntax-highlight palette, behind-the-scenes
-HTTP timing measurement, etc.) is implementation detail and can change
-in any release.
+Pre-1.0 (current): `data.json` reads forward cleanly via
+`#[serde(default)]` guards, but minor releases may still break
+field-level shapes. The 1.0 line locks down the on-disk schema, install
+paths, CLI flags, import / export formats, and public macOS shortcuts —
+full policy in
+[`docs/ARCHITECTURE.md#compatibility--stability`](./docs/ARCHITECTURE.md#compatibility--stability).
 
 See [`CHANGELOG.md`](./CHANGELOG.md) for what's shipped.
 
@@ -330,7 +270,8 @@ See [`CHANGELOG.md`](./CHANGELOG.md) for what's shipped.
 ## 📚 Docs
 
 - [`docs/FEATURES.md`](docs/FEATURES.md) — full feature list, usage walkthroughs, UI conventions, roadmap
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — dependencies, source layout, internal design, release flow
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — dependencies, source layout, design notes, release flow, semver policy
+- [`SECURITY.md`](SECURITY.md) — threat model + vulnerability reporting
 - [`CHANGELOG.md`](CHANGELOG.md) — version history
 
 ---
