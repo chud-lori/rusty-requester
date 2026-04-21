@@ -434,6 +434,9 @@ pub enum Theme {
     #[default]
     Dark,
     Light,
+    /// Light-based theme tuned to resemble Postman: white side/response
+    /// panels on a cool-gray canvas, subtle borders, Postman-orange accent.
+    Postman,
 }
 
 fn default_timeout_sec() -> u64 {
