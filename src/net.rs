@@ -415,10 +415,16 @@ pub async fn execute_request_async(
                     .as_millis() as u64;
                 let time = format!("{} ms", total_ms);
                 let response_body_bytes = body.len();
-                let formatted_body = match serde_json::from_str::<serde_json::Value>(&body) {
+                let mut formatted_body = match serde_json::from_str::<serde_json::Value>(&body) {
                     Ok(v) => serde_json::to_string_pretty(&v).unwrap_or(body),
                     Err(_) => body,
                 };
+                // Strip trailing whitespace so the JSON gutter doesn't
+                // render empty "ghost" line numbers for server-appended
+                // newlines. `to_string_pretty` is already clean; this
+                // only bites on the raw-body fall-through.
+                let trimmed_len = formatted_body.trim_end().len();
+                formatted_body.truncate(trimmed_len);
 
                 ResponseData {
                     body: formatted_body,
