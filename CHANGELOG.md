@@ -11,6 +11,20 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Fixed
+- **JSON response gutter no longer renders ghost line numbers below
+  the content.** When a server appended trailing newlines / blank
+  lines after the object (or returned NDJSON / debug padding that
+  failed to parse), `serde_json::from_str` rejected it and we fell
+  through to the raw body verbatim. The gutter counted lines via
+  `split('\n')`, so those trailing blanks became empty line numbers
+  below the closing `}` — a visible strip of "68, 69, 70…" under a
+  response that ended at line 67. Now trims trailing whitespace on
+  the body once at ingest so the gutter stops exactly on the last
+  content line.
+
 ## [0.18.2] — 2026-04-21
 
 ### Changed
