@@ -11,6 +11,18 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Security
+- **Bumped `rustls-webpki` from 0.103.12 to 0.103.13 for
+  [RUSTSEC-2026-0104](https://rustsec.org/advisories/RUSTSEC-2026-0104).**
+  Reachable panic in CRL parsing via the transitive dependency chain
+  `reqwest → hyper-rustls → tokio-rustls → rustls → rustls-webpki`.
+  Triggerable by a crafted server certificate revocation list during
+  TLS validation — i.e. any HTTPS request to a hostile or compromised
+  server. Caught by `cargo audit` in CI; lockfile-only bump, no API
+  surface change.
+
 ## [0.18.4] — 2026-04-30
 
 ### Added
@@ -32,16 +44,6 @@ upgrades read old files cleanly.
   collided visually. Toolbar now measures remaining width and bumps
   the chips + action icons to a second row when there isn't room
   inline.
-
-### Security
-- **Bumped `rustls-webpki` from 0.103.12 to 0.103.13 for
-  [RUSTSEC-2026-0104](https://rustsec.org/advisories/RUSTSEC-2026-0104).**
-  Reachable panic in CRL parsing via the transitive dependency chain
-  `reqwest → hyper-rustls → tokio-rustls → rustls → rustls-webpki`.
-  Triggerable by a crafted server certificate revocation list during
-  TLS validation — i.e. any HTTPS request to a hostile or compromised
-  server. Caught by `cargo audit` in CI; lockfile-only bump, no API
-  surface change.
 
 ## [0.18.3] — 2026-04-24
 
