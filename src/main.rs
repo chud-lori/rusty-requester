@@ -40,7 +40,7 @@ pub struct OAuth2TokenUpdate {
     pub expires_at: Option<i64>,
 }
 use snippet::SnippetLang;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::PathBuf;
 use uuid::Uuid;
@@ -253,6 +253,12 @@ struct ApiClient {
     /// view to call `request_focus()` on the search TextEdit so the
     /// user can start typing immediately. Cleared after consumption.
     body_search_focus_pending: bool,
+    /// Per-current-response set of collapsed JSON object/array opener
+    /// lines (1-based line numbers in `response_text`). Postman-style
+    /// folding: clicking the chevron next to a `{` or `[` adds its
+    /// line here; the JSON view skips the contents until the matching
+    /// closer. Cleared every time `response_text` changes.
+    folded_response_lines: HashSet<u32>,
 
     /// Long-lived HTTP client built from `state.settings`. Rebuilt on
     /// app startup and whenever the Settings modal saves. Reused across
@@ -415,6 +421,7 @@ impl Default for ApiClient {
             body_search_query: String::new(),
             body_search_visible: false,
             body_search_focus_pending: false,
+            folded_response_lines: HashSet::new(),
             http_client: net::build_client(&AppSettings::default()),
             http_runtime: net::build_runtime(),
             show_settings_modal: false,
@@ -660,6 +667,7 @@ impl ApiClient {
             }
             self.is_loading = true;
             self.response_text = "Loading...".to_string();
+            self.folded_response_lines.clear();
             self.response_status = "Sending request...".to_string();
             self.response_time = String::new();
             self.response_headers.clear();
@@ -697,6 +705,7 @@ impl ApiClient {
     /// (terminal) updates — so the UI sees the same flow regardless.
     fn apply_response_snapshot(&mut self, r: &ResponseData) {
         self.response_text = r.body.clone();
+        self.folded_response_lines.clear();
         self.response_status = r.status.clone();
         self.response_time = r.time.clone();
         self.response_headers = r.headers.clone();
@@ -719,6 +728,7 @@ impl ApiClient {
             self.is_loading = false;
             self.response_status = "Cancelled".to_string();
             self.response_text = "Request was cancelled by the user.".to_string();
+            self.folded_response_lines.clear();
             self.response_time = String::new();
             self.show_toast("Request cancelled");
         }
@@ -1146,6 +1156,7 @@ impl ApiClient {
         };
         if let Some(snap) = self.response_cache.get(id).cloned() {
             self.response_text = snap.text;
+            self.folded_response_lines.clear();
             self.response_status = snap.status;
             self.response_time = snap.time;
             self.response_headers = snap.headers;
@@ -1165,6 +1176,7 @@ impl ApiClient {
 
     fn clear_response_fields(&mut self) {
         self.response_text.clear();
+        self.folded_response_lines.clear();
         self.response_status.clear();
         self.response_time.clear();
         self.response_headers.clear();

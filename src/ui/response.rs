@@ -9,6 +9,7 @@ use crate::theme::*;
 use crate::widgets::*;
 use crate::ApiClient;
 use eframe::egui;
+use std::collections::HashMap;
 
 impl ApiClient {
     /// Render `[status pill] · [time ms] · [total bytes]` inside a
@@ -310,6 +311,7 @@ impl ApiClient {
         let mut copy_clicked = false;
         let mut toggle_search = false;
         let mut save_clicked = false;
+        let mut inline_room = true;
         let is_json_body = !self.response_text.is_empty()
             && serde_json::from_str::<serde_json::Value>(&self.response_text).is_ok();
         let body_active = matches!(self.response_tab, ResponseTab::Body);
@@ -391,10 +393,23 @@ impl ApiClient {
             }
 
             // Right side: action icons (Body tab only) + status chips.
-            // Rule: every right-hand row gets 16 px of padding so
-            // chips and icons don't sit flush against the panel
-            // border or the scroll bar.
+            // When the panel is narrow (snippet panel open + small
+            // window) the right-to-left block would overlap the tab
+            // labels, since `ui.horizontal` doesn't reserve space
+            // between left and right children. We measure remaining
+            // width and defer rendering to a second row when there
+            // isn't enough room — drawing nothing inside the inner
+            // block keeps it from claiming row height.
+            //
+            // Threshold ~360 px = rough sum of chips ("size · time ·
+            // status pill") + 3 icon buttons + paddings. Tuned by eye;
+            // err on the side of wrapping early so the tabs always
+            // read cleanly.
+            inline_room = ui.available_width() >= 360.0;
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if !inline_room {
+                    return;
+                }
                 ui.add_space(16.0);
                 if body_active {
                     if icon_btn(
@@ -446,6 +461,63 @@ impl ApiClient {
                 self.render_response_status_chips(ui);
             });
         });
+        // Overflow row — only when the inline block didn't fit.
+        // Renders the same right-side content (icons + status chips)
+        // pushed to the panel's right edge so the visual rhythm is
+        // preserved.
+        if !inline_room {
+            ui.horizontal(|ui| {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.add_space(16.0);
+                    if body_active {
+                        if icon_btn(
+                            ui,
+                            egui_phosphor::regular::DOWNLOAD_SIMPLE,
+                            "Save response to file",
+                        )
+                        .clicked()
+                        {
+                            save_clicked = true;
+                        }
+                        ui.add_space(2.0);
+                        if icon_btn(ui, egui_phosphor::regular::COPY, "Copy response body")
+                            .clicked()
+                        {
+                            copy_clicked = true;
+                        }
+                        if let Some(t0) = self.response_copied_at {
+                            let now = ui.ctx().input(|i| i.time);
+                            let age = now - t0;
+                            if age < 1.5 {
+                                ui.label(
+                                    egui::RichText::new(format!(
+                                        "{} Copied",
+                                        egui_phosphor::regular::CHECK
+                                    ))
+                                    .color(C_GREEN)
+                                    .size(12.0),
+                                );
+                                ui.ctx().request_repaint();
+                            } else {
+                                self.response_copied_at = None;
+                            }
+                        }
+                        ui.add_space(2.0);
+                        if icon_btn(
+                            ui,
+                            egui_phosphor::regular::MAGNIFYING_GLASS,
+                            "Search in body",
+                        )
+                        .clicked()
+                        {
+                            toggle_search = true;
+                        }
+                        ui.add_space(12.0);
+                    }
+                    self.render_response_status_chips(ui);
+                });
+            });
+        }
 
         if toggle_search {
             self.body_search_visible = !self.body_search_visible;
@@ -641,37 +713,97 @@ impl ApiClient {
 
                             match effective_view {
                                 BodyView::Json => {
-                                    // Two-column layout — separate
-                                    // gutter column on the left, content
-                                    // on the right. Matches the snippet
-                                    // panel and Postman's response view:
-                                    // vertical scroll only, content
-                                    // wraps inside its own column so
-                                    // wrapped rows never collide with
-                                    // the line numbers. Earlier nested
-                                    // horizontal ScrollArea allowed
-                                    // diagonal drag-scrolling that felt
-                                    // broken.
-                                    let gutter_w = 44.0;
-                                    let line_count = self.response_text.split('\n').count().max(1);
+                                    // Postman-style folding viewer.
+                                    // Gutter has two sub-columns: a
+                                    // chevron (▼ open / ▶ closed) for
+                                    // every line that opens a multi-
+                                    // line `{` or `[` block, and the
+                                    // 1-based line number. Clicking the
+                                    // chevron toggles `folded_response_lines`.
+                                    // The displayed text is rebuilt
+                                    // every frame from the original
+                                    // body + the fold set: hidden lines
+                                    // are skipped, and the opener line
+                                    // gets `…}` or `…]` appended so
+                                    // collapsed blocks read as a single
+                                    // logical entry. TextEdit still
+                                    // owns selection / copy / search
+                                    // over the visible text.
+                                    let gutter_w = 60.0;
+                                    let chevron_w = 16.0;
+                                    let row_h = 17.0;
+                                    let pairs = compute_json_fold_pairs(&self.response_text);
+                                    let display = build_folded_display(
+                                        &self.response_text,
+                                        &pairs,
+                                        &self.folded_response_lines,
+                                    );
+                                    let mut toggle_fold: Option<u32> = None;
                                     ui.horizontal_top(|ui| {
                                         ui.vertical(|ui| {
                                             ui.spacing_mut().item_spacing.y = 0.0;
-                                            for i in 1..=line_count {
-                                                ui.add_sized(
-                                                    [gutter_w, 17.0],
-                                                    egui::Label::new(
-                                                        egui::RichText::new(format!("{:>3}", i))
+                                            for d in &display {
+                                                ui.horizontal(|ui| {
+                                                    ui.spacing_mut().item_spacing.x = 0.0;
+                                                    let chev_color =
+                                                        egui::Color32::from_rgb(120, 125, 135);
+                                                    match d.fold {
+                                                        FoldState::Open | FoldState::Closed => {
+                                                            let glyph = if matches!(
+                                                                d.fold,
+                                                                FoldState::Open
+                                                            ) {
+                                                                "▼"
+                                                            } else {
+                                                                "▶"
+                                                            };
+                                                            let resp = ui.add_sized(
+                                                                [chevron_w, row_h],
+                                                                egui::Button::new(
+                                                                    egui::RichText::new(glyph)
+                                                                        .color(chev_color)
+                                                                        .font(
+                                                                            egui::FontId::monospace(
+                                                                                10.0,
+                                                                            ),
+                                                                        ),
+                                                                )
+                                                                .frame(false),
+                                                            );
+                                                            if resp.clicked() {
+                                                                toggle_fold = Some(d.line_no);
+                                                            }
+                                                        }
+                                                        FoldState::None => {
+                                                            ui.add_sized(
+                                                                [chevron_w, row_h],
+                                                                egui::Label::new(""),
+                                                            );
+                                                        }
+                                                    }
+                                                    ui.add_sized(
+                                                        [gutter_w - chevron_w, row_h],
+                                                        egui::Label::new(
+                                                            egui::RichText::new(format!(
+                                                                "{:>3}",
+                                                                d.line_no
+                                                            ))
                                                             .color(egui::Color32::from_rgb(
                                                                 100, 105, 115,
                                                             ))
                                                             .font(egui::FontId::monospace(12.5)),
-                                                    ),
-                                                );
+                                                        ),
+                                                    );
+                                                });
                                             }
                                         });
                                         ui.add_space(6.0);
-                                        let mut buf: &str = &self.response_text;
+                                        let displayed_text: String = display
+                                            .iter()
+                                            .map(|d| d.content.as_str())
+                                            .collect::<Vec<_>>()
+                                            .join("\n");
+                                        let mut buf: &str = &displayed_text;
                                         let search = self.body_search_query.clone();
                                         let mut layouter =
                                             move |ui: &egui::Ui, s: &str, wrap_width: f32| {
@@ -690,6 +822,11 @@ impl ApiClient {
                                                 .layouter(&mut layouter),
                                         );
                                     });
+                                    if let Some(line_no) = toggle_fold {
+                                        if !self.folded_response_lines.remove(&line_no) {
+                                            self.folded_response_lines.insert(line_no);
+                                        }
+                                    }
                                 }
                                 BodyView::Tree => {
                                     if let Some(v) = parsed {
@@ -782,6 +919,135 @@ impl ApiClient {
             });
         let _ = remaining_height;
     }
+}
+
+/// Per-displayed-row state for the JSON folding viewer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FoldState {
+    /// Line is not the opener of any multi-line block.
+    None,
+    /// Line opens a multi-line block and is currently expanded.
+    Open,
+    /// Line opens a multi-line block and is currently collapsed.
+    Closed,
+}
+
+struct DisplayLine {
+    /// Original 1-based line number in `response_text`. Used for
+    /// gutter rendering and as the stable key in `folded_response_lines`.
+    line_no: u32,
+    /// What the layouter should render for this row. For folded
+    /// openers, this is `<opener line> …}` (or `…]`); for hidden
+    /// inner lines we don't push a `DisplayLine` at all.
+    content: String,
+    fold: FoldState,
+}
+
+/// Walk the JSON body once and pair every `{`/`[` opener with its
+/// matching `}`/`]` closer. Returns `opener_line → closer_line` (both
+/// 1-based) only for pairs that span more than one line — single-line
+/// `{}` or `[]` aren't worth a fold chevron.
+///
+/// String-aware (skips braces inside `"…"`); does not validate JSON,
+/// just trusts that the body is well-formed enough for fold ranges to
+/// be meaningful. Pretty-printed serde output always is.
+fn compute_json_fold_pairs(text: &str) -> HashMap<u32, u32> {
+    let mut pairs: HashMap<u32, u32> = HashMap::new();
+    let mut stack: Vec<u32> = Vec::new();
+    let mut line: u32 = 1;
+    let mut in_string = false;
+    let bytes = text.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        let c = bytes[i];
+        if in_string {
+            match c {
+                b'\\' => {
+                    // Skip the escaped char so e.g. `\"` doesn't end
+                    // the string. Newline mid-string isn't legal in
+                    // JSON, but if the body has one anyway we still
+                    // want to track it.
+                    if i + 1 < bytes.len() && bytes[i + 1] == b'\n' {
+                        line += 1;
+                    }
+                    i += 2;
+                    continue;
+                }
+                b'"' => in_string = false,
+                b'\n' => line += 1,
+                _ => {}
+            }
+        } else {
+            match c {
+                b'\n' => line += 1,
+                b'"' => in_string = true,
+                b'{' | b'[' => stack.push(line),
+                b'}' | b']' => {
+                    if let Some(open_line) = stack.pop() {
+                        if line > open_line {
+                            pairs.insert(open_line, line);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        i += 1;
+    }
+    pairs
+}
+
+/// Apply the user's fold set to the original text and emit the list
+/// of rows the gutter + layouter should render. Folded openers get a
+/// `…}` / `…]` placeholder appended so the row visually summarises
+/// the hidden block (same idea as Postman / VSCode); the inner lines
+/// are simply omitted.
+fn build_folded_display(
+    text: &str,
+    pairs: &HashMap<u32, u32>,
+    folded: &std::collections::HashSet<u32>,
+) -> Vec<DisplayLine> {
+    let lines: Vec<&str> = text.split('\n').collect();
+    let mut out: Vec<DisplayLine> = Vec::with_capacity(lines.len());
+    let mut skip_until: Option<u32> = None;
+    for (idx, line) in lines.iter().enumerate() {
+        let line_no = (idx + 1) as u32;
+        if let Some(end) = skip_until {
+            if line_no <= end {
+                continue;
+            }
+            skip_until = None;
+        }
+        let is_opener = pairs.contains_key(&line_no);
+        if is_opener && folded.contains(&line_no) {
+            let closer = pairs[&line_no];
+            let trimmed = line.trim_end();
+            let suffix = if trimmed.ends_with('{') {
+                " …}"
+            } else if trimmed.ends_with('[') {
+                " …]"
+            } else {
+                " …"
+            };
+            out.push(DisplayLine {
+                line_no,
+                content: format!("{}{}", line, suffix),
+                fold: FoldState::Closed,
+            });
+            skip_until = Some(closer);
+        } else {
+            out.push(DisplayLine {
+                line_no,
+                content: line.to_string(),
+                fold: if is_opener {
+                    FoldState::Open
+                } else {
+                    FoldState::None
+                },
+            });
+        }
+    }
+    out
 }
 
 /// Render one SSE event as a collapsible row: a chip header with

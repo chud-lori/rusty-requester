@@ -11,6 +11,28 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Added
+- **Postman-style JSON folding in the response Body view.** Every
+  multi-line `{` or `[` now has a chevron in the gutter — click it to
+  collapse the block into a `{ …}` / `[ …]` placeholder on the opener
+  line, click again to expand. Makes it easy to skim deeply nested
+  GeoJSON / OpenAPI / GraphQL responses without scrolling through
+  thousands of `coordinates` rows. Selection, copy, and ⌘F search
+  still work over the visible (un-folded) text. Fold state is
+  per-response and resets on every Send.
+
+### Fixed
+- **Response status pill / time / size no longer overlap the Body /
+  Headers / view-mode tabs when the panel is narrow.** Opening the
+  code-snippet panel shrinks the response panel; the right-aligned
+  chips were drawn on the same row as the tabs and `ui.horizontal`
+  doesn't reserve space between left and right children, so they
+  collided visually. Toolbar now measures remaining width and bumps
+  the chips + action icons to a second row when there isn't room
+  inline.
+
 ## [0.18.3] — 2026-04-24
 
 ### Fixed
