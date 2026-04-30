@@ -11,7 +11,7 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
-## Unreleased
+## [0.18.5] — 2026-04-30
 
 ### Security
 - **Bumped `rustls-webpki` from 0.103.12 to 0.103.13 for
