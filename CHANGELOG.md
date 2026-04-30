@@ -33,6 +33,16 @@ upgrades read old files cleanly.
   the chips + action icons to a second row when there isn't room
   inline.
 
+### Security
+- **Bumped `rustls-webpki` from 0.103.12 to 0.103.13 for
+  [RUSTSEC-2026-0104](https://rustsec.org/advisories/RUSTSEC-2026-0104).**
+  Reachable panic in CRL parsing via the transitive dependency chain
+  `reqwest → hyper-rustls → tokio-rustls → rustls → rustls-webpki`.
+  Triggerable by a crafted server certificate revocation list during
+  TLS validation — i.e. any HTTPS request to a hostile or compromised
+  server. Caught by `cargo audit` in CI; lockfile-only bump, no API
+  surface change.
+
 ## [0.18.3] — 2026-04-24
 
 ### Fixed
