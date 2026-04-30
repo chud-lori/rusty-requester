@@ -72,8 +72,9 @@ a good product. The differentiator is runtime: it still ships Chromium.
 ### Highlights
 
 Tabbed request editor, per-environment variables + cookie jar,
-Postman Collection v2.1 import, syntax-highlighted JSON / Tree / HTML /
-SSE views, **Server-Sent Events streaming** for LLM APIs, **Cancel**
+Postman Collection v2.1 import, syntax-highlighted JSON (with
+Postman-style fold chevrons on every `{` / `[`) / Tree / HTML / SSE
+views, **Server-Sent Events streaming** for LLM APIs, **Cancel**
 mid-flight, **Response diff** across sends, **⌘P request finder** +
 **⇧⌘P actions palette**, and a native macOS menu bar. Full catalog in
 [`docs/FEATURES.md`](docs/FEATURES.md).

@@ -1211,3 +1211,83 @@ fn render_error_pill(ui: &mut egui::Ui, tint: egui::Color32, prefix: &str, detai
 
 // Hand-drawn paint_unplugged_plug and paint_warning_icon removed —
 // replaced by Phosphor icon font glyphs (WIFI_SLASH, PROHIBIT, WARNING).
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pretty(v: serde_json::Value) -> String {
+        serde_json::to_string_pretty(&v).unwrap()
+    }
+
+    #[test]
+    fn fold_pairs_simple_object() {
+        // Pretty-printed `{ "a": 1 }` is three lines:
+        //   1: {
+        //   2:   "a": 1
+        //   3: }
+        // The opener is line 1, closer is line 3.
+        let text = pretty(serde_json::json!({ "a": 1 }));
+        let pairs = compute_json_fold_pairs(&text);
+        assert_eq!(pairs.get(&1), Some(&3));
+        assert_eq!(pairs.len(), 1);
+    }
+
+    #[test]
+    fn fold_pairs_nested_object_and_array() {
+        let text = pretty(serde_json::json!({
+            "outer": {
+                "inner": [1, 2, 3]
+            }
+        }));
+        let pairs = compute_json_fold_pairs(&text);
+        // Three openers — outer object, inner object, inner array —
+        // each must point at its own closer line. We don't pin exact
+        // line numbers because pretty-print formatting could shift
+        // by one across serde versions; we just check that every
+        // opener has a strictly-greater closer and the count is right.
+        assert_eq!(pairs.len(), 3);
+        for (open, close) in &pairs {
+            assert!(close > open, "closer {} must come after opener {}", close, open);
+        }
+    }
+
+    #[test]
+    fn fold_pairs_single_line_blocks_excluded() {
+        // Single-line `{}` and `[]` have nothing to fold — the closer
+        // sits on the same line as the opener, so we don't record
+        // the pair.
+        let pairs = compute_json_fold_pairs("{}");
+        assert!(pairs.is_empty());
+
+        let pairs = compute_json_fold_pairs("{ \"empty\": [] }");
+        assert!(pairs.is_empty());
+    }
+
+    #[test]
+    fn fold_pairs_braces_inside_strings_ignored() {
+        // The `{` and `]` inside the string value must NOT be parsed
+        // as structure. Without string-awareness we'd mis-match the
+        // brace stack and produce wrong pairs.
+        let text = "{\n  \"note\": \"contains { and ] chars\"\n}";
+        let pairs = compute_json_fold_pairs(text);
+        assert_eq!(pairs.get(&1), Some(&3));
+        assert_eq!(pairs.len(), 1);
+    }
+
+    #[test]
+    fn fold_pairs_escaped_quote_does_not_close_string() {
+        // `\"` inside a string must not terminate it — otherwise we'd
+        // start treating subsequent `{` as structure mid-string.
+        let text = "{\n  \"q\": \"he said \\\"hi\\\" then {\"\n}";
+        let pairs = compute_json_fold_pairs(text);
+        assert_eq!(pairs.get(&1), Some(&3));
+        assert_eq!(pairs.len(), 1);
+    }
+
+    #[test]
+    fn fold_pairs_empty_text() {
+        let pairs = compute_json_fold_pairs("");
+        assert!(pairs.is_empty());
+    }
+}
