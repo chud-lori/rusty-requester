@@ -1248,7 +1248,12 @@ mod tests {
         // opener has a strictly-greater closer and the count is right.
         assert_eq!(pairs.len(), 3);
         for (open, close) in &pairs {
-            assert!(close > open, "closer {} must come after opener {}", close, open);
+            assert!(
+                close > open,
+                "closer {} must come after opener {}",
+                close,
+                open
+            );
         }
     }
 

@@ -11,7 +11,7 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
-## Unreleased
+## [0.18.6] — 2026-05-13
 
 ### Fixed
 - **Tabs bar now scrolls with the mouse wheel.** egui's horizontal-only

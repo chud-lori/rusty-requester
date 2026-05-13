@@ -197,11 +197,8 @@ impl ApiClient {
                             // it as horizontal scroll.
                             if ui.rect_contains_pointer(ui.max_rect()) {
                                 ui.ctx().input_mut(|i| {
-                                    if i.raw_scroll_delta.x == 0.0
-                                        && i.raw_scroll_delta.y != 0.0
-                                    {
-                                        i.raw_scroll_delta =
-                                            egui::vec2(i.raw_scroll_delta.y, 0.0);
+                                    if i.raw_scroll_delta.x == 0.0 && i.raw_scroll_delta.y != 0.0 {
+                                        i.raw_scroll_delta = egui::vec2(i.raw_scroll_delta.y, 0.0);
                                         i.smooth_scroll_delta =
                                             egui::vec2(i.smooth_scroll_delta.y, 0.0);
                                     }
