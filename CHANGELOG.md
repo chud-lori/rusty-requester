@@ -11,6 +11,21 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Fixed
+- **Tabs bar now scrolls with the mouse wheel.** egui's horizontal-only
+  ScrollArea only reads the x-axis wheel delta, so a regular mouse
+  (which produces y-only delta) couldn't scroll the tab strip when
+  many tabs were open — only click-and-drag on the bar worked. Now
+  hovering the strip remaps vertical wheel input to horizontal scroll
+  in place, matching browser tab-bar behavior.
+- **`⌘S` on a saved request now gives visible feedback.** Saved
+  requests are auto-persisted on every edit, so `⌘S` previously
+  triggered no work *and* no toast, reading as a broken shortcut.
+  It now flashes a `Saved` toast so the keypress has a clear
+  acknowledgement. Drafts still open the Save-to-folder modal.
+
 ## [0.18.5] — 2026-04-30
 
 ### Security
