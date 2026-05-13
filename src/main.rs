@@ -169,6 +169,11 @@ struct ApiClient {
     /// doesn't fire reliably in this setup because the first click mutates
     /// state that re-drives the sidebar layout.
     last_request_click: Option<(String, f64)>,
+    /// One-shot flag: when a user clicks a tab, we want the sidebar
+    /// tree to expand all parent folders and scroll the matching row
+    /// into view. Stores `(folder_path, request_id)` of the row to
+    /// reveal; cleared by the sidebar once it's done scrolling.
+    reveal_in_sidebar_pending: Option<(Vec<String>, String)>,
 
     /// Pending file-dialog actions — executed at the top of the next
     /// `update()` frame rather than immediately inside the menu closure,
@@ -397,6 +402,7 @@ impl Default for ApiClient {
             rename_request_text: String::new(),
             request_rename_focus_pending: false,
             last_request_click: None,
+            reveal_in_sidebar_pending: None,
             pending_import: false,
             pending_export_json: false,
             pending_export_yaml: false,

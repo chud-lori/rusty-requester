@@ -613,6 +613,16 @@ impl ApiClient {
         if searching {
             header = header.open(Some(true));
         }
+        // Reveal-from-tab: if a tab click queued a sidebar reveal and
+        // this folder lies on the path to that request, force the
+        // header open so the row becomes visible. `path` is the chain
+        // of folder ids from root to here; the request lives under
+        // `reveal.0` (its folder path), so `path` must be a prefix.
+        if let Some((target_path, _)) = &self.reveal_in_sidebar_pending {
+            if path.len() <= target_path.len() && target_path.starts_with(path.as_slice()) {
+                header = header.open(Some(true));
+            }
+        }
         // Buttons-as-context: use right-click on the folder header to
         // add a request, add a subfolder, rename, duplicate, delete, etc.
         // Track what was chosen so we can apply it after the header closure.
@@ -645,6 +655,22 @@ impl ApiClient {
                     egui::Sense::click_and_drag(),
                 );
                 let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+
+                // Reveal-from-tab: if a tab click queued a reveal and
+                // this is the target row, scroll it into view and
+                // clear the flag so subsequent frames stop scrolling.
+                // Ancestor folders are already force-opened above, so
+                // by the time we render this row the row is in the
+                // layout tree.
+                let is_reveal_target = self
+                    .reveal_in_sidebar_pending
+                    .as_ref()
+                    .map(|(p, id)| p == &path && id == &req.id)
+                    .unwrap_or(false);
+                if is_reveal_target {
+                    resp.scroll_to_me(Some(egui::Align::Center));
+                    self.reveal_in_sidebar_pending = None;
+                }
 
                 // Mark this row as the drag source the moment a drag
                 // starts. `dnd_set_drag_payload` carries the row's

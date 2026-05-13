@@ -11,7 +11,22 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
-## [0.18.6] — 2026-05-13
+## Unreleased
+
+### Added
+- **Drag-and-drop tab reorder.** Click and drag any request tab to a
+  new position in the strip; a vertical accent indicator marks where
+  it will land. Mirrors browser / Postman tab-shuffle behavior.
+  Pinned state and per-tab response cache survive the reorder.
+- **Double-click a tab to rename the request.** Pops an inline TextEdit
+  in place of the tab name — same rename flow as F2 and the sidebar's
+  row-level rename. Enter commits, Esc cancels. Right-click → Rename
+  in the tab context menu does the same thing for trackpad users.
+- **Reveal-active in the sidebar tree.** Clicking a tab now expands all
+  ancestor folders in the left sidebar and scrolls the matching
+  request row into view. Tabs no longer feel disconnected from the
+  collection tree when you've been jumping around — you always know
+  where the active request lives.
 
 ### Fixed
 - **Tabs bar now scrolls with the mouse wheel.** egui's horizontal-only

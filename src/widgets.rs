@@ -377,6 +377,22 @@ pub enum TabAction {
     SaveDraft,
     Duplicate,
     TogglePin,
+    /// User double-clicked the tab — caller starts inline rename.
+    StartRename,
+    /// A tab was dragged from `from` and dropped onto this tab.
+    /// Caller relocates `open_tabs[from]` to land at this tab's index.
+    Reorder {
+        from: usize,
+    },
+}
+
+/// Drag payload for tab-strip reordering. Kept separate from the
+/// sidebar's `DragPayload` so dropping a tab can't accidentally fire
+/// a sidebar reorder (and vice versa) — egui's `has_payload_of_type`
+/// matches by type id, so distinct types stay isolated.
+#[derive(Clone, Debug)]
+pub struct TabDragPayload {
+    pub from_index: usize,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -389,14 +405,60 @@ pub fn render_single_tab(
     is_active: bool,
     is_draft: bool,
     is_pinned: bool,
-) -> TabAction {
+    is_renaming: bool,
+) -> (TabAction, egui::Rect) {
     let tab_height = 32.0;
     let tab_width = 180.0;
-    let (rect, mut resp) =
-        ui.allocate_exact_size(egui::vec2(tab_width, tab_height), egui::Sense::click());
+    let (rect, mut resp) = ui.allocate_exact_size(
+        egui::vec2(tab_width, tab_height),
+        egui::Sense::click_and_drag(),
+    );
     resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
 
     let mut action = TabAction::None;
+
+    // Drag-reorder: announce ourselves as the source the moment the
+    // user starts dragging this tab. Payload carries the from-index;
+    // the drop target (any other tab hovered on release) reads it via
+    // `dnd_release_payload`. Mirrors the sidebar's in-folder reorder
+    // pattern (DragPayload there → TabDragPayload here, kept separate
+    // so the two drop zones don't cross-fire).
+    if resp.drag_started() {
+        egui::DragAndDrop::set_payload::<TabDragPayload>(
+            ui.ctx(),
+            TabDragPayload { from_index: idx },
+        );
+    }
+    let dragging_some_tab = egui::DragAndDrop::has_payload_of_type::<TabDragPayload>(ui.ctx());
+    if dragging_some_tab && resp.dragged() {
+        // Outline the tab being dragged with a faint accent border —
+        // same affordance the sidebar rows use during reorder.
+        ui.painter().rect_stroke(
+            rect,
+            egui::Rounding::same(6.0),
+            egui::Stroke::new(1.5, accent()),
+        );
+    }
+    if resp.hovered() && dragging_some_tab && ui.ctx().input(|i| i.pointer.any_down()) {
+        // Drop indicator — vertical accent bar on the left edge of
+        // the tab the user is about to drop onto. Vertical (not the
+        // sidebar's horizontal line) because the tab strip is laid
+        // out horizontally.
+        ui.painter().line_segment(
+            [
+                egui::pos2(rect.left() + 1.0, rect.top() + 4.0),
+                egui::pos2(rect.left() + 1.0, rect.bottom() - 4.0),
+            ],
+            egui::Stroke::new(2.0, accent()),
+        );
+    }
+    if let Some(payload) = resp.dnd_release_payload::<TabDragPayload>() {
+        if payload.from_index != idx {
+            action = TabAction::Reorder {
+                from: payload.from_index,
+            };
+        }
+    }
 
     if ui.is_rect_visible(rect) {
         // Tab chrome — Postman-style underline.
@@ -486,14 +548,19 @@ pub fn render_single_tab(
         let has_indicator = is_draft;
         let right_reserve: f32 = if has_indicator { 40.0 } else { 28.0 };
         let max_w = (rect.right() - right_reserve) - name_x;
-        let display = elide(name, max_w.max(0.0), &name_font, ui);
-        ui.painter().text(
-            egui::pos2(name_x, mid_y),
-            egui::Align2::LEFT_CENTER,
-            display,
-            name_font,
-            name_color,
-        );
+        // While renaming, the caller paints an overlay TextEdit at
+        // the name slot, so suppress the static name here to avoid
+        // double-rendering / ghosting.
+        if !is_renaming {
+            let display = elide(name, max_w.max(0.0), &name_font, ui);
+            ui.painter().text(
+                egui::pos2(name_x, mid_y),
+                egui::Align2::LEFT_CENTER,
+                display,
+                name_font,
+                name_color,
+            );
+        }
 
         // Draft indicator — saved requests auto-persist, so no dot there.
         if has_indicator {
@@ -533,6 +600,12 @@ pub fn render_single_tab(
 
     if close_resp.clicked() {
         action = TabAction::Close;
+    } else if resp.double_clicked() {
+        // Postman / browser convention: double-click the tab to
+        // rename the underlying request inline. Single click still
+        // activates; the close button + drag-source live on the same
+        // Response, so we check double-click first.
+        action = TabAction::StartRename;
     } else if resp.clicked() {
         let click_pos = ui.input(|i| i.pointer.interact_pos()).unwrap_or_default();
         if !close_rect.contains(click_pos) {
@@ -605,9 +678,13 @@ pub fn render_single_tab(
             action = TabAction::CloseAll;
             ui.close_menu();
         }
+        if ui.button("Rename").clicked() {
+            action = TabAction::StartRename;
+            ui.close_menu();
+        }
     });
 
-    action
+    (action, rect)
 }
 
 /// Paints a collapsing-header chevron (▶ / ▼) using primitive shapes so it

@@ -172,6 +172,8 @@ impl ApiClient {
                 let mut save_draft: Option<usize> = None;
                 let mut duplicate: Option<usize> = None;
                 let mut toggle_pin: Option<usize> = None;
+                let mut start_rename: Option<usize> = None;
+                let mut reorder: Option<(usize, usize)> = None;
 
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 4.0;
@@ -228,8 +230,10 @@ impl ApiClient {
                                             ));
                                             let is_active = self.selected_request_id.as_deref()
                                                 == Some(tab.request_id.as_str());
+                                            let is_renaming = self.renaming_request_id.as_deref()
+                                                == Some(tab.request_id.as_str());
 
-                                            let action = render_single_tab(
+                                            let (action, tab_rect) = render_single_tab(
                                                 ui,
                                                 i,
                                                 &method,
@@ -238,7 +242,79 @@ impl ApiClient {
                                                 is_active,
                                                 tab.is_draft(),
                                                 tab.pinned,
+                                                is_renaming,
                                             );
+
+                                            // Inline rename TextEdit overlay — replaces
+                                            // the tab name slot when this tab is the one
+                                            // currently being renamed. Same UX as the
+                                            // sidebar's row-level rename (Enter commits,
+                                            // Esc cancels, focus-loss commits).
+                                            if is_renaming {
+                                                let name_left = tab_rect.left()
+                                                    + if tab.pinned { 14.0 + 12.0 } else { 12.0 }
+                                                    + 42.0;
+                                                let right_reserve =
+                                                    if tab.is_draft() { 40.0 } else { 28.0 };
+                                                let edit_rect = egui::Rect::from_min_max(
+                                                    egui::pos2(
+                                                        name_left - 2.0,
+                                                        tab_rect.top() + 4.0,
+                                                    ),
+                                                    egui::pos2(
+                                                        tab_rect.right() - right_reserve,
+                                                        tab_rect.bottom() - 4.0,
+                                                    ),
+                                                );
+                                                ui.painter().rect_filled(
+                                                    edit_rect,
+                                                    egui::Rounding::same(4.0),
+                                                    panel_dark(),
+                                                );
+                                                ui.painter().rect_stroke(
+                                                    edit_rect,
+                                                    egui::Rounding::same(4.0),
+                                                    egui::Stroke::new(1.5, accent()),
+                                                );
+                                                let inner = edit_rect.shrink2(egui::vec2(6.0, 2.0));
+                                                let edit_resp = ui.put(
+                                                    inner,
+                                                    egui::TextEdit::singleline(
+                                                        &mut self.rename_request_text,
+                                                    )
+                                                    .desired_width(inner.width())
+                                                    .frame(false)
+                                                    .text_color(text())
+                                                    .font(egui::FontId::new(
+                                                        12.0,
+                                                        egui::FontFamily::Proportional,
+                                                    )),
+                                                );
+                                                if self.request_rename_focus_pending {
+                                                    self.request_rename_focus_pending = false;
+                                                    edit_resp.request_focus();
+                                                }
+                                                let (enter, escape) = ui.input(|i| {
+                                                    (
+                                                        i.key_pressed(egui::Key::Enter),
+                                                        i.key_pressed(egui::Key::Escape),
+                                                    )
+                                                });
+                                                if edit_resp.lost_focus() && enter {
+                                                    let id = tab.request_id.clone();
+                                                    let new_name =
+                                                        self.rename_request_text.trim().to_string();
+                                                    if !new_name.is_empty() {
+                                                        self.rename_request(&id, new_name);
+                                                    }
+                                                    self.renaming_request_id = None;
+                                                } else if escape
+                                                    || (edit_resp.lost_focus() && !enter)
+                                                {
+                                                    self.renaming_request_id = None;
+                                                }
+                                            }
+
                                             match action {
                                                 TabAction::Activate => activate = Some(i),
                                                 TabAction::Close => close = Some(i),
@@ -247,6 +323,10 @@ impl ApiClient {
                                                 TabAction::SaveDraft => save_draft = Some(i),
                                                 TabAction::Duplicate => duplicate = Some(i),
                                                 TabAction::TogglePin => toggle_pin = Some(i),
+                                                TabAction::StartRename => start_rename = Some(i),
+                                                TabAction::Reorder { from } => {
+                                                    reorder = Some((from, i))
+                                                }
                                                 TabAction::None => {}
                                             }
                                         }
@@ -296,6 +376,13 @@ impl ApiClient {
                         // response cache stash/restore fires — the
                         // previous inline clear path wiped the response
                         // on every tab switch.
+                        // Also queue a one-shot sidebar reveal so the
+                        // tree expands parents + scrolls the row into
+                        // view (only on tab click — opening from the
+                        // sidebar itself doesn't need this, since the
+                        // row is already where the user clicked).
+                        self.reveal_in_sidebar_pending =
+                            Some((tab.folder_path.clone(), tab.request_id.clone()));
                         self.open_request(tab.folder_path, tab.request_id);
                     }
                 }
@@ -320,6 +407,35 @@ impl ApiClient {
                 if let Some(idx) = toggle_pin {
                     if let Some(tab) = self.state.open_tabs.get_mut(idx) {
                         tab.pinned = !tab.pinned;
+                        self.save_state();
+                    }
+                }
+                if let Some(idx) = start_rename {
+                    if let Some(tab) = self.state.open_tabs.get(idx).cloned() {
+                        let info = find_request_info(
+                            &self.state.folders,
+                            &self.state.drafts,
+                            &tab.folder_path,
+                            &tab.request_id,
+                        );
+                        if let Some((_, current_name, _)) = info {
+                            self.renaming_request_id = Some(tab.request_id.clone());
+                            self.rename_request_text = current_name;
+                            self.request_rename_focus_pending = true;
+                        }
+                    }
+                }
+                if let Some((from, to)) = reorder {
+                    if from < self.state.open_tabs.len() && to < self.state.open_tabs.len() {
+                        let moved = self.state.open_tabs.remove(from);
+                        // After remove, the target index is unchanged when
+                        // moving rightward (from < to) but stays put if
+                        // moving leftward (from > to). `remove` already
+                        // shifted indices ≥ `from` down by one, so for
+                        // from < to we want `to - 1` (the gap closed), for
+                        // from > to we want `to` (the gap is to the right).
+                        let insert_at = if from < to { to - 1 } else { to };
+                        self.state.open_tabs.insert(insert_at, moved);
                         self.save_state();
                     }
                 }
