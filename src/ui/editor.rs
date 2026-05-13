@@ -187,6 +187,26 @@ impl ApiClient {
                         egui::vec2(scroll_width, bar_height),
                         egui::Layout::left_to_right(egui::Align::Center),
                         |ui| {
+                            // egui 0.29's horizontal-only ScrollArea reads
+                            // `raw_scroll_delta.x` — a regular mouse wheel
+                            // produces y-only delta, so without help the
+                            // strip won't scroll on wheel. When the
+                            // pointer is over this region and only a
+                            // vertical wheel delta is present, swap it
+                            // into the x axis so the ScrollArea consumes
+                            // it as horizontal scroll.
+                            if ui.rect_contains_pointer(ui.max_rect()) {
+                                ui.ctx().input_mut(|i| {
+                                    if i.raw_scroll_delta.x == 0.0
+                                        && i.raw_scroll_delta.y != 0.0
+                                    {
+                                        i.raw_scroll_delta =
+                                            egui::vec2(i.raw_scroll_delta.y, 0.0);
+                                        i.smooth_scroll_delta =
+                                            egui::vec2(i.smooth_scroll_delta.y, 0.0);
+                                    }
+                                });
+                            }
                             egui::ScrollArea::horizontal()
                                 .id_salt("tabs_bar_scroll")
                                 .auto_shrink([false, false])

@@ -1936,8 +1936,9 @@ impl eframe::App for ApiClient {
         }
         // Cmd/Ctrl+S — if the active tab is a draft, open the Save-draft
         // modal to pick a destination collection. Saved requests are
-        // auto-persisted to disk on every edit, so this shortcut is a
-        // no-op for them.
+        // auto-persisted to disk on every edit; we still show a "Saved"
+        // toast so the keypress has visible feedback (otherwise it
+        // reads as broken).
         if cmd_s {
             if let Some(req_id) = self.selected_request_id.clone() {
                 if self.selected_folder_path.is_empty() {
@@ -1949,6 +1950,8 @@ impl eframe::App for ApiClient {
                     {
                         self.begin_save_draft(idx);
                     }
+                } else {
+                    self.show_toast("Saved");
                 }
             }
         }
