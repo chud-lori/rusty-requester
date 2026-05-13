@@ -11,7 +11,7 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
-## Unreleased
+## [0.18.7] — 2026-05-13
 
 ### Added
 - **Drag-and-drop tab reorder.** Click and drag any request tab to a
