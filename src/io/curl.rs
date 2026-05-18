@@ -330,12 +330,98 @@ fn tokenize(input: &str) -> Result<Vec<String>, String> {
     let mut chars = input.chars().peekable();
     let mut in_single = false;
     let mut in_double = false;
+    let mut in_ansi_c = false;
     let mut has_content = false;
 
     while let Some(c) = chars.next() {
         if in_single {
             if c == '\'' {
                 in_single = false;
+            } else {
+                cur.push(c);
+            }
+            continue;
+        }
+        if in_ansi_c {
+            if c == '\'' {
+                in_ansi_c = false;
+            } else if c == '\\' {
+                if let Some(&next) = chars.peek() {
+                    chars.next();
+                    match next {
+                        'n' => cur.push('\n'),
+                        'r' => cur.push('\r'),
+                        't' => cur.push('\t'),
+                        '\\' => cur.push('\\'),
+                        '\'' => cur.push('\''),
+                        '"' => cur.push('"'),
+                        '?' => cur.push('?'),
+                        'a' => cur.push('\x07'),
+                        'b' => cur.push('\x08'),
+                        'e' | 'E' => cur.push('\x1B'),
+                        'f' => cur.push('\x0C'),
+                        'v' => cur.push('\x0B'),
+                        '0' => cur.push('\0'),
+                        'x' => {
+                            let mut hex = String::new();
+                            for _ in 0..2 {
+                                if let Some(&h) = chars.peek() {
+                                    if h.is_ascii_hexdigit() {
+                                        chars.next();
+                                        hex.push(h);
+                                        continue;
+                                    }
+                                }
+                                break;
+                            }
+                            if let Ok(b) = u32::from_str_radix(&hex, 16) {
+                                if let Some(ch) = char::from_u32(b) {
+                                    cur.push(ch);
+                                }
+                            }
+                        }
+                        'u' => {
+                            let mut hex = String::new();
+                            for _ in 0..4 {
+                                if let Some(&h) = chars.peek() {
+                                    if h.is_ascii_hexdigit() {
+                                        chars.next();
+                                        hex.push(h);
+                                        continue;
+                                    }
+                                }
+                                break;
+                            }
+                            if let Ok(b) = u32::from_str_radix(&hex, 16) {
+                                if let Some(ch) = char::from_u32(b) {
+                                    cur.push(ch);
+                                }
+                            }
+                        }
+                        'U' => {
+                            let mut hex = String::new();
+                            for _ in 0..8 {
+                                if let Some(&h) = chars.peek() {
+                                    if h.is_ascii_hexdigit() {
+                                        chars.next();
+                                        hex.push(h);
+                                        continue;
+                                    }
+                                }
+                                break;
+                            }
+                            if let Ok(b) = u32::from_str_radix(&hex, 16) {
+                                if let Some(ch) = char::from_u32(b) {
+                                    cur.push(ch);
+                                }
+                            }
+                        }
+                        _ => {
+                            cur.push('\\');
+                            cur.push(next);
+                        }
+                    }
+                }
             } else {
                 cur.push(c);
             }
@@ -362,6 +448,16 @@ fn tokenize(input: &str) -> Result<Vec<String>, String> {
             continue;
         }
         match c {
+            '$' if matches!(chars.peek(), Some('\'')) => {
+                chars.next();
+                in_ansi_c = true;
+                has_content = true;
+            }
+            '$' if matches!(chars.peek(), Some('"')) => {
+                chars.next();
+                in_double = true;
+                has_content = true;
+            }
             '\'' => {
                 in_single = true;
                 has_content = true;
@@ -398,7 +494,7 @@ fn tokenize(input: &str) -> Result<Vec<String>, String> {
             }
         }
     }
-    if in_single || in_double {
+    if in_single || in_double || in_ansi_c {
         return Err("Unclosed quote".to_string());
     }
     if has_content {
@@ -445,6 +541,21 @@ mod tests {
         let r = parse_curl("curl https://x.com -d 'hello'").unwrap();
         assert_eq!(r.method, HttpMethod::POST);
         assert_eq!(r.body, "hello");
+    }
+
+    #[test]
+    fn parse_ansi_c_quoted_body() {
+        let r = parse_curl(
+            "curl -X PUT https://x.com --data-raw $'{\"a\":\"line1\\nline2\",\"b\":\"hi\\u0021\"}'",
+        )
+        .unwrap();
+        assert!(
+            !r.body.starts_with('$'),
+            "body kept literal $ prefix: {}",
+            r.body
+        );
+        assert!(r.body.contains('\n'), "\\n not decoded: {:?}", r.body);
+        assert!(r.body.contains('!'), "\\u0021 not decoded: {:?}", r.body);
     }
 
     #[test]

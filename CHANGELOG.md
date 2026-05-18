@@ -11,6 +11,15 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Fixed
+- **Paste-as-cURL with bash ANSI-C body (`--data-raw $'…'`).**
+  Browsers' "Copy as cURL" emits `$'…'` whenever the body contains
+  escapes; the tokenizer used to drop the `$` into the body itself
+  (leading `${"…"}`) and leave `\n` / `!` literal. Now recognized
+  as ANSI-C quoting: escapes are decoded and the `$` is consumed.
+
 ## [0.18.7] — 2026-05-13
 
 ### Added
