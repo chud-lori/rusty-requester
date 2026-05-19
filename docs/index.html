@@ -120,10 +120,10 @@ code, pre { font-family: var(--mono); }
   color: var(--text);
   white-space: nowrap;
   overflow-x: auto;
-  scrollbar-width: thin;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
-.cmd-box code::-webkit-scrollbar { height: 4px; }
-.cmd-box code::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+.cmd-box code::-webkit-scrollbar { display: none; }
 .copy-btn {
   flex-shrink: 0;
   background: transparent;
