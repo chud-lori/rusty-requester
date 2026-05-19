@@ -11,7 +11,7 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
-## Unreleased
+## [0.19.0] — 2026-05-19
 
 ### Added
 - **One-click in-app update (macOS & Linux).** The "update available"
