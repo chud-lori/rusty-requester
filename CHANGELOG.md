@@ -11,6 +11,23 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Added
+- **One-click in-app update (macOS & Linux).** The "update available"
+  modal now has a single **Update now** button — no more copying a
+  command and pasting it into a terminal. It runs `install.sh` in a
+  detached wrapper (`nohup` + `disown`) that survives the installer
+  killing the running app, shows a live tail of the install log while
+  it runs, and relaunches the new binary automatically when done. On
+  the next launch a small banner anchored bottom-right reports
+  success ("Updated to vX.Y.Z") or failure with a **View log**
+  button. Log / status / runner files live under
+  `$TMPDIR/rusty-requester/` (auto-cleaned by the OS — no clutter in
+  `Application Support`). Windows users still see the copy-command
+  fallback because there's no clean detached-spawn + auto-relaunch
+  recipe there.
+
 ## [0.18.8] — 2026-05-18
 
 ### Fixed

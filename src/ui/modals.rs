@@ -9,7 +9,9 @@ use crate::model::*;
 use crate::snippet::{build_snippet_layout_job_content_only, render_snippet, SnippetLang};
 use crate::theme::*;
 use crate::widgets::*;
-use crate::{spawn_update_check, ApiClient};
+use crate::{
+    in_app_update_supported, open_update_log_in_os, spawn_update_check, update_log_path, ApiClient,
+};
 use eframe::egui;
 use uuid::Uuid;
 
@@ -980,6 +982,8 @@ impl ApiClient {
         );
         let mut copy_curl = false;
         let mut open_releases = false;
+        let mut start_in_app_update = false;
+        let in_app_ok = in_app_update_supported();
 
         egui::Window::new(format!("Update to {}", latest))
             .open(&mut open)
@@ -999,58 +1003,108 @@ impl ApiClient {
                     .size(13.0),
                 );
                 ui.add_space(12.0);
-                ui.label(
-                    egui::RichText::new("One-line installer — paste into your terminal to update:")
+                if in_app_ok {
+                    // macOS / Linux: "Update now" handles everything,
+                    // so the user doesn't need to see the curl
+                    // one-liner. Just describe what'll happen.
+                    ui.label(
+                        egui::RichText::new(
+                            "Clicking Update now will:\n\
+                             • Download the new build in the background\n\
+                             • Quit and replace the running app automatically\n\
+                             • Strip Gatekeeper quarantine (macOS) and relaunch\n\n\
+                             Your data (data.json — collections, history, OAuth \
+                             tokens, env vars) is untouched. You'll see a live log \
+                             while it runs.",
+                        )
+                        .color(muted())
+                        .size(10.5),
+                    );
+                } else {
+                    // Windows: show the install command so the user
+                    // can paste it themselves.
+                    ui.label(
+                        egui::RichText::new(
+                            "One-line installer — paste into your terminal to update:",
+                        )
                         .color(muted())
                         .size(11.0),
-                );
-                ui.add_space(4.0);
-                // Read-only code block showing the curl one-liner.
-                egui::Frame::none()
-                    .fill(panel_dark())
-                    .stroke(egui::Stroke::new(1.0, border()))
-                    .rounding(egui::Rounding::same(6.0))
-                    .inner_margin(egui::Margin::symmetric(10.0, 8.0))
-                    .show(ui, |ui| {
-                        ui.add(
-                            egui::TextEdit::multiline(&mut curl_cmd.to_string())
-                                .font(egui::FontId::monospace(11.5))
-                                .frame(false)
-                                .desired_width(f32::INFINITY)
-                                .desired_rows(2)
-                                .interactive(false),
-                        );
-                    });
-                ui.add_space(6.0);
-                ui.label(
-                    egui::RichText::new(
-                        "The official one-line installer handles everything:\n\
-                         • Quits the running app automatically\n\
-                         • Downloads the new build from GitHub Releases\n\
-                         • Replaces /Applications/RustyRequester.app (macOS) or \
-                         ~/.local/bin/rusty-requester (Linux)\n\
-                         • Strips Gatekeeper quarantine + refreshes Dock / Spotlight\n\n\
-                         Your data (data.json — collections, history, OAuth tokens, \
-                         env vars) is untouched. After it finishes, relaunch from \
-                         Spotlight or the Dock.",
-                    )
-                    .color(muted())
-                    .size(10.5),
-                );
+                    );
+                    ui.add_space(4.0);
+                    egui::Frame::none()
+                        .fill(panel_dark())
+                        .stroke(egui::Stroke::new(1.0, border()))
+                        .rounding(egui::Rounding::same(6.0))
+                        .inner_margin(egui::Margin::symmetric(10.0, 8.0))
+                        .show(ui, |ui| {
+                            ui.add(
+                                egui::TextEdit::multiline(&mut curl_cmd.to_string())
+                                    .font(egui::FontId::monospace(11.5))
+                                    .frame(false)
+                                    .desired_width(f32::INFINITY)
+                                    .desired_rows(2)
+                                    .interactive(false),
+                            );
+                        });
+                    ui.add_space(6.0);
+                    ui.label(
+                        egui::RichText::new(
+                            "The official one-line installer handles everything:\n\
+                             • Quits the running app automatically\n\
+                             • Downloads the new build from GitHub Releases\n\
+                             • Replaces the installed binary\n\n\
+                             Your data (data.json) is untouched. After it finishes, \
+                             relaunch the app.",
+                        )
+                        .color(muted())
+                        .size(10.5),
+                    );
+                }
 
                 ui.add_space(14.0);
                 ui.horizontal(|ui| {
-                    if ui
-                        .add(
-                            egui::Button::new(
-                                egui::RichText::new("Copy command")
-                                    .color(egui::Color32::WHITE)
-                                    .strong(),
+                    // Primary action on macOS/Linux: run the install
+                    // script in-process, tail its log, auto-relaunch.
+                    // Windows users only see "Copy command" — see
+                    // `in_app_update_supported` for why.
+                    if in_app_ok
+                        && ui
+                            .add(
+                                egui::Button::new(
+                                    egui::RichText::new("Update now")
+                                        .color(egui::Color32::WHITE)
+                                        .strong(),
+                                )
+                                .fill(accent())
+                                .min_size(egui::vec2(140.0, 30.0)),
                             )
-                            .fill(accent())
-                            .min_size(egui::vec2(140.0, 30.0)),
-                        )
-                        .clicked()
+                            .on_hover_text(
+                                "Runs the install script in the background and \
+                                 relaunches the app when done. You can watch the live \
+                                 log in the next dialog.",
+                            )
+                            .clicked()
+                    {
+                        start_in_app_update = true;
+                    }
+                    // Windows-only fallback: no detached-spawn /
+                    // auto-relaunch recipe there, so users still copy
+                    // the install command and run it in PowerShell /
+                    // WSL themselves. macOS / Linux users get the
+                    // one-click "Update now" path above and never see
+                    // this button.
+                    if !in_app_ok
+                        && ui
+                            .add(
+                                egui::Button::new(
+                                    egui::RichText::new("Copy command")
+                                        .color(egui::Color32::WHITE)
+                                        .strong(),
+                                )
+                                .fill(accent())
+                                .min_size(egui::vec2(140.0, 30.0)),
+                            )
+                            .clicked()
                     {
                         copy_curl = true;
                     }
@@ -1067,6 +1121,9 @@ impl ApiClient {
                 });
             });
 
+        if start_in_app_update {
+            self.spawn_update();
+        }
         if copy_curl {
             ctx.output_mut(|o| o.copied_text = curl_cmd.to_string());
             self.show_toast("Update command copied — paste in your terminal");
@@ -1089,6 +1146,189 @@ impl ApiClient {
         self.show_update_modal = open;
         if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             self.show_update_modal = false;
+        }
+    }
+
+    /// Live progress modal shown while the one-click in-app updater
+    /// is running. Streams the last few KB of `update.log` so users
+    /// can see download progress, file copies, gatekeeper prompts,
+    /// etc. — same info they'd see if they ran the curl command in a
+    /// terminal. `install.sh` will kill us partway through (normal —
+    /// it has to swap the binary); the wrapper survives and relaunches
+    /// the app. On the next launch the post-update banner shows
+    /// success/failure.
+    ///
+    /// No close button while in progress — closing the modal can't
+    /// stop the wrapper anyway, and would just hide useful info.
+    pub(crate) fn render_updating_modal(&mut self, ctx: &egui::Context) {
+        if !self.updating_in_progress {
+            return;
+        }
+        let log_path = update_log_path();
+        let tail = self.update_log_tail.clone();
+        let mut view_log = false;
+
+        egui::Window::new("Updating rusty-requester…")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .fixed_size([620.0, 360.0])
+            .show(ctx, |ui| {
+                ui.add_space(4.0);
+                ui.label(
+                    egui::RichText::new(
+                        "The installer is running in the background. The app will \
+                         quit and relaunch automatically when it finishes.",
+                    )
+                    .color(muted())
+                    .size(11.5),
+                );
+                ui.add_space(8.0);
+                ui.label(
+                    egui::RichText::new(format!("Log: {}", log_path.display()))
+                        .color(muted())
+                        .size(10.5)
+                        .monospace(),
+                );
+                ui.add_space(6.0);
+                egui::Frame::none()
+                    .fill(panel_dark())
+                    .stroke(egui::Stroke::new(1.0, border()))
+                    .rounding(egui::Rounding::same(6.0))
+                    .inner_margin(egui::Margin::symmetric(10.0, 8.0))
+                    .show(ui, |ui| {
+                        egui::ScrollArea::vertical()
+                            .stick_to_bottom(true)
+                            .max_height(240.0)
+                            .auto_shrink([false; 2])
+                            .show(ui, |ui| {
+                                if tail.is_empty() {
+                                    ui.label(
+                                        egui::RichText::new("Starting installer…")
+                                            .color(muted())
+                                            .size(11.0)
+                                            .italics(),
+                                    );
+                                } else {
+                                    ui.label(
+                                        egui::RichText::new(&tail)
+                                            .color(text())
+                                            .font(egui::FontId::monospace(10.5)),
+                                    );
+                                }
+                            });
+                    });
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    if ui
+                        .add(
+                            egui::Button::new(egui::RichText::new("View log file").color(text()))
+                                .fill(elevated())
+                                .min_size(egui::vec2(130.0, 26.0)),
+                        )
+                        .clicked()
+                    {
+                        view_log = true;
+                    }
+                });
+            });
+        if view_log {
+            open_update_log_in_os();
+        }
+    }
+
+    /// Small banner anchored bottom-right after an in-app update
+    /// completes, surfaced once on the next launch (or inline if the
+    /// installer finished without killing us). Two states:
+    ///
+    /// - **Success**: green border, "Updated to vX.Y.Z" with a
+    ///   "View log" button.
+    /// - **Failure**: red border, the wrapper's reason string, and a
+    ///   "View log" button so the user can debug.
+    ///
+    /// Self-dismisses after ~12 seconds or when the user clicks the
+    /// close × — failures keep around longer than a regular toast so
+    /// the user actually notices.
+    pub(crate) fn render_post_update_banner(&mut self, ctx: &egui::Context) {
+        let Some((success, detail)) = self.post_update_notice.clone() else {
+            return;
+        };
+        let mut dismiss = false;
+        let mut view_log = false;
+
+        let (border_color, title) = if success {
+            (
+                egui::Color32::from_rgb(76, 175, 80),
+                format!("✓ Updated to v{}", detail),
+            )
+        } else {
+            (
+                egui::Color32::from_rgb(244, 67, 54),
+                "Update failed".to_string(),
+            )
+        };
+
+        egui::Area::new(egui::Id::new("post_update_banner"))
+            .anchor(egui::Align2::RIGHT_BOTTOM, egui::vec2(-16.0, -16.0))
+            .show(ctx, |ui| {
+                egui::Frame::none()
+                    .fill(bg())
+                    .stroke(egui::Stroke::new(1.5, border_color))
+                    .rounding(10.0)
+                    .inner_margin(egui::Margin::symmetric(14.0, 10.0))
+                    .show(ui, |ui| {
+                        ui.set_max_width(320.0);
+                        ui.vertical(|ui| {
+                            ui.label(
+                                egui::RichText::new(&title)
+                                    .color(text())
+                                    .size(13.0)
+                                    .strong(),
+                            );
+                            if !success {
+                                ui.add_space(2.0);
+                                ui.label(egui::RichText::new(&detail).color(muted()).size(11.0));
+                            }
+                            ui.add_space(6.0);
+                            ui.horizontal(|ui| {
+                                if ui
+                                    .add(
+                                        egui::Button::new(
+                                            egui::RichText::new("View log")
+                                                .color(text())
+                                                .size(11.0),
+                                        )
+                                        .fill(elevated())
+                                        .min_size(egui::vec2(80.0, 22.0)),
+                                    )
+                                    .clicked()
+                                {
+                                    view_log = true;
+                                }
+                                if ui
+                                    .add(
+                                        egui::Button::new(
+                                            egui::RichText::new("Dismiss")
+                                                .color(muted())
+                                                .size(11.0),
+                                        )
+                                        .fill(egui::Color32::TRANSPARENT)
+                                        .min_size(egui::vec2(70.0, 22.0)),
+                                    )
+                                    .clicked()
+                                {
+                                    dismiss = true;
+                                }
+                            });
+                        });
+                    });
+            });
+
+        if view_log {
+            open_update_log_in_os();
+        }
+        if dismiss {
+            self.post_update_notice = None;
         }
     }
 

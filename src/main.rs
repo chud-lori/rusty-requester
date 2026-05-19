@@ -202,6 +202,28 @@ struct ApiClient {
     /// Toggles the update-instructions modal — surfaced via the
     /// sidebar pill when an update is available.
     show_update_modal: bool,
+    /// True while a one-click in-app update is in progress. Drives the
+    /// "Updating…" modal that tails `update.log` so the user sees what
+    /// the installer is doing in real time. The wrapper script (see
+    /// `spawn_update`) writes its stdout/stderr to `update.log` and a
+    /// terminal `update.status` file; `install.sh` will kill our
+    /// process partway through (it has to, to replace the binary), the
+    /// wrapper survives via `nohup` + `disown` and relaunches us.
+    updating_in_progress: bool,
+    /// Last ~4 KB of `update.log`, refreshed every ~300 ms while
+    /// `updating_in_progress`. Shown in the modal as a scrolling
+    /// monospace tail. Cleared between update attempts.
+    update_log_tail: String,
+    /// Last time we polled `update.log`, as `ctx.input(|i| i.time)`
+    /// seconds. Throttles the re-read so we're not hammering the FS on
+    /// every frame.
+    update_log_last_poll: f64,
+    /// Set on launch when the previous run kicked off an in-app
+    /// update. `Some((true, "0.18.8"))` → green "Updated to vX.Y.Z"
+    /// banner with a "View log" button. `Some((false, reason))` → red
+    /// "Update failed" banner. Cleared after the user dismisses or
+    /// auto-times-out.
+    post_update_notice: Option<(bool, String)>,
 
     /// In-flight OAuth 2.0 flow. `Some` while the user is completing
     /// the authorize-redirect dance in their browser; drained each
@@ -411,6 +433,10 @@ impl Default for ApiClient {
             update_check_rx: None,
             update_available: None,
             show_update_modal: false,
+            updating_in_progress: false,
+            update_log_tail: String::new(),
+            update_log_last_poll: 0.0,
+            post_update_notice: None,
             oauth_flow_rx: None,
             oauth_flow_status: None,
             oauth_start_requested: false,
@@ -1071,6 +1097,160 @@ impl ApiClient {
 
     fn show_toast(&mut self, msg: impl Into<String>) {
         self.toast = Some((msg.into(), 2.5));
+    }
+
+    /// Kick off the one-click in-app updater. Writes a tiny bash
+    /// runner script to `~/.../rusty-requester/update-runner.sh`,
+    /// spawns it detached (`nohup … & disown`) so it survives
+    /// `install.sh` killing our process partway through, and flips
+    /// `updating_in_progress` so the "Updating…" modal takes over.
+    ///
+    /// The runner:
+    /// 1. Appends a `### STARTED …` banner to `update.log`.
+    /// 2. Pipes `install.sh | bash` into the log (stdout + stderr).
+    /// 3. On success — writes `update.status` with `ok\n<version>` and
+    ///    relaunches the app (`open -a RustyRequester` on macOS,
+    ///    `rusty-requester &` on Linux).
+    /// 4. On failure — writes `update.status` with `fail\n<reason>`.
+    ///
+    /// Caller is responsible for closing the existing update modal
+    /// (we set `show_update_modal = false` so the live-tail modal
+    /// owns the screen).
+    pub(crate) fn spawn_update(&mut self) {
+        if !in_app_update_supported() {
+            self.show_toast("In-app update only supported on macOS and Linux");
+            return;
+        }
+        // `update_available` stores the GitHub tag (e.g. "v0.18.8");
+        // strip the leading "v" so downstream strings ("Updated to
+        // vX.Y.Z", "X.Y.Z -> Y.Y.Z") don't double-up the prefix.
+        let target_version = self
+            .update_available
+            .as_deref()
+            .map(|s| s.trim_start_matches('v').to_string())
+            .unwrap_or_default();
+        if target_version.is_empty() {
+            self.show_toast("No update available");
+            return;
+        }
+        let log_path = update_log_path();
+        let status_path = update_status_path();
+        let runner_path = update_runner_path();
+        if let Some(parent) = log_path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        // Clear any stale status from a previous run; if the wrapper
+        // dies before writing, we want "no status" rather than the
+        // previous attempt's outcome lingering.
+        let _ = std::fs::remove_file(&status_path);
+
+        let relaunch_cmd = if cfg!(target_os = "macos") {
+            "open -a RustyRequester >/dev/null 2>&1 || true".to_string()
+        } else {
+            // Linux: install.sh drops the binary at ~/.local/bin/
+            // (which may or may not be on PATH). Try the absolute
+            // path first, then the bare name.
+            "( \"$HOME/.local/bin/rusty-requester\" >/dev/null 2>&1 & ) || \
+             ( rusty-requester >/dev/null 2>&1 & ) || true"
+                .to_string()
+        };
+
+        let current = env!("CARGO_PKG_VERSION");
+        let script = format!(
+            "#!/usr/bin/env bash\n\
+             set -u\n\
+             exec >> '{log}' 2>&1\n\
+             echo ''\n\
+             echo \"### STARTED $(date '+%Y-%m-%d %H:%M:%S')\"\n\
+             echo \"### Updating rusty-requester v{current} -> {target}\"\n\
+             echo ''\n\
+             if curl -fsSL https://raw.githubusercontent.com/chud-lori/rusty-requester/main/install.sh | bash; then\n\
+                 echo ''\n\
+                 echo \"### DONE_OK $(date '+%Y-%m-%d %H:%M:%S')\"\n\
+                 printf 'ok\\n{target}\\n' > '{status}'\n\
+                 sleep 1\n\
+                 {relaunch}\n\
+             else\n\
+                 echo ''\n\
+                 echo \"### DONE_FAIL $(date '+%Y-%m-%d %H:%M:%S')\"\n\
+                 printf 'fail\\ninstall.sh returned non-zero — see log for details\\n' > '{status}'\n\
+             fi\n",
+            log = log_path.display(),
+            status = status_path.display(),
+            current = current,
+            target = target_version,
+            relaunch = relaunch_cmd,
+        );
+
+        if let Err(e) = std::fs::write(&runner_path, &script) {
+            self.show_toast(format!("Could not write update runner: {}", e));
+            return;
+        }
+        // Make the runner executable (best-effort on Unix).
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if let Ok(meta) = std::fs::metadata(&runner_path) {
+                let mut perms = meta.permissions();
+                perms.set_mode(0o755);
+                let _ = std::fs::set_permissions(&runner_path, perms);
+            }
+        }
+
+        // Spawn detached via `sh -c "nohup bash … & disown"` — the
+        // outer `sh` exits immediately, the bash process gets
+        // reparented to init and survives our death.
+        let detach_cmd = format!(
+            "nohup bash '{}' </dev/null >/dev/null 2>&1 & disown",
+            runner_path.display()
+        );
+        match std::process::Command::new("sh")
+            .arg("-c")
+            .arg(&detach_cmd)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+        {
+            Ok(_) => {
+                self.updating_in_progress = true;
+                self.show_update_modal = false;
+                self.update_log_tail.clear();
+                self.update_log_last_poll = 0.0;
+            }
+            Err(e) => {
+                self.show_toast(format!("Could not start updater: {}", e));
+            }
+        }
+    }
+
+    /// Tail `update.log` while the in-app updater is running. Throttled
+    /// to ~3 reads/sec so we're not blocking the UI thread on FS
+    /// syscalls each frame. Also watches `update.status` — if the
+    /// wrapper finishes before `install.sh` can kill us (e.g. update
+    /// failed early), we surface the result inline in the modal
+    /// instead of waiting for a relaunch that won't happen.
+    pub(crate) fn poll_update_progress(&mut self, ctx: &egui::Context) {
+        if !self.updating_in_progress {
+            return;
+        }
+        let now = ctx.input(|i| i.time);
+        if now - self.update_log_last_poll >= 0.3 {
+            self.update_log_last_poll = now;
+            self.update_log_tail = read_log_tail(&update_log_path(), 4096);
+            // If the wrapper already wrote a status file, the update
+            // is done (success or failure) — flip out of "in progress"
+            // so the modal switches to the post-update banner. On
+            // success this branch is rarely hit because install.sh
+            // usually kills us first, but on early failure (no
+            // network, curl 404) the wrapper completes while we're
+            // still alive.
+            if let Some(outcome) = consume_update_status() {
+                self.updating_in_progress = false;
+                self.post_update_notice = Some(outcome);
+            }
+        }
+        ctx.request_repaint_after(std::time::Duration::from_millis(300));
     }
 
     /// Activate collection-overview mode for `folder_id`. Shows the
@@ -1764,6 +1944,18 @@ impl eframe::App for ApiClient {
             self.show_toast(msg);
         }
 
+        // If the previous run kicked off an in-app update, the wrapper
+        // script will have written `update.status`. Consume it once
+        // (file is deleted) and surface the result via the
+        // post-update banner. Skipped on subsequent frames because
+        // the file is gone.
+        if self.post_update_notice.is_none() && !self.updating_in_progress {
+            if let Some(outcome) = consume_update_status() {
+                self.post_update_notice = Some(outcome);
+            }
+        }
+
+        self.poll_update_progress(ctx);
         self.poll_oauth_flow();
 
         // Drain the update-check channel. Only fires once (the tokio
@@ -2071,6 +2263,8 @@ impl eframe::App for ApiClient {
         self.render_env_modal(ctx);
         self.render_settings_modal(ctx);
         self.render_update_modal(ctx);
+        self.render_updating_modal(ctx);
+        self.render_post_update_banner(ctx);
         self.render_save_draft_modal(ctx);
         self.render_confirm_close_draft(ctx);
         self.render_about_modal(ctx);
@@ -2279,6 +2473,120 @@ fn is_newer_semver(a: &str, b: &str) -> bool {
         (major, minor, patch)
     };
     parse(a) > parse(b)
+}
+
+/// Scratch directory for the one-click updater: log, status file,
+/// runner script. Lives under the OS temp dir (`$TMPDIR` on macOS,
+/// `/tmp` on Linux) instead of next to `data.json` because none of
+/// these files need to survive a reboot — the log is interesting
+/// while the user is debugging a fresh failure, but stale logs from
+/// successful updates last week are just clutter. Caller is
+/// responsible for `create_dir_all`.
+pub(crate) fn update_scratch_dir() -> PathBuf {
+    std::env::temp_dir().join("rusty-requester")
+}
+
+pub(crate) fn update_log_path() -> PathBuf {
+    update_scratch_dir().join("update.log")
+}
+
+pub(crate) fn update_status_path() -> PathBuf {
+    update_scratch_dir().join("update.status")
+}
+
+pub(crate) fn update_runner_path() -> PathBuf {
+    update_scratch_dir().join("update-runner.sh")
+}
+
+/// True on platforms where the in-app one-click updater is supported.
+/// Windows users see only the "Copy command" fallback path because we
+/// don't have a clean detached-spawn + auto-relaunch recipe there
+/// (and `install.sh` itself doesn't target Windows).
+pub(crate) fn in_app_update_supported() -> bool {
+    cfg!(any(target_os = "macos", target_os = "linux"))
+}
+
+/// Open `update.log` in the OS's default text-handler. Best effort —
+/// silently ignores spawn failures (worst case: user opens it
+/// themselves; the modal already shows the path).
+pub(crate) fn open_update_log_in_os() {
+    let path = update_log_path();
+    #[cfg(target_os = "macos")]
+    let _ = std::process::Command::new("open").arg(&path).spawn();
+    #[cfg(target_os = "linux")]
+    let _ = std::process::Command::new("xdg-open").arg(&path).spawn();
+    #[cfg(target_os = "windows")]
+    let _ = std::process::Command::new("cmd")
+        .args(["/C", "start", ""])
+        .arg(&path)
+        .spawn();
+}
+
+/// Read the last `cap` bytes of `path` as UTF-8 (lossy), returning an
+/// empty string if the file doesn't exist yet. Used by the update
+/// modal's live tail — install.sh is verbose, so we cap to a few KB
+/// to keep the modal responsive.
+fn read_log_tail(path: &std::path::Path, cap: u64) -> String {
+    use std::io::{Read, Seek, SeekFrom};
+    let Ok(mut f) = std::fs::File::open(path) else {
+        return String::new();
+    };
+    let Ok(meta) = f.metadata() else {
+        return String::new();
+    };
+    let len = meta.len();
+    let start = len.saturating_sub(cap);
+    if f.seek(SeekFrom::Start(start)).is_err() {
+        return String::new();
+    }
+    let mut buf = Vec::with_capacity(cap as usize);
+    if f.read_to_end(&mut buf).is_err() {
+        return String::new();
+    }
+    // Drop the leading partial line when we seeked into the middle of
+    // one — keeps the tail readable.
+    let s = String::from_utf8_lossy(&buf).into_owned();
+    if start > 0 {
+        if let Some(nl) = s.find('\n') {
+            return s[nl + 1..].to_string();
+        }
+    }
+    s
+}
+
+/// Read and consume `update.status` if present. Format written by the
+/// wrapper script:
+///
+/// ```text
+/// ok\n0.18.8\n         → success, new version
+/// fail\n<reason>\n     → failure, free-form reason
+/// ```
+///
+/// Returns `Some((true, version))` / `Some((false, reason))` /
+/// `None` if no recent update activity. Always deletes the file
+/// after reading so we don't show the same banner twice.
+fn consume_update_status() -> Option<(bool, String)> {
+    let path = update_status_path();
+    let raw = std::fs::read_to_string(&path).ok()?;
+    let _ = std::fs::remove_file(&path);
+    let mut lines = raw.lines();
+    let kind = lines.next()?.trim();
+    let detail = lines.next().unwrap_or("").trim().to_string();
+    match kind {
+        // Override the predicted version with the actually-running
+        // version — install.sh fetches "latest", which may have moved
+        // since our pre-update check.
+        "ok" => Some((true, env!("CARGO_PKG_VERSION").to_string())),
+        "fail" => Some((
+            false,
+            if detail.is_empty() {
+                "unknown error".to_string()
+            } else {
+                detail
+            },
+        )),
+        _ => None,
+    }
 }
 
 /// Write panic info to a log file next to `data.json` so users can
