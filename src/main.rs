@@ -1005,6 +1005,12 @@ impl ApiClient {
                 if !a.enabled {
                     return None;
                 }
+                // Skip the trailing ghost row the editor auto-appends so
+                // users can type a new assertion — empty expression AND
+                // empty expected means "not configured yet".
+                if a.expression.trim().is_empty() && a.expected.trim().is_empty() {
+                    return None;
+                }
                 Some(assertion::evaluate(a, &status, &body, &headers))
             })
             .collect();

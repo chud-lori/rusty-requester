@@ -11,6 +11,18 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Fixed
+- **Empty assertion ghost row no longer counted as a failure.** The
+  Tests tab auto-appends a trailing placeholder row so you can type a
+  new assertion. Previously that row was treated as a real `Status
+  equals ""` check and reported "0 passed, 1 failed" on every response
+  for requests where you hadn't configured any assertions. Now rows
+  with empty expression AND empty expected are skipped during
+  evaluation — same criteria the editor uses to decide a row is
+  "ghost".
+
 ## [0.19.0] — 2026-05-19
 
 ### Added
