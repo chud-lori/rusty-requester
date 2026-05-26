@@ -11,7 +11,7 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
-## Unreleased
+## [0.20.0] — 2026-05-26
 
 ### Fixed
 - **Empty assertion ghost row no longer counted as a failure.** The
