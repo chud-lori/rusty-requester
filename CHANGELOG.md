@@ -11,6 +11,16 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Fixed
+- **Search field in the Save Request modal is clickable again.** The
+  modal auto-focuses the Request Name field on open, but the guard was
+  re-asserting focus every frame the search field was empty — so
+  clicking into the search input lost focus instantly on the next
+  frame and you could never type a query. Now it's a one-shot: focus
+  the name field once when the modal opens, never again.
+
 ## [0.20.0] — 2026-05-26
 
 ### Fixed

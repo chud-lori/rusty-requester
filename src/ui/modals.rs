@@ -210,6 +210,7 @@ impl ApiClient {
             .unwrap_or_default();
         self.save_draft_search.clear();
         self.save_draft_new_folder_name = None;
+        self.save_draft_name_focus_pending = true;
     }
 
     pub(crate) fn render_save_draft_modal(&mut self, ctx: &egui::Context) {
@@ -370,14 +371,9 @@ impl ApiClient {
                 }
             });
 
-            if !name_resp.has_focus()
-                && self.save_draft_tab_idx.is_some()
-                && !do_save
-                && !do_cancel
-                && self.save_draft_search.is_empty()
-                && self.save_draft_new_folder_name.is_none()
-            {
+            if self.save_draft_name_focus_pending {
                 name_resp.request_focus();
+                self.save_draft_name_focus_pending = false;
             }
         });
         self.save_draft_open = open;

@@ -254,6 +254,10 @@ struct ApiClient {
     /// the in-progress name. The new folder is created as a child of the
     /// currently-selected folder (or at root if no folder is selected).
     save_draft_new_folder_name: Option<String>,
+    /// One-shot: when true on the next render, focus the name field then
+    /// clear. Set when the modal opens. Without the one-shot we'd refocus
+    /// every frame and the user could never click into the search field.
+    save_draft_name_focus_pending: bool,
 
     /// "Save changes?" confirmation modal — shown when closing a draft
     /// (unsaved) tab so the user can save, discard, or cancel.
@@ -446,6 +450,7 @@ impl Default for ApiClient {
             save_draft_name: String::new(),
             save_draft_search: String::new(),
             save_draft_new_folder_name: None,
+            save_draft_name_focus_pending: false,
             confirm_close_draft_idx: None,
             request_split_px: 320.0,
             body_view: BodyView::Json,
