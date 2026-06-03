@@ -11,6 +11,31 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Added
+- **Inline update status + "Update now" button in Settings.** Clicking
+  "Check for updates now" previously surfaced its result *behind* the
+  Settings modal — users had to close Settings to find the Update
+  button. Settings now mirrors the result inline: a spinner while
+  checking, "You're on the latest version" when up to date, or a green
+  block with the new version + **Update now** + Release notes when an
+  update is available. Picks up updates found by the launch-time
+  auto-check too, so re-opening Settings always reflects current
+  state.
+
+### Fixed
+- **Post-update success banner auto-dismisses after 10s.** The "Updated
+  to vX.Y.Z" pill at bottom-right was supposed to self-dismiss (the
+  doc comment claimed ~12 s) but had no timer wired up — it stayed
+  forever until the user clicked Dismiss. Now success auto-clears
+  after 10 seconds; failure banners still stay so users don't miss
+  the error or the View-log button.
+- **Post-update banner check icon renders correctly.** The success
+  banner used a literal `✓` (U+2713) which isn't in egui's bundled
+  font and rendered as a tofu square. Swapped to the Phosphor CHECK
+  glyph (`sidebar.rs:926` already flagged this issue elsewhere).
+
 ## [0.20.1] — 2026-06-02
 
 ### Fixed

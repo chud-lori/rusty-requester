@@ -46,6 +46,18 @@ use std::path::PathBuf;
 use uuid::Uuid;
 use widgets::*;
 
+/// Result of the most recent manual update check, used to render the
+/// inline status block in the Settings modal. `Idle` = no inline UI;
+/// the launch-time auto-check leaves this alone (the sidebar pill
+/// handles that surface).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(crate) enum UpdateCheckOutcome {
+    #[default]
+    Idle,
+    Checking,
+    NoUpdate,
+}
+
 /// In-memory snapshot of a request's last response so switching tabs
 /// doesn't wipe what the user was reading. Keyed by `request_id` on
 /// `ApiClient.response_cache`; NOT persisted to `data.json` (response
@@ -224,6 +236,19 @@ struct ApiClient {
     /// "Update failed" banner. Cleared after the user dismisses or
     /// auto-times-out.
     post_update_notice: Option<(bool, String)>,
+    /// `ctx.input.time` when the post-update banner first appeared.
+    /// Used to auto-dismiss the success banner after ~10s so a
+    /// successful update doesn't leave a sticky pill on screen
+    /// forever (failures stay until the user clicks Dismiss).
+    post_update_notice_started_at: Option<f64>,
+    /// Drives the inline update-status block in the Settings modal so
+    /// users who click "Check for updates now" see the result inline
+    /// instead of having to close Settings to find the update button.
+    /// Set to `Checking` when the manual button fires; the frame-level
+    /// drain in `update()` transitions it to `NoUpdate` (channel
+    /// disconnected without a payload) or leaves it `Checking` while
+    /// `update_available` picks up the new tag.
+    manual_update_check: UpdateCheckOutcome,
 
     /// In-flight OAuth 2.0 flow. `Some` while the user is completing
     /// the authorize-redirect dance in their browser; drained each
@@ -441,6 +466,8 @@ impl Default for ApiClient {
             update_log_tail: String::new(),
             update_log_last_poll: 0.0,
             post_update_notice: None,
+            post_update_notice_started_at: None,
+            manual_update_check: UpdateCheckOutcome::Idle,
             oauth_flow_rx: None,
             oauth_flow_status: None,
             oauth_start_requested: false,
@@ -1970,21 +1997,37 @@ impl eframe::App for ApiClient {
         self.poll_oauth_flow();
 
         // Drain the update-check channel. Only fires once (the tokio
-        // task sends at most one message then the sender drops);
-        // after that the receiver disconnects and `try_recv` is a
-        // ~no-op until `take()` clears it.
+        // task sends at most one message then the sender drops); after
+        // that the receiver disconnects and `try_recv` is a ~no-op until
+        // we clear `update_check_rx`. We also feed the result into
+        // `manual_update_check` so the Settings inline status block can
+        // show "Checking… → Up to date / Update available" without the
+        // user having to close the modal.
         if let Some(rx) = &self.update_check_rx {
-            if let Ok(new_version) = rx.try_recv() {
-                self.update_available = Some(new_version);
-                // No auto-open: a modal on launch blocks users from
-                // getting to work. The persistent sidebar pill is
-                // unmissable but non-blocking — click it when ready.
-                self.update_check_rx = None;
-            } else if matches!(
-                rx.try_recv(),
-                Err(std::sync::mpsc::TryRecvError::Disconnected)
-            ) {
-                self.update_check_rx = None;
+            match rx.try_recv() {
+                Ok(new_version) => {
+                    self.update_available = Some(new_version);
+                    // Manual check now reflected via `update_available`;
+                    // reset the inline marker so we don't show "Checking"
+                    // alongside the available pill.
+                    if matches!(self.manual_update_check, UpdateCheckOutcome::Checking) {
+                        self.manual_update_check = UpdateCheckOutcome::Idle;
+                    }
+                    // No auto-open: a modal on launch blocks users from
+                    // getting to work. The persistent sidebar pill is
+                    // unmissable but non-blocking — click it when ready.
+                    self.update_check_rx = None;
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    // No message + sender dropped = no newer version
+                    // (`spawn_update_check` also swallows network errors
+                    // silently — treat as "no update found").
+                    if matches!(self.manual_update_check, UpdateCheckOutcome::Checking) {
+                        self.manual_update_check = UpdateCheckOutcome::NoUpdate;
+                    }
+                    self.update_check_rx = None;
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {}
             }
         }
 

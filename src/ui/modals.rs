@@ -11,6 +11,7 @@ use crate::theme::*;
 use crate::widgets::*;
 use crate::{
     in_app_update_supported, open_update_log_in_os, spawn_update_check, update_log_path, ApiClient,
+    UpdateCheckOutcome,
 };
 use eframe::egui;
 use uuid::Uuid;
@@ -1242,13 +1243,30 @@ impl ApiClient {
     /// - **Failure**: red border, the wrapper's reason string, and a
     ///   "View log" button so the user can debug.
     ///
-    /// Self-dismisses after ~12 seconds or when the user clicks the
-    /// close × — failures keep around longer than a regular toast so
-    /// the user actually notices.
+    /// Success banner auto-dismisses after ~10 seconds (the update
+    /// already worked — user got the confirmation, no action needed).
+    /// Failure banner stays until the user clicks Dismiss so they
+    /// don't miss the error or the View-log button.
     pub(crate) fn render_post_update_banner(&mut self, ctx: &egui::Context) {
         let Some((success, detail)) = self.post_update_notice.clone() else {
+            // Banner gone — reset the timer so a future banner re-arms.
+            self.post_update_notice_started_at = None;
             return;
         };
+        let now = ctx.input(|i| i.time);
+        let started = *self.post_update_notice_started_at.get_or_insert(now);
+        const SUCCESS_AUTO_DISMISS_SECS: f64 = 10.0;
+        if success && now - started >= SUCCESS_AUTO_DISMISS_SECS {
+            self.post_update_notice = None;
+            self.post_update_notice_started_at = None;
+            return;
+        }
+        if success {
+            // Ensure the auto-dismiss fires even when the app is
+            // otherwise idle (no input, no scheduled repaint).
+            let remaining = SUCCESS_AUTO_DISMISS_SECS - (now - started);
+            ctx.request_repaint_after(std::time::Duration::from_secs_f64(remaining.max(0.0)));
+        }
         let mut dismiss = false;
         let mut view_log = false;
 
@@ -1342,6 +1360,8 @@ impl ApiClient {
         let mut do_save = false;
         let mut do_cancel = false;
         let mut do_check_updates = false;
+        let mut do_inline_update_now = false;
+        let mut do_open_releases_url: Option<String> = None;
 
         egui::Window::new(
             egui::RichText::new("SETTINGS")
@@ -1477,6 +1497,118 @@ impl ApiClient {
                 do_check_updates = true;
             }
 
+            // Inline check-result block — surfaces the outcome right
+            // where the user asked, so they don't have to close the
+            // Settings modal to find the Update button.
+            //
+            // Precedence: a known available update wins over any other
+            // state, since it's the actionable case the user cares
+            // about most (works even if the launch-time auto-check is
+            // what populated `update_available`).
+            let available = self.update_available.clone();
+            let inline_state = if available.is_some() {
+                "available"
+            } else if matches!(self.manual_update_check, UpdateCheckOutcome::Checking) {
+                "checking"
+            } else if matches!(self.manual_update_check, UpdateCheckOutcome::NoUpdate) {
+                "uptodate"
+            } else {
+                "idle"
+            };
+            match inline_state {
+                "checking" => {
+                    ui.add_space(8.0);
+                    ui.horizontal(|ui| {
+                        ui.spinner();
+                        ui.label(
+                            egui::RichText::new("Checking GitHub…")
+                                .size(11.0)
+                                .color(muted()),
+                        );
+                    });
+                }
+                "uptodate" => {
+                    ui.add_space(8.0);
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "{}  You're on the latest version (v{})",
+                            egui_phosphor::regular::CHECK,
+                            env!("CARGO_PKG_VERSION"),
+                        ))
+                        .size(11.0)
+                        .color(muted()),
+                    );
+                }
+                "available" => {
+                    let tag = available.unwrap_or_default();
+                    let version = tag.trim_start_matches('v');
+                    let release_url = format!(
+                        "https://github.com/chud-lori/rusty-requester/releases/tag/{}",
+                        tag,
+                    );
+                    let in_app_ok = in_app_update_supported();
+                    ui.add_space(8.0);
+                    egui::Frame::none()
+                        .fill(elevated())
+                        .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(76, 175, 80)))
+                        .rounding(egui::Rounding::same(6.0))
+                        .inner_margin(egui::Margin::symmetric(10.0, 8.0))
+                        .show(ui, |ui| {
+                            ui.label(
+                                egui::RichText::new(format!(
+                                    "Update available: v{}  (you're on v{})",
+                                    version,
+                                    env!("CARGO_PKG_VERSION"),
+                                ))
+                                .size(12.0)
+                                .strong()
+                                .color(text()),
+                            );
+                            ui.add_space(6.0);
+                            ui.horizontal(|ui| {
+                                // Primary "Update now" only on platforms
+                                // where the in-app update path actually
+                                // works. On Windows we fall through to
+                                // the existing update modal so the user
+                                // still sees the copy-command flow.
+                                if in_app_ok
+                                    && ui
+                                        .add(
+                                            egui::Button::new(
+                                                egui::RichText::new("Update now")
+                                                    .color(egui::Color32::WHITE)
+                                                    .strong()
+                                                    .size(11.0),
+                                            )
+                                            .fill(accent())
+                                            .min_size(egui::vec2(110.0, 26.0)),
+                                        )
+                                        .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                        .clicked()
+                                {
+                                    do_inline_update_now = true;
+                                }
+                                if ui
+                                    .add(
+                                        egui::Button::new(
+                                            egui::RichText::new("Release notes")
+                                                .color(text())
+                                                .size(11.0),
+                                        )
+                                        .fill(elevated())
+                                        .min_size(egui::vec2(110.0, 26.0)),
+                                    )
+                                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                    .clicked()
+                                {
+                                    do_open_releases_url = Some(release_url);
+                                }
+                            });
+                        });
+                }
+                _ => {}
+            }
+
             ui.add_space(14.0);
             ui.separator();
             ui.add_space(6.0);
@@ -1523,8 +1655,29 @@ impl ApiClient {
             self.update_check_rx = Some(spawn_update_check(&self.http_runtime));
             self.state.settings.dismissed_update_version = None;
             self.editing_settings.dismissed_update_version = None;
+            self.manual_update_check = UpdateCheckOutcome::Checking;
             self.save_state();
             self.show_toast("Checking for updates…");
+        }
+        if do_inline_update_now {
+            // Save any pending settings edits before kicking off the
+            // update — the in-app updater is about to kill the running
+            // process and there's no chance afterwards.
+            self.state.settings = self.editing_settings.clone();
+            self.http_client = crate::net::build_client(&self.state.settings);
+            self.save_state();
+            self.show_settings_modal = false;
+            self.spawn_update();
+        }
+        if let Some(url) = do_open_releases_url {
+            #[cfg(target_os = "macos")]
+            let _ = std::process::Command::new("open").arg(&url).spawn();
+            #[cfg(target_os = "linux")]
+            let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
+            #[cfg(target_os = "windows")]
+            let _ = std::process::Command::new("cmd")
+                .args(["/C", "start", "", &url])
+                .spawn();
         }
     }
 
