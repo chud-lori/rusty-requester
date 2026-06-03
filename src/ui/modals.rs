@@ -1255,7 +1255,10 @@ impl ApiClient {
         let (border_color, title) = if success {
             (
                 egui::Color32::from_rgb(76, 175, 80),
-                format!("✓ Updated to v{}", detail),
+                // Phosphor CHECK — egui's bundled font has no U+2713
+                // glyph, so a literal `✓` renders as a tofu square
+                // (`sidebar.rs:926` already calls this out).
+                format!("{}  Updated to v{}", egui_phosphor::regular::CHECK, detail),
             )
         } else {
             (
