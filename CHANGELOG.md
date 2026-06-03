@@ -11,7 +11,7 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
-## Unreleased
+## [0.21.0] — 2026-06-03
 
 ### Added
 - **Inline update status + "Update now" button in Settings.** Clicking
