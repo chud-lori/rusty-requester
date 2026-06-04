@@ -11,7 +11,7 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
-## [0.21.1] — 2026-06-04
+## Unreleased
 
 ### Fixed
 - **Saved-request tabs now show the amber unsaved-change dot.** Draft
