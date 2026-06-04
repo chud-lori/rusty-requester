@@ -11,6 +11,19 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Fixed
+- **Saved-request tabs now show the amber unsaved-change dot.** Draft
+  tabs already showed the dot next to the close button; saved request
+  tabs now show the same indicator after edits until an explicit save.
+- **Tooltip/status separator dots no longer render as tofu squares.**
+  Replaced literal bullet glyphs in rendered egui text with painter
+  circles, covering the tab tooltip's "Unsaved draft/changes" marker
+  and the response status chip separator. The Body tab's content dot
+  and update-instructions bullets are painter-drawn too, preserving
+  the original UI without relying on missing font glyphs.
+
 ## [0.21.0] — 2026-06-03
 
 ### Added

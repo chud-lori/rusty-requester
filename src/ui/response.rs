@@ -28,11 +28,9 @@ impl ApiClient {
         }
         let bullet_sep = |ui: &mut egui::Ui| {
             ui.add_space(4.0);
-            ui.label(
-                egui::RichText::new("•")
-                    .color(muted().linear_multiply(0.7))
-                    .size(12.0),
-            );
+            let (rect, _) = ui.allocate_exact_size(egui::vec2(6.0, 12.0), egui::Sense::hover());
+            ui.painter()
+                .circle_filled(rect.center(), 1.5, muted().linear_multiply(0.7));
             ui.add_space(4.0);
         };
         // In a right-to-left layout, items are laid out right-first,

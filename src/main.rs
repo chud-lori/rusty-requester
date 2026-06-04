@@ -123,6 +123,9 @@ struct ApiClient {
     /// the first send or after an assertion was added).
     assertion_results: Vec<Option<AssertionResult>>,
     editing_request_id_for_history: Option<String>,
+    /// Saved-request baseline from the last explicit save. When the live
+    /// request differs, the tab strip shows the same amber dot drafts use.
+    saved_request_dirty_baselines: HashMap<String, Request>,
 
     storage_path: PathBuf,
 
@@ -427,6 +430,7 @@ impl Default for ApiClient {
             editing_assertions: vec![],
             assertion_results: vec![],
             editing_request_id_for_history: None,
+            saved_request_dirty_baselines: HashMap::new(),
             storage_path,
             request_in_flight: None,
             streaming_events: Vec::new(),
@@ -663,6 +667,21 @@ impl ApiClient {
         folder.requests.iter().find(|r| &r.id == req_id).cloned()
     }
 
+    fn get_saved_request_by_id(&self, request_id: &str) -> Option<Request> {
+        fn go(folders: &[Folder], request_id: &str) -> Option<Request> {
+            for folder in folders {
+                if let Some(req) = folder.requests.iter().find(|r| r.id == request_id) {
+                    return Some(req.clone());
+                }
+                if let Some(req) = go(&folder.subfolders, request_id) {
+                    return Some(req);
+                }
+            }
+            None
+        }
+        go(&self.state.folders, request_id)
+    }
+
     fn update_current_request<F>(&mut self, updater: F)
     where
         F: FnOnce(&mut Request),
@@ -676,13 +695,44 @@ impl ApiClient {
                 }
                 return;
             }
+            let mut changed_pair: Option<(Request, Request)> = None;
             if let Some(folder) = self.get_current_folder_mut() {
                 if let Some(request) = folder.requests.iter_mut().find(|r| r.id == req_id) {
+                    let before = request.clone();
                     updater(request);
+                    changed_pair = Some((before, request.clone()));
                 }
+            }
+            if let Some((before, after)) = changed_pair {
+                self.track_saved_request_change(&req_id, before, &after);
             }
             self.save_state();
         }
+    }
+
+    fn track_saved_request_change(&mut self, request_id: &str, before: Request, after: &Request) {
+        if before == *after {
+            return;
+        }
+        if let Some(baseline) = self.saved_request_dirty_baselines.get(request_id) {
+            if baseline == after {
+                self.saved_request_dirty_baselines.remove(request_id);
+            }
+        } else {
+            self.saved_request_dirty_baselines
+                .insert(request_id.to_string(), before);
+        }
+    }
+
+    fn request_tab_has_unsaved_changes(&self, tab: &OpenTab) -> bool {
+        tab.is_draft()
+            || self
+                .saved_request_dirty_baselines
+                .contains_key(&tab.request_id)
+    }
+
+    fn mark_saved_request_clean(&mut self, request_id: &str) {
+        self.saved_request_dirty_baselines.remove(request_id);
     }
 
     fn commit_editing(&mut self) {
@@ -1765,7 +1815,13 @@ impl ApiClient {
             }
             false
         }
+        let before = self.get_saved_request_by_id(request_id);
         if go(&mut self.state.folders, request_id, &new_name) {
+            if let (Some(before), Some(after)) =
+                (before, self.get_saved_request_by_id(request_id))
+            {
+                self.track_saved_request_change(request_id, before, &after);
+            }
             if self.selected_request_id.as_deref() == Some(request_id) {
                 self.editing_name = new_name;
             }
@@ -2186,11 +2242,8 @@ impl eframe::App for ApiClient {
             self.actions_palette_selected = 0;
             self.actions_palette_focus_pending = true;
         }
-        // Cmd/Ctrl+S — if the active tab is a draft, open the Save-draft
-        // modal to pick a destination collection. Saved requests are
-        // auto-persisted to disk on every edit; we still show a "Saved"
-        // toast so the keypress has visible feedback (otherwise it
-        // reads as broken).
+        // Cmd/Ctrl+S — drafts open the Save-draft modal; saved requests
+        // clear their dirty indicator after writing the current state.
         if cmd_s {
             if let Some(req_id) = self.selected_request_id.clone() {
                 if self.selected_folder_path.is_empty() {
@@ -2203,6 +2256,8 @@ impl eframe::App for ApiClient {
                         self.begin_save_draft(idx);
                     }
                 } else {
+                    self.mark_saved_request_clean(&req_id);
+                    self.save_state();
                     self.show_toast("Saved");
                 }
             }

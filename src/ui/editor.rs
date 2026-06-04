@@ -232,6 +232,8 @@ impl ApiClient {
                                                 == Some(tab.request_id.as_str());
                                             let is_renaming = self.renaming_request_id.as_deref()
                                                 == Some(tab.request_id.as_str());
+                                            let has_unsaved_changes =
+                                                self.request_tab_has_unsaved_changes(tab);
 
                                             let (action, tab_rect) = render_single_tab(
                                                 ui,
@@ -241,6 +243,7 @@ impl ApiClient {
                                                 &url,
                                                 is_active,
                                                 tab.is_draft(),
+                                                has_unsaved_changes,
                                                 tab.pinned,
                                                 is_renaming,
                                             );
@@ -644,11 +647,8 @@ impl ApiClient {
         } else {
             format!("Cookies ({})", cookies_count)
         };
-        let body_label = if self.editing_body.is_empty() {
-            "Body".to_string()
-        } else {
-            "Body •".to_string()
-        };
+        let body_has_content = !self.editing_body.is_empty();
+        let body_label = "Body".to_string();
         let auth_label = match &self.editing_auth {
             Auth::None => "Auth".to_string(),
             Auth::Bearer { .. } => "Auth (Bearer)".to_string(),
@@ -680,7 +680,13 @@ impl ApiClient {
                 RequestTab::Cookies,
                 &cookies_label,
             );
-            tab_button(ui, &mut self.request_tab, RequestTab::Body, &body_label);
+            tab_button_with_dot(
+                ui,
+                &mut self.request_tab,
+                RequestTab::Body,
+                &body_label,
+                body_has_content,
+            );
             tab_button(ui, &mut self.request_tab, RequestTab::Auth, &auth_label);
             tab_button(ui, &mut self.request_tab, RequestTab::Tests, &tests_label);
         });

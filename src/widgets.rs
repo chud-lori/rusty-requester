@@ -54,6 +54,16 @@ pub fn close_x_button(ui: &mut egui::Ui, hover_text: &str) -> egui::Response {
 }
 
 pub fn tab_button<T: PartialEq + Copy>(ui: &mut egui::Ui, current: &mut T, value: T, label: &str) {
+    tab_button_with_dot(ui, current, value, label, false);
+}
+
+pub fn tab_button_with_dot<T: PartialEq + Copy>(
+    ui: &mut egui::Ui,
+    current: &mut T,
+    value: T,
+    label: &str,
+    show_dot: bool,
+) {
     let selected = *current == value;
     // Active tab: brighter text (theme-aware) — not the accent. The
     // accent goes on the underline only. Tinting text AND underline
@@ -71,6 +81,16 @@ pub fn tab_button<T: PartialEq + Copy>(ui: &mut egui::Ui, current: &mut T, value
         .rounding(egui::Rounding::same(6.0))
         .min_size(egui::vec2(90.0, 30.0));
     let resp = ui.add(btn).on_hover_cursor(egui::CursorIcon::PointingHand);
+    if show_dot && ui.is_rect_visible(resp.rect) {
+        let font = egui::FontId::new(13.0, egui::FontFamily::Proportional);
+        let label_w = ui
+            .fonts(|f| f.layout_no_wrap(label.to_string(), font, egui::Color32::WHITE))
+            .size()
+            .x;
+        let dot_x = resp.rect.center().x + (label_w / 2.0) + 8.0;
+        ui.painter()
+            .circle_filled(egui::pos2(dot_x, resp.rect.center().y), 2.5, muted());
+    }
     if selected {
         let rect = resp.rect;
         let y = rect.bottom() - 1.0;
@@ -404,6 +424,7 @@ pub fn render_single_tab(
     url: &str,
     is_active: bool,
     is_draft: bool,
+    has_unsaved_changes: bool,
     is_pinned: bool,
     is_renaming: bool,
 ) -> (TabAction, egui::Rect) {
@@ -543,9 +564,8 @@ pub fn render_single_tab(
         let name_x = pad_left + method_slot_w;
         let name_color = if is_active { text() } else { muted() };
         let name_font = egui::FontId::new(12.0, egui::FontFamily::Proportional);
-        // Reserve space for close button plus the optional amber dot
-        // (only drafts show it — saved requests auto-persist).
-        let has_indicator = is_draft;
+        // Reserve space for close button plus the optional amber dot.
+        let has_indicator = has_unsaved_changes;
         let right_reserve: f32 = if has_indicator { 40.0 } else { 28.0 };
         let max_w = (rect.right() - right_reserve) - name_x;
         // While renaming, the caller paints an overlay TextEdit at
@@ -562,7 +582,8 @@ pub fn render_single_tab(
             );
         }
 
-        // Draft indicator — saved requests auto-persist, so no dot there.
+        // Unsaved indicator: drafts are inherently unsaved; saved
+        // requests show it after edits until the user explicitly saves.
         if has_indicator {
             let dot_x = rect.right() - 30.0;
             ui.painter()
@@ -618,6 +639,7 @@ pub fn render_single_tab(
     let tip_name = name.to_string();
     let tip_url = url.to_string();
     let tip_is_draft = is_draft;
+    let tip_has_unsaved_changes = has_unsaved_changes;
     resp.clone().on_hover_ui(move |ui| {
         ui.set_max_width(360.0);
         ui.label(
@@ -639,12 +661,32 @@ pub fn render_single_tab(
         }
         if tip_is_draft {
             ui.add_space(4.0);
-            ui.label(
-                egui::RichText::new("● Unsaved draft")
-                    .color(C_ORANGE)
-                    .size(11.0)
-                    .strong(),
-            );
+            ui.horizontal(|ui| {
+                let (dot_rect, _) =
+                    ui.allocate_exact_size(egui::vec2(9.0, 11.0), egui::Sense::hover());
+                ui.painter()
+                    .circle_filled(dot_rect.center(), 3.0, C_ORANGE);
+                ui.label(
+                    egui::RichText::new("Unsaved draft")
+                        .color(C_ORANGE)
+                        .size(11.0)
+                        .strong(),
+                );
+            });
+        } else if tip_has_unsaved_changes {
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                let (dot_rect, _) =
+                    ui.allocate_exact_size(egui::vec2(9.0, 11.0), egui::Sense::hover());
+                ui.painter()
+                    .circle_filled(dot_rect.center(), 3.0, C_ORANGE);
+                ui.label(
+                    egui::RichText::new("Unsaved changes")
+                        .color(C_ORANGE)
+                        .size(11.0)
+                        .strong(),
+                );
+            });
         }
     });
 

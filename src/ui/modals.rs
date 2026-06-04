@@ -1000,19 +1000,32 @@ impl ApiClient {
                     .size(13.0),
                 );
                 ui.add_space(12.0);
+                let update_bullet = |ui: &mut egui::Ui, label: &str| {
+                    ui.horizontal(|ui| {
+                        let (dot_rect, _) =
+                            ui.allocate_exact_size(egui::vec2(12.0, 13.0), egui::Sense::hover());
+                        ui.painter()
+                            .circle_filled(dot_rect.center(), 2.0, muted());
+                        ui.label(egui::RichText::new(label).color(muted()).size(10.5));
+                    });
+                };
                 if in_app_ok {
                     // macOS / Linux: "Update now" handles everything,
                     // so the user doesn't need to see the curl
                     // one-liner. Just describe what'll happen.
                     ui.label(
+                        egui::RichText::new("Clicking Update now will:")
+                        .color(muted())
+                        .size(10.5),
+                    );
+                    update_bullet(ui, "Download the new build in the background");
+                    update_bullet(ui, "Quit and replace the running app automatically");
+                    update_bullet(ui, "Strip Gatekeeper quarantine (macOS) and relaunch");
+                    ui.add_space(8.0);
+                    ui.label(
                         egui::RichText::new(
-                            "Clicking Update now will:\n\
-                             • Download the new build in the background\n\
-                             • Quit and replace the running app automatically\n\
-                             • Strip Gatekeeper quarantine (macOS) and relaunch\n\n\
-                             Your data (data.json — collections, history, OAuth \
-                             tokens, env vars) is untouched. You'll see a live log \
-                             while it runs.",
+                            "Your data (data.json — collections, history, OAuth tokens, env vars) \
+                             is untouched. You'll see a live log while it runs.",
                         )
                         .color(muted())
                         .size(10.5),
@@ -1045,13 +1058,17 @@ impl ApiClient {
                         });
                     ui.add_space(6.0);
                     ui.label(
+                        egui::RichText::new("The official one-line installer handles everything:")
+                        .color(muted())
+                        .size(10.5),
+                    );
+                    update_bullet(ui, "Quits the running app automatically");
+                    update_bullet(ui, "Downloads the new build from GitHub Releases");
+                    update_bullet(ui, "Replaces the installed binary");
+                    ui.add_space(8.0);
+                    ui.label(
                         egui::RichText::new(
-                            "The official one-line installer handles everything:\n\
-                             • Quits the running app automatically\n\
-                             • Downloads the new build from GitHub Releases\n\
-                             • Replaces the installed binary\n\n\
-                             Your data (data.json) is untouched. After it finishes, \
-                             relaunch the app.",
+                            "Your data (data.json) is untouched. After it finishes, relaunch the app.",
                         )
                         .color(muted())
                         .size(10.5),
