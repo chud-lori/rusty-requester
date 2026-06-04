@@ -1817,8 +1817,7 @@ impl ApiClient {
         }
         let before = self.get_saved_request_by_id(request_id);
         if go(&mut self.state.folders, request_id, &new_name) {
-            if let (Some(before), Some(after)) =
-                (before, self.get_saved_request_by_id(request_id))
+            if let (Some(before), Some(after)) = (before, self.get_saved_request_by_id(request_id))
             {
                 self.track_saved_request_change(request_id, before, &after);
             }

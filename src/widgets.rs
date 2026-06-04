@@ -664,8 +664,7 @@ pub fn render_single_tab(
             ui.horizontal(|ui| {
                 let (dot_rect, _) =
                     ui.allocate_exact_size(egui::vec2(9.0, 11.0), egui::Sense::hover());
-                ui.painter()
-                    .circle_filled(dot_rect.center(), 3.0, C_ORANGE);
+                ui.painter().circle_filled(dot_rect.center(), 3.0, C_ORANGE);
                 ui.label(
                     egui::RichText::new("Unsaved draft")
                         .color(C_ORANGE)
@@ -678,8 +677,7 @@ pub fn render_single_tab(
             ui.horizontal(|ui| {
                 let (dot_rect, _) =
                     ui.allocate_exact_size(egui::vec2(9.0, 11.0), egui::Sense::hover());
-                ui.painter()
-                    .circle_filled(dot_rect.center(), 3.0, C_ORANGE);
+                ui.painter().circle_filled(dot_rect.center(), 3.0, C_ORANGE);
                 ui.label(
                     egui::RichText::new("Unsaved changes")
                         .color(C_ORANGE)
