@@ -4,11 +4,11 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Rusty Requester — a native, offline, low-RAM API client</title>
-<meta name="description" content="A Postman alternative that doesn't chew through hundreds of MB of RAM. Native Rust + egui. ~15 MB binary, ~30 MB idle RAM, &lt;100 ms cold start. Built for older / low-spec machines first." />
+<meta name="description" content="A Postman alternative that doesn't chew through hundreds of MB of RAM. Native Rust + egui, offline collections, cURL import, response inspector, and a data-driven Collection Runner." />
 <link rel="icon" type="image/svg+xml" href="./icon.svg" />
 
 <meta property="og:title" content="Rusty Requester — native, offline, low-RAM API client" />
-<meta property="og:description" content="Postman alternative without the Electron tax. ~15 MB binary, ~30 MB idle RAM, <100 ms cold start. Rust + egui, no webview." />
+<meta property="og:description" content="Postman alternative without the Electron tax. Native Rust + egui, offline collections, cURL import, response inspector, and data-driven runner reports." />
 <meta property="og:type" content="website" />
 <meta property="og:url" content="https://chud-lori.github.io/rusty-requester/" />
 <meta property="og:image" content="https://raw.githubusercontent.com/chud-lori/rusty-requester/main/assets/icon.png" />
@@ -237,7 +237,7 @@ footer a:hover { color: var(--accent); }
     <p class="tagline">
       A <b>native, offline, lightweight</b> API client built with Rust and <code>egui</code> —
       a Postman alternative that doesn't chew through hundreds of MB of RAM
-      just to send HTTP requests.
+      just to send HTTP requests, run collections, and inspect responses.
     </p>
     <div class="cta-row">
       <a class="btn btn-primary" href="#install">Install</a>
@@ -326,8 +326,8 @@ footer a:hover { color: var(--accent); }
         <p>Syntax-highlighted JSON with Postman-style fold chevrons on every <code>{</code> / <code>[</code>. Server-Sent Events streaming for LLM APIs.</p>
       </div>
       <div class="feat">
-        <h3>Postman collection import</h3>
-        <p>Drop a Postman v2.1 collection in — everything imports including env vars, scripts (as comments), and folder structure.</p>
+        <h3>Collection Runner</h3>
+        <p>Run all collections or a selected folder with optional CSV/JSON data rows, live progress, assertions, extractors, and safe CSV/HTML reports.</p>
       </div>
       <div class="feat">
         <h3>Paste-as-cURL</h3>
@@ -336,6 +336,10 @@ footer a:hover { color: var(--accent); }
       <div class="feat">
         <h3>Response diff</h3>
         <p>Compare current send against any previous response of the same request. Highlights additions, deletions, and value changes.</p>
+      </div>
+      <div class="feat">
+        <h3>Theme preview</h3>
+        <p>Switch Dark, Light, or Postman in Settings and preview the full app immediately before saving or cancelling the change.</p>
       </div>
       <div class="feat">
         <h3>⌘P / ⇧⌘P palettes</h3>
@@ -360,6 +364,7 @@ footer a:hover { color: var(--accent); }
       <li><b>No code execution on response content.</b> HTML renders as markup (no DOM, no JS engine); <code>&lt;script&gt;</code> tags display as text.</li>
       <li><b>No memory-corruption path.</b> TLS + HTTP via <code>reqwest</code> / <code>hyper</code> / <code>rustls</code>, all safe Rust.</li>
       <li><b>No shell execution on cURL paste.</b> Flags parse as data, never <code>exec</code>'d.</li>
+      <li><b>Secret-safe runner reports.</b> Reports omit response bodies, headers, cookies, extracted values, and redact URL query strings / fragments.</li>
       <li><b>No telemetry, no analytics, no account.</b> The only network calls are the ones you make and a single GitHub-API check for new releases.</li>
     </ul>
     <p class="muted" style="margin-top: 1rem; font-size: 0.9rem;">

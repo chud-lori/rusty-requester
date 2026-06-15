@@ -11,6 +11,45 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Added
+- **Collection Runner with data-driven runs.** Run all collections or a
+  selected folder/collection scope as a sequence, optionally repeating
+  the run for each CSV or JSON data row. Data rows are overlaid as
+  runner-scoped environment variables, so existing `{{var}}`
+  substitution works without changing saved environments.
+- **Live runner progress.** The Collection Runner results table now
+  fills request-by-request while the run is active, with current
+  `X / Y` progress, status, timing, assertion counts, extractor counts,
+  and miss counts.
+- **Runner report export.** Save runner results as CSV or self-contained
+  HTML for sharing or archiving.
+- **Collection Runner entry points.** Added an Actions Palette item and
+  native macOS Request-menu item for opening the runner.
+
+### Changed
+- **Theme selection now previews before saving.** Choosing Dark, Light,
+  or Postman in Settings immediately previews the app chrome, but the
+  preference is only persisted when Save is pressed.
+- **Response inspector polish.** The response area received layout and
+  readability refinements so status/timing/size controls, body modes,
+  and inspector content behave more consistently across narrow and wide
+  layouts.
+- **UI stability polish.** Tightened several egui layout and interaction
+  edges from the UI/UX polish branch, including title/sidebar/theme
+  behavior that previously felt jumpy or stale.
+
+### Security
+- **Secret-safe runner reporting.** Runner UI rows and exports avoid
+  response bodies, response headers, cookies, and extracted values;
+  report URLs redact query strings and fragments.
+- **Report output hardening.** HTML reports escape all dynamic values,
+  and CSV reports neutralize spreadsheet formula-injection prefixes.
+- **Privacy masking helpers.** Added shared privacy utilities for
+  sensitive-key detection, secret masking, URL query/fragment redaction,
+  and HTML escaping.
+
 ## [0.21.1] — 2026-06-04
 
 ### Fixed

@@ -75,9 +75,10 @@ Tabbed request editor, per-environment variables + cookie jar,
 Postman Collection v2.1 import, syntax-highlighted JSON (with
 Postman-style fold chevrons on every `{` / `[`) / Tree / HTML / SSE
 views, **Server-Sent Events streaming** for LLM APIs, **Cancel**
-mid-flight, **Response diff** across sends, **⌘P request finder** +
-**⇧⌘P actions palette**, and a native macOS menu bar. Full catalog in
-[`docs/FEATURES.md`](docs/FEATURES.md).
+mid-flight, **Response diff** across sends, **Collection Runner** with
+CSV/JSON data rows, live progress, scoped runs, safe CSV/HTML reports,
+**⌘P request finder** + **⇧⌘P actions palette**, and a native macOS
+menu bar. Full catalog in [`docs/FEATURES.md`](docs/FEATURES.md).
 
 ---
 
@@ -248,6 +249,15 @@ All edits auto-save to a single local JSON file — nothing leaves your machine:
 
 The ⇧⌘P actions palette is self-discoverable — open it and start
 typing to see every available action.
+
+### Collection Runner
+
+Open **Collection Runner…** from the Actions Palette or the native
+Request menu to run saved requests as a batch. Pick all collections or
+a specific folder scope, paste optional CSV/JSON data rows, then watch
+live per-request progress. Reports export to CSV or HTML without
+response bodies, headers, cookies, extracted values, or full query
+strings.
 
 Full usage guide, body modes, environment-variable examples, import /
 export, and UI conventions in [`docs/FEATURES.md`](docs/FEATURES.md).

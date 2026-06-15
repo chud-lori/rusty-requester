@@ -38,6 +38,10 @@ src/
   net.rs               # execute_request + reqwest::Client / tokio::Runtime builders +
                        #   URL scheme, error formatting, RequestUpdate enum for
                        #   streaming responses (Progress/Final), SSE streaming path
+  runner.rs            # UI-free Collection Runner engine — scope flattening,
+                       #   CSV/JSON data rows, runner-scoped env overlays,
+                       #   extractor/cookie chaining, assertions, live progress
+                       #   events, and sanitized result structs
   sse.rs               # SSE wire-format parser + event formatter (8 tests, zero deps)
                        #   (v0.10)
   diff.rs              # LCS-based line diff for the response Diff view (5 tests)
@@ -49,6 +53,8 @@ src/
                        #   (v0.7)
   actions.rs           # ⇧⌘P actions palette enum + labels/keywords/shortcut metadata
                        #   (v0.11)
+  privacy.rs           # Sensitive-key detection, secret masking, URL query/fragment
+                       #   redaction, HTML escaping for safe reports and previews
   extract.rs           # Dot/bracket JSON-path evaluator for extractors (5 tests)
                        #   (v0.4)
   assertion.rs         # Assertion evaluator (status/header/body × 7 ops) +
@@ -83,9 +89,9 @@ src/
                        #   headers grid, loading spinner, illustrated failed state,
                        #   structured SSE Events log, line diff renderer
     modals.rs          # env mgr, save-draft folder picker, "Save changes?" confirm,
-                       #   cURL paste, snippet panel, settings, About modal,
-                       #   command palette (⌘P), actions palette (⇧⌘P),
-                       #   update-instructions modal, toast
+                       #   cURL paste, Collection Runner modal + reports, snippet
+                       #   panel, settings, About modal, command palette (⌘P),
+                       #   actions palette (⇧⌘P), update-instructions modal, toast
 
 assets/
   icon.svg             # canonical vector source for the app icon
@@ -103,9 +109,10 @@ scripts/
 install.sh             # macOS + Linux one-line installer (UNINSTALL / PURGE modes v0.17)
 ```
 
-55 unit tests across `extract`, `assertion`, `cookies`, `oauth`, `io`,
-`io::curl`, `html_preview`, `sse`, and `diff` (plus 1 ignored integration
-scratch test). Run `cargo test` to verify everything builds + passes.
+92 unit tests across `extract`, `assertion`, `cookies`, `oauth`, `io`,
+`io::curl`, `html_preview`, `sse`, `diff`, `privacy`, `runner`, and UI
+helpers (plus 1 ignored integration scratch test). Run `cargo test` to
+verify everything builds + passes.
 
 ## Design notes
 
@@ -149,6 +156,21 @@ and emits a `RequestUpdate::Progress { snapshot, new_events }` per
 batch. The UI accumulates `new_events` into `ApiClient.streaming_events`
 for the structured Events view, while `snapshot.body` holds the
 formatted text log for the Raw view.
+
+### Collection Runner
+
+The runner is deliberately UI-free (`runner.rs`). It flattens the folder tree
+with `collect_requests`, optionally restricts the root to a selected folder id,
+parses CSV/JSON data rows, and runs each row as a full iteration. Row values are
+overlaid into a temporary runner environment, then normal request substitution,
+cookies, extractors, and assertions reuse the existing request execution path.
+
+The UI starts the run on the long-lived HTTP runtime and listens on an
+`mpsc::Receiver<CollectionRunEvent>`. `RequestFinished` events append live rows
+to the modal as each request completes; the terminal `Finished` event carries
+the full summary used for final counts and report export. Stored/reportable
+runner data intentionally excludes response bodies, response headers, cookies,
+and extracted values; reports also redact URL query/fragment data.
 
 ### State persistence
 

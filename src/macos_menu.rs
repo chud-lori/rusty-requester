@@ -20,6 +20,7 @@ pub const MENU_EXPORT_YAML: &str = "export_yaml";
 pub const MENU_TOGGLE_SNIPPET: &str = "toggle_snippet";
 pub const MENU_COMMAND_PALETTE: &str = "command_palette";
 pub const MENU_SEND: &str = "send";
+pub const MENU_COLLECTION_RUNNER: &str = "collection_runner";
 pub const MENU_SETTINGS: &str = "settings";
 pub const MENU_ENVIRONMENTS: &str = "environments";
 pub const MENU_CLOSE_TAB: &str = "close_tab";
@@ -138,6 +139,8 @@ pub fn install() {
                 true,
                 Some(Accelerator::new(Some(cmd), Code::Enter)),
             ),
+            &PredefinedMenuItem::separator(),
+            &MenuItem::with_id(MENU_COLLECTION_RUNNER, "Collection Runner…", true, None),
             &PredefinedMenuItem::separator(),
             &MenuItem::with_id(MENU_ENVIRONMENTS, "Environments…", true, None),
         ])

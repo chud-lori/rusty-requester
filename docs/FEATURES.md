@@ -8,7 +8,7 @@ Full feature catalog for Rusty Requester. For a quick pitch see the
 
 - 🚀 **Truly native** — Rust + `egui`, no Electron, no Chromium
 - 💾 **Fully offline** — all data lives in one local JSON file, no cloud sync, no telemetry
-- 🎨 **Dark / Light / Postman themes** — rust-orange / amber accents on either a deep Monokai-style dark canvas *(v0.1)* or a GitHub-ish near-white canvas *(v0.14)*; plus a **Postman** theme (pure-white canvas, warm-gray sidebar chrome, Postman-blue accent, Inter-Light UI font) *(v0.18)*. Toggle in Settings. Syntax-highlighted response body adapts: Monokai on dark, dark-on-paper on the paper themes.
+- 🎨 **Dark / Light / Postman themes** — rust-orange / amber accents on either a deep Monokai-style dark canvas *(v0.1)* or a GitHub-ish near-white canvas *(v0.14)*; plus a **Postman** theme (pure-white canvas, warm-gray sidebar chrome, Postman-blue accent, Inter-Light UI font) *(v0.18)*. Toggle in Settings, preview immediately, and persist only when Save is pressed. Syntax-highlighted response body adapts: Monokai on dark, dark-on-paper on the paper themes.
 - 🍎 Builds for Apple Silicon, Intel Mac, Linux, and Windows
 - 🪟 **Native macOS title-bar integration** — traffic-light buttons float over the app content (no dark stub strip above the workspace).
 
@@ -74,6 +74,15 @@ Full feature catalog for Rusty Requester. For a quick pitch see the
 - 📥 **Import** JSON, YAML, or **Postman Collection v2.1** files
 - ✏️ Rename via double-click or right-click
 
+## Collection Runner
+
+- ▶️ **Scoped batch runs** — open **Collection Runner…** from the Actions Palette or Request menu, then run all collections or one selected collection/folder.
+- 🧾 **CSV / JSON data rows** — paste a CSV table or JSON object/array. Each row becomes one full iteration and is overlaid as runner-scoped environment variables for existing `{{var}}` substitution.
+- 🔁 **Chained workflows** — cookies and response extractors flow forward during the run, so login → fetch → assert sequences work without writing back into the saved environment.
+- ✅ **Assertions per request** — existing Tests-tab assertions are evaluated during the run and summarized as pass / fail / error counts.
+- 📈 **Live progress** — result rows appear as each request completes, with `X / Y` progress, HTTP status, timing, assertion counts, extractor counts, and misses.
+- 📤 **CSV / HTML reports** — export the finished run for sharing or regression notes. Reports intentionally omit response bodies, response headers, cookies, extracted values, and full query strings.
+
 ## Tabs
 
 - 📑 **Multi-tab workspace** — open many requests in parallel; tabs persist across quit/relaunch
@@ -84,6 +93,7 @@ Full feature catalog for Rusty Requester. For a quick pitch see the
 ## Workflow
 
 - 🎛 **Settings modal** *(v0.3)* — request timeout, max body size cap (50 MB default; truncates with banner), proxy URL, TLS verification toggle. All persisted to disk.
+- 🎨 **Theme preview before save** — Settings applies the selected theme immediately for preview, then commits or discards it with Save / Cancel.
 - 🔌 **Reused HTTP client + tokio runtime** *(v0.3 / v0.5)* — no per-request connection-pool / runtime spinup; faster repeated sends.
 - ⌨️ **⌘P command palette** *(v0.5)* — fuzzy-find any request across every collection, ↑↓ navigate, Enter to open
 - ⌨️ **⇧⌘P actions palette** *(v0.11)* — fuzzy-find an app **action** (New request, Duplicate tab, Toggle snippet panel, Copy as cURL, Open environments, Clear history, …). Fully discoverable — open the palette and start typing.
@@ -137,6 +147,36 @@ to grab it.
 - **Sidebar → 📥 Import → Import collection file…** — pick a `.json`, `.yaml`, or `.yml` file. Postman Collection v2.1 files are auto-detected (schema sniffed) and land as one new collection. IDs are regenerated on import so nothing collides with your existing data.
 - **Sidebar → 📤 Export → Export all as JSON / YAML…** — dumps every collection into a single file (good for backups).
 - **Right-click any collection / folder → Export as JSON / YAML…** — exports just that subtree (this is the "collection-level" export for sharing).
+
+### Running collections with data rows
+
+Open **Collection Runner…** from **⇧⌘P / Ctrl+Shift+P** or the Request menu.
+Select **All collections** or a specific folder/collection scope, paste optional
+CSV or JSON data, then click **Run**. The results table updates live as each
+request completes.
+
+CSV data uses the first row as headers:
+
+```csv
+username,password
+alice,secret
+bob,secret2
+```
+
+JSON accepts either one object or an array of objects:
+
+```json
+[
+  { "username": "alice", "password": "secret" },
+  { "username": "bob", "password": "secret2" }
+]
+```
+
+Each row is applied as runner-scoped environment variables for that iteration,
+so a URL like `https://{{host}}/users/{{username}}` works without modifying the
+saved environment. Extractors and cookies chain forward during the run, but
+runner state is not written back to your environment. After completion, export
+CSV or HTML reports from the runner modal.
 
 ### Environment variables
 
@@ -268,16 +308,20 @@ Response viewing
 Testing
 - [x] **Post-response extractors** — dot/bracket JSON path → env variables for chaining
 - [x] **Assertions** — status / header / body × equals · contains · matches `^2..$` · exists · `>` · `<`. Per-row pass/fail dot.
+- [x] **Collection Runner** — scoped collection/folder runs, optional CSV/JSON data rows, live progress, assertions, extractors, cookie chaining, CSV/HTML reports
 
 Networking & safety
 - [x] **Settings modal** — request timeout, max body cap (streaming + truncation banner), proxy URL, TLS verification toggle
 - [x] **Reused `reqwest::Client` + `tokio::Runtime`** across sends — no per-request spinup cost
 - [x] **Cookie jar (per-environment)** — `Set-Cookie` parsed, host/path-matched on next send, expiry-aware
+- [x] **Secret-safe report paths** — runner reports redact URL query/fragment data, omit response content and cookies, escape HTML, and harden CSV against spreadsheet formula injection
 
 UI
 - [x] **Phosphor icon font** — 1,200+ tintable icons rendered as font glyphs (replaces every hand-drawn painter icon)
 - [x] **Styled hint text** — dim, italic-free placeholders in all TextEdits so `Key`/`Value`/`Description` no longer look like real data
 - [x] **Light theme** (Settings → Theme) — flips egui's chrome; saturated accents stay constant across themes
+- [x] **Theme preview** — selected theme reflects immediately in Settings but only saves when the user confirms
+- [x] **Response inspector polish** — tightened response toolbar, body-view controls, and inspector layout behavior across narrow and wide panels
 
 Platform
 - [x] macOS + Linux one-line installer (`install.sh`); auto-detects platform *(v0.2.x)*
@@ -300,4 +344,5 @@ _Nothing open — OAuth 2.0 Auth Code + PKCE *(v0.15)* was the last v1.0 item._
 - [ ] **WebSocket testing** — separate connection lifecycle + per-request message log.
 - [ ] **Pre-request scripts** — Rhai/Boa scripting engine for transformations before send.
 - [ ] **Windows builds** — CI + installer parity with macOS/Linux.
-- [ ] **Collection runner** — run a folder as a sequence, pass extracted vars forward.
+- [ ] **OpenAPI import / refresh** — import a spec into collections and refresh existing generated requests.
+- [ ] **Git-backed workspace sync** — optional local-file workspace mode for teams that want normal Git review / merge flow.
