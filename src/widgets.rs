@@ -1,4 +1,5 @@
-use crate::model::{BodyView, Environment, Folder, HttpMethod, KvRow, Request};
+use crate::model::{Environment, Folder, HttpMethod, KvRow, Request};
+use crate::privacy::{is_sensitive_key, mask_secret_value};
 use crate::theme::*;
 use eframe::egui;
 use serde_json::Value;
@@ -38,7 +39,7 @@ pub fn close_x_button(ui: &mut egui::Ui, hover_text: &str) -> egui::Response {
         let hovered = resp.hovered();
         if hovered {
             ui.painter()
-                .rect_filled(rect, egui::Rounding::same(4.0), C_RED.linear_multiply(0.35));
+                .rect_filled(rect, egui::Rounding::same(5.0), with_alpha(C_RED, 44));
         }
         let color = if hovered { C_RED } else { muted() };
         ui.painter().text(
@@ -75,10 +76,15 @@ pub fn tab_button_with_dot<T: PartialEq + Copy>(
     } else {
         egui::RichText::new(label).color(muted()).size(13.0)
     };
+    let fill = if selected {
+        with_alpha(accent(), if is_light() { 20 } else { 28 })
+    } else {
+        egui::Color32::TRANSPARENT
+    };
     let btn = egui::Button::new(rich)
-        .fill(egui::Color32::TRANSPARENT)
+        .fill(fill)
         .stroke(egui::Stroke::NONE)
-        .rounding(egui::Rounding::same(6.0))
+        .rounding(egui::Rounding::same(8.0))
         .min_size(egui::vec2(90.0, 30.0));
     let resp = ui.add(btn).on_hover_cursor(egui::CursorIcon::PointingHand);
     if show_dot && ui.is_rect_visible(resp.rect) {
@@ -89,7 +95,7 @@ pub fn tab_button_with_dot<T: PartialEq + Copy>(
             .x;
         let dot_x = resp.rect.center().x + (label_w / 2.0) + 8.0;
         ui.painter()
-            .circle_filled(egui::pos2(dot_x, resp.rect.center().y), 2.5, muted());
+            .circle_filled(egui::pos2(dot_x, resp.rect.center().y), 2.5, accent());
     }
     if selected {
         let rect = resp.rect;
@@ -100,7 +106,7 @@ pub fn tab_button_with_dot<T: PartialEq + Copy>(
                 egui::pos2(rect.left() + pad, y),
                 egui::pos2(rect.right() - pad, y),
             ],
-            egui::Stroke::new(2.5, accent()),
+            egui::Stroke::new(2.75, accent()),
         );
     }
     if resp.clicked() {
@@ -212,11 +218,11 @@ pub fn render_kv_table(
     }
 
     let avail = ui.available_width();
-    let cb_w = 22.0;
-    let del_w = 22.0;
-    let key_w = 200.0;
-    let row_h = 24.0;
-    let cell_pad = 6.0;
+    let cb_w = 28.0;
+    let del_w = 28.0;
+    let key_w = avail.mul_add(0.28, 0.0).clamp(150.0, 240.0);
+    let row_h = 28.0;
+    let cell_pad = 8.0;
     // Trailing gap so the × delete button doesn't sit flush against
     // the panel's right border / scroll bar. Matches the 16 px edge
     // rule used in the response chips row.
@@ -232,12 +238,21 @@ pub fn render_kv_table(
 
     ui.horizontal(|ui| {
         ui.add_space(cb_w + cell_pad);
-        ui.label(egui::RichText::new("KEY").size(10.0).color(muted()));
-        ui.add_space(key_w - 20.0);
-        ui.label(egui::RichText::new("VALUE").size(10.0).color(muted()));
+        ui.add_sized(
+            [key_w, 16.0],
+            egui::Label::new(egui::RichText::new("KEY").size(10.0).color(muted())),
+        );
+        ui.add_space(cell_pad);
+        ui.add_sized(
+            [val_w, 16.0],
+            egui::Label::new(egui::RichText::new("VALUE").size(10.0).color(muted())),
+        );
         if show_description {
-            ui.add_space(val_w - 30.0);
-            ui.label(egui::RichText::new("DESCRIPTION").size(10.0).color(muted()));
+            ui.add_space(cell_pad);
+            ui.add_sized(
+                [desc_w, 16.0],
+                egui::Label::new(egui::RichText::new("DESCRIPTION").size(10.0).color(muted())),
+            );
         }
     });
     ui.add_space(2.0);
@@ -246,7 +261,10 @@ pub fn render_kv_table(
             egui::pos2(ui.cursor().left(), ui.cursor().top()),
             egui::pos2(ui.cursor().left() + ui.available_width(), ui.cursor().top()),
         ],
-        egui::Stroke::new(1.0, border().linear_multiply(0.6)),
+        egui::Stroke::new(
+            1.0,
+            with_alpha(border(), if is_light() { 160 } else { 110 }),
+        ),
     );
     ui.add_space(4.0);
 
@@ -262,98 +280,180 @@ pub fn render_kv_table(
     for (i, row) in rows.iter_mut().enumerate() {
         let is_blank = row.is_blank();
         let is_last_blank = is_blank && i == row_count - 1;
-        // Blank ghost-row highlight. Dark mode: a sunken `panel_dark`
-        // reads as a ready-to-type hint. Light mode: the same treatment
-        // paints a medium-grey pill on near-white canvas — the "8-bit"
-        // look. Keep the hint dark-only; light mode leaves the row
-        // transparent and leans on the placeholder text for affordance.
-        let bg = if is_last_blank && !is_light() {
-            panel_dark().linear_multiply(0.6)
+        // Blank ghost-row highlight stays quiet, but no longer disappears:
+        // a faint accent wash makes the ready-to-type row discoverable
+        // without returning to filled input cells.
+        let bg = if is_last_blank {
+            with_alpha(accent(), if is_light() { 10 } else { 16 })
+        } else if i % 2 == 1 {
+            if is_light() {
+                with_alpha(border(), 46)
+            } else {
+                with_alpha(elevated(), 54)
+            }
         } else {
             egui::Color32::TRANSPARENT
         };
-        egui::Frame::none()
+        let row_frame = egui::Frame::none()
             .fill(bg)
-            .rounding(egui::Rounding::same(4.0))
-            .inner_margin(egui::Margin::symmetric(2.0, 2.0))
+            .rounding(egui::Rounding::same(7.0))
+            .inner_margin(egui::Margin::symmetric(5.0, 3.0));
+        egui::Frame::none()
+            .fill(egui::Color32::TRANSPARENT)
+            .rounding(egui::Rounding::same(7.0))
+            .inner_margin(egui::Margin::symmetric(0.0, 0.0))
             .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    if is_last_blank {
-                        ui.add_space(cb_w);
-                    } else {
-                        let cb = ui.add(egui::Checkbox::new(&mut row.enabled, ""));
-                        if cb.changed() {
+                let row_inner = row_frame.show(ui, |ui| {
+                    let mut row_has_focus = false;
+                    ui.horizontal(|ui| {
+                        if is_last_blank {
+                            ui.add_space(cb_w);
+                        } else {
+                            let toggle_label = if row.enabled {
+                                egui_phosphor::regular::CHECK
+                            } else {
+                                ""
+                            };
+                            let toggle_resp = ui
+                                .add_sized(
+                                    [cb_w, row_h],
+                                    egui::Button::new(
+                                        egui::RichText::new(toggle_label).size(11.0).color(text()),
+                                    )
+                                    .fill(if row.enabled {
+                                        with_alpha(accent(), if is_light() { 18 } else { 30 })
+                                    } else {
+                                        egui::Color32::TRANSPARENT
+                                    })
+                                    .stroke(egui::Stroke::new(
+                                        if row.enabled { 1.4 } else { 1.2 },
+                                        if row.enabled {
+                                            with_alpha(accent(), 180)
+                                        } else {
+                                            border()
+                                        },
+                                    ))
+                                    .rounding(egui::Rounding::same(5.0)),
+                                )
+                                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                .on_hover_text(if row.enabled {
+                                    "Disable row"
+                                } else {
+                                    "Enable row"
+                                });
+                            row_has_focus |= toggle_resp.has_focus();
+                            if toggle_resp.clicked() {
+                                row.enabled = !row.enabled;
+                                changed = true;
+                            }
+                        }
+                        ui.add_space(cell_pad);
+
+                        let text_color = if row.enabled { text() } else { muted() };
+
+                        // Frameless inputs — no filled bg, no border. Cells
+                        // inherit the canvas color, structure comes from the
+                        // column-header row + faint separator line above.
+                        // Matches Postman's "ghost cells" look, avoids the
+                        // "white pill on white/gray" appearance inputs had
+                        // when they used `elevated()` as a fill.
+                        let key_resp = ui.add_sized(
+                            [key_w, row_h],
+                            egui::TextEdit::singleline(&mut row.key)
+                                .id(id_salt.with((i, "key")))
+                                .hint_text(if is_last_blank { hint("Key") } else { hint("") })
+                                .text_color(text_color)
+                                .frame(false),
+                        );
+                        if key_resp.changed() {
+                            sanitize_pasted(&mut row.key);
                             changed = true;
                         }
-                    }
-                    ui.add_space(cell_pad);
-
-                    let text_color = if row.enabled { text() } else { muted() };
-
-                    // Frameless inputs — no filled bg, no border. Cells
-                    // inherit the canvas color, structure comes from the
-                    // column-header row + faint separator line above.
-                    // Matches Postman's "ghost cells" look, avoids the
-                    // "white pill on white/gray" appearance inputs had
-                    // when they used `elevated()` as a fill.
-                    let key_resp = ui.add_sized(
-                        [key_w, row_h],
-                        egui::TextEdit::singleline(&mut row.key)
-                            .id(id_salt.with((i, "key")))
-                            .hint_text(if is_last_blank { hint("Key") } else { hint("") })
-                            .text_color(text_color)
-                            .frame(false),
-                    );
-                    if key_resp.changed() {
-                        sanitize_pasted(&mut row.key);
-                        changed = true;
-                    }
-                    ui.add_space(cell_pad);
-
-                    let val_resp = ui.add_sized(
-                        [val_w, row_h],
-                        egui::TextEdit::singleline(&mut row.value)
-                            .id(id_salt.with((i, "value")))
-                            .hint_text(if is_last_blank {
-                                hint("Value")
-                            } else {
-                                hint("")
-                            })
-                            .text_color(text_color)
-                            .frame(false),
-                    );
-                    if val_resp.changed() {
-                        sanitize_pasted(&mut row.value);
-                        changed = true;
-                    }
-
-                    if show_description {
+                        row_has_focus |= key_resp.has_focus();
                         ui.add_space(cell_pad);
-                        let desc_resp = ui.add_sized(
-                            [desc_w, row_h],
-                            egui::TextEdit::singleline(&mut row.description)
-                                .id(id_salt.with((i, "desc")))
+
+                        let sensitive_value = !is_last_blank && is_sensitive_key(&row.key);
+                        let val_resp = ui.add_sized(
+                            [val_w, row_h],
+                            egui::TextEdit::singleline(&mut row.value)
+                                .id(id_salt.with((i, "value")))
                                 .hint_text(if is_last_blank {
-                                    hint("Description")
+                                    hint("Value")
                                 } else {
                                     hint("")
                                 })
                                 .text_color(text_color)
+                                .password(sensitive_value)
                                 .frame(false),
                         );
-                        if desc_resp.changed() {
-                            sanitize_pasted(&mut row.description);
+                        if val_resp.changed() {
+                            sanitize_pasted(&mut row.value);
                             changed = true;
                         }
-                    }
+                        row_has_focus |= val_resp.has_focus();
 
-                    ui.add_space(cell_pad);
-                    if is_last_blank {
-                        ui.add_space(del_w);
-                    } else if close_x_button(ui, "Remove row").clicked() {
-                        to_remove = Some(i);
-                    }
+                        if show_description {
+                            ui.add_space(cell_pad);
+                            let desc_resp = ui.add_sized(
+                                [desc_w, row_h],
+                                egui::TextEdit::singleline(&mut row.description)
+                                    .id(id_salt.with((i, "desc")))
+                                    .hint_text(if is_last_blank {
+                                        hint("Description")
+                                    } else {
+                                        hint("")
+                                    })
+                                    .text_color(text_color)
+                                    .frame(false),
+                            );
+                            if desc_resp.changed() {
+                                sanitize_pasted(&mut row.description);
+                                changed = true;
+                            }
+                            row_has_focus |= desc_resp.has_focus();
+                        }
+
+                        ui.add_space(cell_pad);
+                        if is_last_blank {
+                            ui.add_space(del_w);
+                        } else {
+                            let remove_resp = ui
+                                .add_sized(
+                                    [del_w, row_h],
+                                    egui::Button::new(
+                                        egui::RichText::new(egui_phosphor::regular::X)
+                                            .size(12.0)
+                                            .color(if row.enabled { muted() } else { border() }),
+                                    )
+                                    .fill(egui::Color32::TRANSPARENT)
+                                    .stroke(egui::Stroke::NONE)
+                                    .rounding(egui::Rounding::same(5.0)),
+                                )
+                                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                .on_hover_text("Remove row");
+                            row_has_focus |= remove_resp.has_focus();
+                            if remove_resp.clicked() {
+                                to_remove = Some(i);
+                            }
+                        }
+                    });
+                    row_has_focus
                 });
+                let row_resp = row_inner.response;
+                let row_has_focus = row_inner.inner;
+                let row_hovered = ui.rect_contains_pointer(row_resp.rect);
+                if ui.is_rect_visible(row_resp.rect) && (row_hovered || row_has_focus) {
+                    let stroke_color = if row_has_focus {
+                        accent().linear_multiply(0.8)
+                    } else {
+                        with_alpha(border(), if is_light() { 190 } else { 150 })
+                    };
+                    ui.painter().rect_stroke(
+                        row_resp.rect.expand(0.5),
+                        egui::Rounding::same(7.0),
+                        egui::Stroke::new(1.0, stroke_color),
+                    );
+                }
             });
         // Thin separator below each row so short values stay visually
         // grouped with their key — without it, `page_num / 1` forces
@@ -368,7 +468,10 @@ pub fn render_kv_table(
                     egui::pos2(ui.cursor().left(), y),
                     egui::pos2(ui.cursor().left() + ui.available_width(), y),
                 ],
-                egui::Stroke::new(1.0, border().linear_multiply(0.6)),
+                egui::Stroke::new(
+                    1.0,
+                    with_alpha(border(), if is_light() { 150 } else { 105 }),
+                ),
             );
         }
         ui.add_space(2.0);
@@ -428,8 +531,8 @@ pub fn render_single_tab(
     is_pinned: bool,
     is_renaming: bool,
 ) -> (TabAction, egui::Rect) {
-    let tab_height = 32.0;
-    let tab_width = 180.0;
+    let tab_height = 34.0;
+    let tab_width = 190.0;
     let (rect, mut resp) = ui.allocate_exact_size(
         egui::vec2(tab_width, tab_height),
         egui::Sense::click_and_drag(),
@@ -456,7 +559,7 @@ pub fn render_single_tab(
         // same affordance the sidebar rows use during reorder.
         ui.painter().rect_stroke(
             rect,
-            egui::Rounding::same(6.0),
+            egui::Rounding::same(8.0),
             egui::Stroke::new(1.5, accent()),
         );
     }
@@ -483,7 +586,7 @@ pub fn render_single_tab(
 
     if ui.is_rect_visible(rect) {
         // Tab chrome — Postman-style underline.
-        //   * Active:     transparent fill + bottom accent bar.
+        //   * Active:     faint accent wash + bottom accent bar.
         //   * Hover:      faint elevation so the tab registers as interactive.
         //   * Inactive:   transparent; strip bg shows through.
         // The previous top-accent + tinted-fill combo stacked three
@@ -491,23 +594,30 @@ pub fn render_single_tab(
         // amber draft dot) and read as chaotic. Single bottom accent
         // marks selection cleanly in both themes.
         let tab_bg = if is_active {
-            egui::Color32::TRANSPARENT
+            with_alpha(accent(), if is_light() { 18 } else { 28 })
         } else if resp.hovered() {
             if is_light() {
-                elevated().gamma_multiply(0.5)
+                egui::Color32::from_rgb(242, 245, 249)
             } else {
-                elevated().linear_multiply(0.5)
+                egui::Color32::from_rgb(33, 37, 44)
             }
         } else {
             egui::Color32::TRANSPARENT
         };
         let rounding = egui::Rounding {
-            nw: 8.0,
-            ne: 8.0,
+            nw: 9.0,
+            ne: 9.0,
             sw: 0.0,
             se: 0.0,
         };
         ui.painter().rect_filled(rect, rounding, tab_bg);
+        if is_active {
+            ui.painter().rect_stroke(
+                rect.shrink(0.5),
+                rounding,
+                egui::Stroke::new(1.0, with_alpha(accent(), if is_light() { 70 } else { 95 })),
+            );
+        }
 
         if is_active {
             // Bottom underline, inset slightly so it doesn't butt against
@@ -520,7 +630,7 @@ pub fn render_single_tab(
                     egui::pos2(rect.left() + pad, y),
                     egui::pos2(rect.right() - pad, y),
                 ],
-                egui::Stroke::new(2.5, accent()),
+                egui::Stroke::new(3.0, accent()),
             );
         }
 
@@ -531,7 +641,7 @@ pub fn render_single_tab(
         let mc = method_color(method);
         let method_str = format!("{}", method);
         let method_font = egui::FontId::new(10.5, egui::FontFamily::Proportional);
-        let method_slot_w = 42.0;
+        let method_slot_w = 46.0;
         let mut pad_left = rect.left() + 12.0;
         let mid_y = rect.center().y;
 
@@ -548,6 +658,21 @@ pub fn render_single_tab(
             );
             pad_left += 14.0;
         }
+        let method_pill = egui::Rect::from_min_size(
+            egui::pos2(pad_left - 6.0, mid_y - 9.5),
+            egui::vec2(method_slot_w - 7.0, 19.0),
+        );
+        ui.painter().rect_filled(
+            method_pill,
+            egui::Rounding::same(5.5),
+            with_alpha(mc, if is_light() { 24 } else { 34 }),
+        );
+        ui.painter().rect_stroke(
+            method_pill,
+            egui::Rounding::same(5.5),
+            egui::Stroke::new(1.0, with_alpha(mc, if is_light() { 70 } else { 86 })),
+        );
+
         // Paint the text twice — second pass slightly offset — for a
         // faux-bold effect that matches RichText::strong() in the
         // URL bar combobox (which uses the same color).
@@ -562,7 +687,13 @@ pub fn render_single_tab(
         }
 
         let name_x = pad_left + method_slot_w;
-        let name_color = if is_active { text() } else { muted() };
+        let name_color = if is_active {
+            text()
+        } else if resp.hovered() {
+            text().linear_multiply(0.85)
+        } else {
+            muted()
+        };
         let name_font = egui::FontId::new(12.0, egui::FontFamily::Proportional);
         // Reserve space for close button plus the optional amber dot.
         let has_indicator = has_unsaved_changes;
@@ -603,11 +734,8 @@ pub fn render_single_tab(
     if ui.is_rect_visible(close_rect) {
         let hovered = close_resp.hovered();
         if hovered {
-            ui.painter().rect_filled(
-                close_rect,
-                egui::Rounding::same(4.0),
-                C_RED.linear_multiply(0.35),
-            );
+            ui.painter()
+                .rect_filled(close_rect, egui::Rounding::same(5.0), with_alpha(C_RED, 44));
         }
         let color = if hovered { C_RED } else { muted() };
         ui.painter().text(
@@ -776,8 +904,16 @@ pub fn icon_btn(ui: &mut egui::Ui, icon: &str, hover_text: &str) -> egui::Respon
     if ui.is_rect_visible(rect) {
         let color = if resp.hovered() { text() } else { muted() };
         if resp.hovered() {
-            ui.painter()
-                .rect_filled(rect, egui::Rounding::same(4.0), elevated());
+            ui.painter().rect_filled(
+                rect,
+                egui::Rounding::same(6.0),
+                with_alpha(accent(), if is_light() { 16 } else { 24 }),
+            );
+            ui.painter().rect_stroke(
+                rect.shrink(0.5),
+                egui::Rounding::same(6.0),
+                egui::Stroke::new(1.0, with_alpha(accent(), 64)),
+            );
         }
         ui.painter().text(
             rect.center(),
@@ -824,42 +960,6 @@ pub fn count_matches(folders: &[Folder], q: &str) -> usize {
         n += count_matches(&f.subfolders, q);
     }
     n
-}
-
-/// Compact underlined text toggle used in the response Body toolbar
-/// to switch between JSON / Tree / Raw views. No background, no
-/// border — just colored text with an accent underline when active,
-/// matching Postman's Pretty/Raw/Preview style (less visual weight
-/// than a chunky pill, scans as a tabbed toggle).
-pub fn body_view_pill(ui: &mut egui::Ui, current: &mut BodyView, value: BodyView, label: &str) {
-    let is_active = *current == value;
-    // Same rationale as `tab_button`: accent on underline only, text
-    // stays readable at full contrast.
-    let fg = if is_active { text() } else { muted() };
-    let resp = ui
-        .add(
-            egui::Button::new(egui::RichText::new(label).size(11.5).color(fg).strong())
-                .fill(egui::Color32::TRANSPARENT)
-                .stroke(egui::Stroke::NONE)
-                .min_size(egui::vec2(42.0, 20.0))
-                .rounding(egui::Rounding::same(3.0)),
-        )
-        .on_hover_cursor(egui::CursorIcon::PointingHand);
-    if is_active {
-        let rect = resp.rect;
-        let y = rect.bottom() - 1.0;
-        let pad = 6.0;
-        ui.painter().line_segment(
-            [
-                egui::pos2(rect.left() + pad, y),
-                egui::pos2(rect.right() - pad, y),
-            ],
-            egui::Stroke::new(1.5, accent()),
-        );
-    }
-    if resp.clicked() {
-        *current = value;
-    }
 }
 
 /// Render a JSON `Value` as an interactive, collapsible tree. Objects
@@ -1338,16 +1438,7 @@ pub fn sanitize_filename(name: &str) -> Option<String> {
     }
 }
 
-/// Mask a secret token for display — shows first 8 and last 8 chars,
-/// with a "···" separator. Strings under 20 chars render as a
-/// row of asterisks so nothing leaks.
+/// Mask a secret token for display.
 pub fn mask_token(token: &str) -> String {
-    let n = token.chars().count();
-    if n <= 20 {
-        return "*".repeat(n.min(16));
-    }
-    let start: String = token.chars().take(8).collect();
-    let end: String = token.chars().rev().take(8).collect();
-    let end: String = end.chars().rev().collect();
-    format!("{} ··· {}", start, end)
+    mask_secret_value(token)
 }

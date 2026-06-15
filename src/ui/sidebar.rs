@@ -4,6 +4,7 @@
 //! access to state.
 
 use crate::model::*;
+use crate::privacy::redact_url_query_and_fragment;
 use crate::theme::*;
 use crate::widgets::*;
 use crate::ApiClient;
@@ -14,8 +15,8 @@ impl ApiClient {
     pub(crate) fn render_sidebar(&mut self, ctx: &egui::Context) {
         egui::SidePanel::left("sidebar")
             .default_width(320.0)
-            .width_range(260.0..=640.0)
-            .resizable(true)
+            .width_range(320.0..=320.0)
+            .resizable(false)
             // Re-enabled — we now paint the sidebar with `panel_dark()`
             // (elevated card) which is BRIGHTER than the central canvas
             // in both themes. That gives a visible hierarchy (card lifts
@@ -551,7 +552,8 @@ impl ApiClient {
                         // URL beneath
                         let url_font = egui::FontId::new(11.5, egui::FontFamily::Proportional);
                         let max_w = rect.width() - 16.0;
-                        let elided = elide(&entry.url, max_w, &url_font, ui);
+                        let redacted_url = redact_url_query_and_fragment(&entry.url);
+                        let elided = elide(&redacted_url, max_w, &url_font, ui);
                         ui.painter().text(
                             egui::pos2(rect.left() + 8.0, rect.top() + 33.0),
                             egui::Align2::LEFT_TOP,

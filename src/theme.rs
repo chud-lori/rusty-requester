@@ -8,24 +8,24 @@ use eframe::egui;
 // Layers follow the modern "elevated = brighter" convention: bg is the
 // darkest canvas, `panel_dark` is brighter (cards / response body lift
 // off the canvas), `elevated` is brightest (inputs stand out).
-pub const C_BG: egui::Color32 = egui::Color32::from_rgb(26, 26, 26); // #1A1A1A app canvas (dark mode)
-pub const C_PANEL_DARK: egui::Color32 = egui::Color32::from_rgb(37, 37, 37); // #252525 elevated card / sidebar
-pub const C_ELEVATED: egui::Color32 = egui::Color32::from_rgb(51, 51, 51); // #333333 inputs / hover
-pub const C_BORDER: egui::Color32 = egui::Color32::from_rgb(64, 64, 64); // #404040 subtle divider
+pub const C_BG: egui::Color32 = egui::Color32::from_rgb(18, 19, 22); // #121316 app canvas (dark mode)
+pub const C_PANEL_DARK: egui::Color32 = egui::Color32::from_rgb(27, 29, 34); // #1B1D22 elevated card / sidebar
+pub const C_ELEVATED: egui::Color32 = egui::Color32::from_rgb(39, 43, 50); // #272B32 inputs / hover
+pub const C_BORDER: egui::Color32 = egui::Color32::from_rgb(64, 70, 82); // #404652 subtle divider
 pub const C_PURPLE: egui::Color32 = egui::Color32::from_rgb(186, 120, 80); // #BA7850 burnt sienna — PATCH
 pub const C_GREEN: egui::Color32 = egui::Color32::from_rgb(134, 172, 113); // #86AC71 patina green — GET
 pub const C_ORANGE: egui::Color32 = egui::Color32::from_rgb(245, 158, 11); // #F59E0B amber — POST
 pub const C_PINK: egui::Color32 = egui::Color32::from_rgb(183, 65, 14); // #B7410E deep rust — PUT
 pub const C_RED: egui::Color32 = egui::Color32::from_rgb(220, 38, 38); // #DC2626 crimson — DELETE / errors
-pub const C_MUTED: egui::Color32 = egui::Color32::from_rgb(156, 163, 175); // #9CA3AF neutral muted text (WCAG AA ~5.5:1 on C_BG)
-pub const C_TEXT: egui::Color32 = egui::Color32::from_rgb(243, 244, 246); // #F3F4F6 near-white, non-vibrating
+pub const C_MUTED: egui::Color32 = egui::Color32::from_rgb(164, 172, 185); // #A4ACB9 neutral muted text
+pub const C_TEXT: egui::Color32 = egui::Color32::from_rgb(244, 247, 251); // #F4F7FB near-white, non-vibrating
 
 // Theme-aware accent — a warm rust-red in both modes, softened from
 // the original saturated `#CE422B` that was "bleeding" on dark. Dark
 // value leans slightly warmer / more orange to keep the "rusty" feel
 // (the first coral-red #EF5350 swing overshot into pink territory).
 // Light value is deeper red for WCAG AA against white button text.
-const C_ACCENT_DARK: egui::Color32 = egui::Color32::from_rgb(216, 85, 57); // #D85539 warm rust — dark-mode accent
+const C_ACCENT_DARK: egui::Color32 = egui::Color32::from_rgb(226, 92, 62); // #E25C3E warm rust — dark-mode accent
 const C_ACCENT_LIGHT: egui::Color32 = egui::Color32::from_rgb(196, 60, 40); // #C43C28 deep rust — light-mode accent
 /// Postman accent — sampled directly from the current Postman web UI
 /// Send button (`#3A82E6`). The app moved away from the classic brand
@@ -41,9 +41,14 @@ pub fn accent() -> egui::Color32 {
     }
 }
 
+pub fn with_alpha(color: egui::Color32, alpha: u8) -> egui::Color32 {
+    egui::Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), alpha)
+}
+
 /// Legacy constant kept as a compile-time fallback for call sites
 /// that can't call a function (e.g. SVG embeds, `const` contexts).
 /// Prefer `accent()` everywhere the theme can be read at render time.
+#[allow(dead_code)]
 pub const C_ACCENT: egui::Color32 = C_ACCENT_DARK;
 
 /// Theme-aware placeholder color. Earlier `#50545F` was too dark on
@@ -190,14 +195,13 @@ pub const DARK_PALETTE: Palette = Palette {
 ///   - Secondary text darkened to `#6B7280` (medium slate) so
 ///     placeholders and labels no longer feel washed out.
 pub const LIGHT_PALETTE: Palette = Palette {
-    // #E9ECEF — deeper cool gray so the pure-white cards pop clearly
-    // as defined containers. Earlier `#F0F2F5` was still too close
-    // to white; panels bled into the canvas.
-    bg: egui::Color32::from_rgb(233, 236, 239),
+    // #F1F3F6 — cool gray canvas keeps white panels defined without
+    // making the app feel heavy or low contrast.
+    bg: egui::Color32::from_rgb(241, 243, 246),
     panel_dark: egui::Color32::from_rgb(255, 255, 255),
-    elevated: egui::Color32::from_rgb(243, 244, 246),
-    border: egui::Color32::from_rgb(209, 213, 219),
-    text: egui::Color32::from_rgb(45, 55, 72),
+    elevated: egui::Color32::from_rgb(246, 248, 251),
+    border: egui::Color32::from_rgb(218, 223, 230),
+    text: egui::Color32::from_rgb(31, 41, 55),
     muted: egui::Color32::from_rgb(107, 114, 128),
 };
 
@@ -320,6 +324,7 @@ pub fn apply_style(ctx: &egui::Context, theme: Theme) {
     // colors via `active_palette()` without threading `Theme` args.
     set_active_theme(theme);
     let p = palette_for(theme);
+    let a = accent();
     let mut style = (*ctx.style()).clone();
     style.visuals.window_fill = p.bg;
     style.visuals.panel_fill = p.bg;
@@ -330,9 +335,10 @@ pub fn apply_style(ctx: &egui::Context, theme: Theme) {
     style.visuals.faint_bg_color = p.elevated;
     style.visuals.code_bg_color = p.panel_dark;
     style.visuals.override_text_color = Some(p.text);
-    style.visuals.selection.bg_fill = C_ACCENT.gamma_multiply(0.4);
-    style.visuals.selection.stroke = egui::Stroke::new(1.0, C_ACCENT);
-    style.visuals.hyperlink_color = C_ACCENT;
+    style.visuals.selection.bg_fill =
+        with_alpha(a, if matches!(theme, Theme::Dark) { 92 } else { 46 });
+    style.visuals.selection.stroke = egui::Stroke::new(1.0, a);
+    style.visuals.hyperlink_color = a;
     style.visuals.widgets.noninteractive.bg_fill = p.bg;
     style.visuals.widgets.noninteractive.weak_bg_fill = p.bg;
     style.visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, p.border);
@@ -340,19 +346,24 @@ pub fn apply_style(ctx: &egui::Context, theme: Theme) {
     style.visuals.widgets.noninteractive.rounding = egui::Rounding::same(8.0);
     style.visuals.widgets.inactive.bg_fill = p.elevated;
     style.visuals.widgets.inactive.weak_bg_fill = p.elevated;
-    style.visuals.widgets.inactive.bg_stroke = egui::Stroke::NONE;
-    style.visuals.widgets.inactive.rounding = egui::Rounding::same(8.0);
-    style.visuals.widgets.hovered.bg_fill = p.border;
-    style.visuals.widgets.hovered.weak_bg_fill = p.border;
+    style.visuals.widgets.inactive.bg_stroke = egui::Stroke::new(1.0, with_alpha(p.border, 120));
+    style.visuals.widgets.inactive.rounding = egui::Rounding::same(9.0);
+    style.visuals.widgets.hovered.bg_fill = if matches!(theme, Theme::Dark) {
+        egui::Color32::from_rgb(48, 54, 63)
+    } else {
+        egui::Color32::from_rgb(236, 240, 245)
+    };
+    style.visuals.widgets.hovered.weak_bg_fill = style.visuals.widgets.hovered.bg_fill;
     // No hover stroke — a 1px stroke on hover was causing the sidebar
     // right-edge (SidePanel resize zone) to cascade 1-pixel layout shifts
     // as the pointer moved, making the whole panel visibly "jitter".
     style.visuals.widgets.hovered.bg_stroke = egui::Stroke::NONE;
-    style.visuals.widgets.hovered.rounding = egui::Rounding::same(8.0);
-    style.visuals.widgets.active.bg_fill = p.border;
-    style.visuals.widgets.active.weak_bg_fill = p.border;
-    style.visuals.widgets.active.bg_stroke = egui::Stroke::new(1.0, C_ACCENT);
-    style.visuals.widgets.active.rounding = egui::Rounding::same(8.0);
+    style.visuals.widgets.hovered.rounding = egui::Rounding::same(9.0);
+    style.visuals.widgets.active.bg_fill =
+        with_alpha(a, if matches!(theme, Theme::Dark) { 56 } else { 28 });
+    style.visuals.widgets.active.weak_bg_fill = style.visuals.widgets.active.bg_fill;
+    style.visuals.widgets.active.bg_stroke = egui::Stroke::new(1.0, a);
+    style.visuals.widgets.active.rounding = egui::Rounding::same(9.0);
     // `widgets.open.bg_fill` is what egui uses for the title-bar
     // band on open Windows. Previously set to `p.border` which made
     // the band darker than the window body — looked like a separate
@@ -372,8 +383,8 @@ pub fn apply_style(ctx: &egui::Context, theme: Theme) {
     // tab switches, etc. egui default is ~0.083s (snappy but abrupt).
     style.animation_time = 0.18;
 
-    style.spacing.item_spacing = egui::vec2(8.0, 8.0);
-    style.spacing.button_padding = egui::vec2(10.0, 6.0);
+    style.spacing.item_spacing = egui::vec2(8.0, 7.0);
+    style.spacing.button_padding = egui::vec2(11.0, 6.0);
     style.spacing.window_margin = egui::Margin::same(12.0);
     style.spacing.menu_margin = egui::Margin::same(6.0);
     // Floating scrollbar — overlays content semi-transparently, so:

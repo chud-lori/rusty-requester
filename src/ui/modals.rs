@@ -1662,6 +1662,7 @@ impl ApiClient {
         }
         if do_cancel || !self.show_settings_modal {
             self.show_settings_modal = false;
+            self.editing_settings = self.state.settings.clone();
         }
         if do_check_updates {
             // Fresh GitHub API call — replaces any in-flight rx.
@@ -2044,7 +2045,7 @@ impl ApiClient {
         .resizable(false)
         .fixed_size(egui::vec2(560.0, 420.0))
         .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 80.0))
-        .frame(palette_frame(self.state.settings.theme))
+        .frame(palette_frame(self.effective_theme()))
         .show(ctx, |ui| {
             let query_resp = ui.add(
                 egui::TextEdit::singleline(&mut self.palette_query)
@@ -2239,7 +2240,7 @@ impl ApiClient {
         .resizable(false)
         .fixed_size(egui::vec2(560.0, 420.0))
         .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 80.0))
-        .frame(palette_frame(self.state.settings.theme))
+        .frame(palette_frame(self.effective_theme()))
         .show(ctx, |ui| {
             let query_resp = ui.add(
                 egui::TextEdit::singleline(&mut self.actions_palette_query)
