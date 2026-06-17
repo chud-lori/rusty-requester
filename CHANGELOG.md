@@ -11,7 +11,22 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
-## [Unreleased]
+## Unreleased
+
+### Added
+- **Environment compare.** The environment manager can now compare a
+  source and target environment, group added/missing/changed/unchanged
+  variable keys, mask sensitive-looking values by default, copy a safe
+  summary, and add missing source keys to the target.
+- **Collection Runner result details.** Runner rows can now be selected
+  by mouse or keyboard to inspect method, redacted URL, collection
+  path, status, timing phases, assertion outcomes, and extractor
+  misses, with copy-safe summaries that keep response bodies, headers,
+  cookies, and extracted values out of reports and copied text.
+- **Saved Collection Runner presets.** Runner configurations can now be
+  saved, loaded, renamed, duplicated, and deleted, including all-collection
+  or folder scope, active environment selection, and explicit data-row text.
+  Missing folder or environment references fall back gracefully when loaded.
 
 ### Security
 - **Secret scanner for collection exports.** JSON/YAML exports now run
@@ -22,6 +37,10 @@ upgrades read old files cleanly.
 ## [0.23.0] — 2026-06-17
 
 ### Added
+- **Git workspace export/import core.** Added a deterministic directory format
+  with `workspace.json` plus one readable request JSON file per request,
+  stable ID preservation, bounded import validation, and docs for merge
+  conflict resolution.
 - **OpenAPI 3.x import.** JSON and YAML OpenAPI specs can now be
   imported as request collections, grouped by operation tags or path
   roots, with query/path/header parameters, request descriptions, auth
@@ -34,6 +53,10 @@ upgrades read old files cleanly.
   create, inspect, and restore workspace backups from the app menu.
 
 ### Security
+- **Secret-safe Git workspace exports by default.** The Git workspace exporter
+  masks auth values, sensitive key/value rows, cookies, form fields, OAuth
+  cached tokens, and URL query/fragment data unless the caller explicitly opts
+  into including secrets.
 - **Safer import and restore paths.** Imports reject files over 10 MB;
   OpenAPI sensitive parameter examples such as tokens and authorization
   headers are not persisted; backup restore validates workspace JSON and
@@ -42,6 +65,9 @@ upgrades read old files cleanly.
   are tightened to owner-only permissions where supported.
 
 ### Tests
+- **Git workspace snapshot and round-trip coverage.** Added tests for
+  deterministic layout, ID-preserving lossless imports, default secret masking,
+  and conflict/escape validation.
 - **Import compatibility coverage.** Added JSON/YAML round-trip,
   Postman edge-case, cURL edge-case, OpenAPI import/refresh, and
   backup/restore tests.
