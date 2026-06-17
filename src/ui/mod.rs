@@ -6,4 +6,6 @@
 pub mod editor;
 pub mod modals;
 pub mod response;
+pub mod settings;
 pub mod sidebar;
+pub mod sync;

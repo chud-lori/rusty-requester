@@ -256,6 +256,7 @@ impl ApiClient {
                 let mut action_paste_curl = false;
                 let mut action_export_json = false;
                 let mut action_export_yaml = false;
+                let mut action_open_sync = false;
 
                 ui.horizontal(|ui| {
                     let btn_w = (ui.available_width() - 6.0) / 2.0;
@@ -274,6 +275,11 @@ impl ApiClient {
                             }
                             if ui.button("Paste cURL command...").clicked() {
                                 action_paste_curl = true;
+                                ui.close_menu();
+                            }
+                            ui.separator();
+                            if ui.button("Workspace Sync...").clicked() {
+                                action_open_sync = true;
                                 ui.close_menu();
                             }
                         },
@@ -306,6 +312,11 @@ impl ApiClient {
                                 action_export_yaml = true;
                                 ui.close_menu();
                             }
+                            ui.separator();
+                            if ui.button("Workspace Sync...").clicked() {
+                                action_open_sync = true;
+                                ui.close_menu();
+                            }
                         },
                     );
                 });
@@ -327,6 +338,9 @@ impl ApiClient {
                 }
                 if action_export_yaml {
                     self.pending_export_yaml = true;
+                }
+                if action_open_sync {
+                    self.open_sync_or_settings();
                 }
 
                 ui.add_space(10.0);

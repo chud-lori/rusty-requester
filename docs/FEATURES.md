@@ -155,6 +155,12 @@ the original values.
   preserves IDs for Git round-trips and masks secrets by default. See
   [`GIT_WORKSPACE_FORMAT.md`](./GIT_WORKSPACE_FORMAT.md) for layout and
   merge-conflict expectations.
+- **Workspace Sync** — optional, off by default in Settings. When enabled,
+  **Workspace Sync…** lets you pull from a Git workspace directory, push a
+  masked Git workspace snapshot, pull/push a GitHub or other Git remote through
+  your local Git credentials, and refresh OpenAPI-generated requests from a
+  local JSON/YAML spec. Private repos work through your SSH key or Git
+  credential helper; Rusty Requester stores no GitHub token.
 
 ### Running collections with data rows
 
@@ -352,5 +358,5 @@ _Nothing open — OAuth 2.0 Auth Code + PKCE *(v0.15)* was the last v1.0 item._
 - [ ] **WebSocket testing** — separate connection lifecycle + per-request message log.
 - [ ] **Pre-request scripts** — Rhai/Boa scripting engine for transformations before send.
 - [ ] **Windows builds** — CI + installer parity with macOS/Linux.
-- [ ] **OpenAPI import / refresh** — import a spec into collections and refresh existing generated requests.
-- [ ] **Git-backed workspace sync** — optional local-file workspace mode for teams that want normal Git review / merge flow.
+- [x] **OpenAPI import / refresh** — import a spec into collections and refresh existing generated requests.
+- [x] **Git-backed workspace sync** — optional local-file and GitHub/local Git mode for teams that want normal Git review / merge flow.

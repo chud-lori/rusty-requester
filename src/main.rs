@@ -19,6 +19,7 @@ mod runner_detail;
 mod secret_scanner;
 mod snippet;
 mod sse;
+mod sync;
 mod theme;
 mod ui;
 mod widgets;
@@ -174,6 +175,7 @@ struct ApiClient {
     paste_error: String,
     show_runner_modal: bool,
     show_backup_modal: bool,
+    show_sync_modal: bool,
     confirm_restore_backup_path: Option<PathBuf>,
     runner_scope_folder_id: Option<String>,
     runner_data_rows: String,
@@ -184,6 +186,7 @@ struct ApiClient {
     runner_selected_result: Option<usize>,
     runner_status: String,
     runner_in_flight: Option<InFlightCollectionRun>,
+    sync_in_flight: Option<sync::InFlightSync>,
 
     show_snippet_panel: bool,
     snippet_lang: SnippetLang,
@@ -484,6 +487,7 @@ impl Default for ApiClient {
             paste_error: String::new(),
             show_runner_modal: false,
             show_backup_modal: false,
+            show_sync_modal: false,
             confirm_restore_backup_path: None,
             runner_scope_folder_id: None,
             runner_data_rows: String::new(),
@@ -494,6 +498,7 @@ impl Default for ApiClient {
             runner_selected_result: None,
             runner_status: String::new(),
             runner_in_flight: None,
+            sync_in_flight: None,
             show_snippet_panel: false,
             snippet_lang: SnippetLang::Curl,
             snippet_copied_at: None,
@@ -633,6 +638,7 @@ impl ApiClient {
             active_tab_id: None,
             settings: AppSettings::default(),
             runner_presets: vec![],
+            sync: SyncConfig::default(),
         }
     }
 
@@ -1793,6 +1799,7 @@ impl ApiClient {
                 self.paste_error.clear();
             }
             A::OpenCollectionRunner => self.show_runner_modal = true,
+            A::OpenSync => self.open_sync_or_settings(),
             A::ImportCollection => self.pending_import = true,
             A::CreateBackup => self.create_workspace_backup_now(),
             A::OpenBackups => self.show_backup_modal = true,
@@ -1857,6 +1864,16 @@ impl ApiClient {
         self.response_status.clear();
         self.response_time.clear();
         self.response_headers.clear();
+    }
+
+    pub(crate) fn open_sync_or_settings(&mut self) {
+        if self.state.settings.workspace_sync_enabled {
+            self.show_sync_modal = true;
+        } else {
+            self.editing_settings = self.state.settings.clone();
+            self.show_settings_modal = true;
+            self.show_toast("Enable Workspace Sync in Settings first");
+        }
     }
 
     fn rename_request(&mut self, request_id: &str, new_name: String) {
@@ -2087,6 +2104,7 @@ impl ApiClient {
                 }
                 m::MENU_CREATE_BACKUP => self.create_workspace_backup_now(),
                 m::MENU_BACKUPS => self.show_backup_modal = true,
+                m::MENU_WORKSPACE_SYNC => self.open_sync_or_settings(),
                 m::MENU_EXPORT_JSON => self.pending_export_json = true,
                 m::MENU_EXPORT_YAML => self.pending_export_yaml = true,
                 m::MENU_TOGGLE_SNIPPET => self.show_snippet_panel = !self.show_snippet_panel,
@@ -2318,6 +2336,7 @@ impl eframe::App for ApiClient {
             && !self.show_paste_modal
             && !self.show_runner_modal
             && !self.show_backup_modal
+            && !self.show_sync_modal
             && !self.show_about_modal
             && self.export_secret_warning.is_none()
             && !self.save_draft_open
@@ -2532,6 +2551,8 @@ impl eframe::App for ApiClient {
             }
         }
 
+        self.poll_sync_job(ctx);
+
         let display_theme = self.effective_theme();
         theme::apply_style(ctx, display_theme);
 
@@ -2564,6 +2585,7 @@ impl eframe::App for ApiClient {
         self.render_paste_modal(ctx);
         self.render_runner_modal(ctx);
         self.render_backup_modal(ctx);
+        self.render_sync_modal(ctx);
         self.render_env_modal(ctx);
         self.render_settings_modal(ctx);
         self.render_update_modal(ctx);
