@@ -11,6 +11,33 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Added
+- **OpenAPI 3.x import.** JSON and YAML OpenAPI specs can now be
+  imported as request collections, grouped by operation tags or path
+  roots, with query/path/header parameters, request descriptions, auth
+  hints, JSON request body examples, and generator metadata for refresh.
+- **OpenAPI refresh foundation.** Imported OpenAPI requests can be
+  refreshed from an updated local spec while preserving user-edited
+  request names, saved auth values, custom rows, tests, and extractors.
+- **Workspace backup manager.** Collection imports now snapshot the
+  current workspace before mutating saved state, and users can manually
+  create, inspect, and restore workspace backups from the app menu.
+
+### Security
+- **Safer import and restore paths.** Imports reject files over 10 MB;
+  OpenAPI sensitive parameter examples such as tokens and authorization
+  headers are not persisted; backup restore validates workspace JSON and
+  only accepts files from the app's backup directory.
+- **Private backup permissions on Unix.** Backup directories and files
+  are tightened to owner-only permissions where supported.
+
+### Tests
+- **Import compatibility coverage.** Added JSON/YAML round-trip,
+  Postman edge-case, cURL edge-case, OpenAPI import/refresh, and
+  backup/restore tests.
+
 ## [0.22.1] — 2026-06-17
 
 ### Fixed

@@ -4,10 +4,14 @@ use serde::{Deserialize, Serialize};
 pub struct Request {
     pub id: String,
     pub name: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub description: String,
     pub method: HttpMethod,
     pub url: String,
     #[serde(default)]
     pub query_params: Vec<KvRow>,
+    #[serde(default)]
+    pub path_params: Vec<KvRow>,
     #[serde(default)]
     pub headers: Vec<KvRow>,
     #[serde(default)]
@@ -31,6 +35,28 @@ pub struct Request {
     /// Tests tab.
     #[serde(default)]
     pub assertions: Vec<ResponseAssertion>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<RequestSource>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(tag = "kind")]
+pub enum RequestSource {
+    OpenApi(OpenApiSource),
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct OpenApiSource {
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub operation_id: String,
+    pub method: String,
+    pub path: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub generated_query_keys: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub generated_path_keys: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub generated_header_keys: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
