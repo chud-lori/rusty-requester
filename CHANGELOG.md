@@ -11,6 +11,17 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Fixed
+- **Save Request modal layout polish.** The modal now uses a custom
+  header with clearer title/subtitle treatment, a consistent close
+  button, larger default sizing, and a folder icon that matches the
+  sidebar request tree.
+- **Toast messages no longer wrap into narrow vertical columns.**
+  Short messages such as "Request saved" now keep a stable minimum
+  width and render on one line.
+
 ## [0.22.0] — 2026-06-17
 
 ### Added
