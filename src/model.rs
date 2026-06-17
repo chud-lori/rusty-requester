@@ -416,6 +416,32 @@ pub struct AppState {
     /// text; they do not copy environment variables or secrets.
     #[serde(default)]
     pub runner_presets: Vec<RunnerPreset>,
+    /// Local sync configuration. Stores only user-selected paths and safe
+    /// options; no Git credentials, access tokens, or request secrets.
+    #[serde(default)]
+    pub sync: SyncConfig,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
+pub struct SyncConfig {
+    /// Directory containing `workspace.json` + `requests/` for Git-friendly
+    /// import/export round trips.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub git_workspace_dir: String,
+    /// Local OpenAPI 3.x JSON/YAML spec used for refresh.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub openapi_spec_path: String,
+    /// Keep Git workspace exports masked by default. Users can opt into
+    /// lossless local/private exports per operation.
+    #[serde(default)]
+    pub include_secrets_in_git_workspace: bool,
+    /// Commit message used by the optional GitHub/local Git push workflow.
+    #[serde(default = "default_git_commit_message")]
+    pub git_commit_message: String,
+}
+
+fn default_git_commit_message() -> String {
+    "Sync Rusty Requester workspace".to_string()
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -481,6 +507,11 @@ pub struct AppSettings {
     /// operation — no outbound traffic from this app on startup.
     #[serde(default = "default_check_updates")]
     pub check_updates_on_launch: bool,
+    /// Optional local workspace sync tools. Disabled by default so the
+    /// app never reads/writes a Git workspace or OpenAPI spec unless
+    /// the user explicitly enables the workflow.
+    #[serde(default)]
+    pub workspace_sync_enabled: bool,
     /// Version tag the user last dismissed from the sidebar pill
     /// (e.g. "v0.16.3"). Suppresses the pill for that exact version —
     /// so users who deferred updating don't see the same pill every
@@ -522,6 +553,7 @@ impl Default for AppSettings {
             proxy_url: String::new(),
             theme: Theme::Dark,
             check_updates_on_launch: default_check_updates(),
+            workspace_sync_enabled: false,
             dismissed_update_version: None,
         }
     }
@@ -689,6 +721,16 @@ mod tests {
     fn app_state_loads_without_runner_presets() {
         let state: AppState = serde_json::from_str(r#"{"folders":[]}"#).unwrap();
         assert!(state.runner_presets.is_empty());
+    }
+
+    #[test]
+    fn app_state_loads_with_sync_disabled_by_default() {
+        let state: AppState = serde_json::from_str(r#"{"folders":[]}"#).unwrap();
+
+        assert!(!state.settings.workspace_sync_enabled);
+        assert!(state.sync.git_workspace_dir.is_empty());
+        assert!(state.sync.openapi_spec_path.is_empty());
+        assert!(!state.sync.include_secrets_in_git_workspace);
     }
 
     #[test]

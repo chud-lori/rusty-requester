@@ -13,9 +13,8 @@ use crate::snippet::{
 use crate::theme::*;
 use crate::widgets::*;
 use crate::{
-    backup, in_app_update_supported, open_update_log_in_os, runner, runner_detail,
-    spawn_update_check, update_log_path, ApiClient, ExportDecision, RunnerResultRow,
-    UpdateCheckOutcome,
+    backup, in_app_update_supported, open_update_log_in_os, runner, runner_detail, update_log_path,
+    ApiClient, ExportDecision, RunnerResultRow,
 };
 use eframe::egui;
 use std::path::PathBuf;
@@ -2573,339 +2572,6 @@ impl ApiClient {
         }
     }
 
-    /// App-wide settings modal — request timeout, body size cap, proxy,
-    /// TLS verification. Changes take effect immediately (we rebuild
-    /// the shared `reqwest::Client` on save).
-    pub(crate) fn render_settings_modal(&mut self, ctx: &egui::Context) {
-        if !self.show_settings_modal {
-            return;
-        }
-        let mut open = self.show_settings_modal;
-        let mut do_save = false;
-        let mut do_cancel = false;
-        let mut do_check_updates = false;
-        let mut do_inline_update_now = false;
-        let mut do_open_releases_url: Option<String> = None;
-
-        egui::Window::new(
-            egui::RichText::new("SETTINGS")
-                .size(12.0)
-                .strong()
-                .color(muted()),
-        )
-        .open(&mut open)
-        .collapsible(false)
-        .resizable(false)
-        .default_width(440.0)
-        .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
-        .show(ctx, |ui| {
-            ui.set_min_width(420.0);
-
-            // Request timeout
-            ui.label(
-                egui::RichText::new("Request timeout (seconds)")
-                    .size(11.5)
-                    .color(muted()),
-            );
-            ui.add(
-                egui::DragValue::new(&mut self.editing_settings.timeout_sec)
-                    .range(0..=3600)
-                    .speed(1.0)
-                    .suffix(" s"),
-            );
-            ui.label(
-                egui::RichText::new("0 disables the timeout (requests can hang forever).")
-                    .size(10.5)
-                    .color(muted()),
-            );
-            ui.add_space(10.0);
-
-            // Max body size
-            ui.label(
-                egui::RichText::new("Max response body (MB)")
-                    .size(11.5)
-                    .color(muted()),
-            );
-            ui.add(
-                egui::DragValue::new(&mut self.editing_settings.max_body_mb)
-                    .range(0..=2048)
-                    .speed(1.0)
-                    .suffix(" MB"),
-            );
-            ui.label(
-                egui::RichText::new(
-                    "Responses larger than this are truncated with a banner. \
-                         0 disables the cap (huge payloads may OOM the app).",
-                )
-                .size(10.5)
-                .color(muted()),
-            );
-            ui.add_space(10.0);
-
-            // Proxy
-            ui.label(egui::RichText::new("Proxy URL").size(11.5).color(muted()));
-            ui.add(
-                egui::TextEdit::singleline(&mut self.editing_settings.proxy_url)
-                    .hint_text(hint("http://proxy:8080 (leave empty for direct)"))
-                    .desired_width(f32::INFINITY),
-            );
-            ui.add_space(10.0);
-
-            // Verify TLS
-            ui.checkbox(
-                &mut self.editing_settings.verify_tls,
-                "Verify TLS certificates",
-            );
-            ui.label(
-                egui::RichText::new(
-                    "Unchecked = accept self-signed / expired certs. \
-                         Dangerous on the public internet; useful for internal dev APIs.",
-                )
-                .size(10.5)
-                .color(muted()),
-            );
-
-            ui.add_space(10.0);
-            // Theme — Dark (default) / Light.
-            ui.label(egui::RichText::new("Theme").size(11.0).color(muted()));
-            ui.horizontal(|ui| {
-                let mut t = self.editing_settings.theme;
-                ui.selectable_value(&mut t, Theme::Dark, "Dark");
-                ui.selectable_value(&mut t, Theme::Light, "Light");
-                ui.selectable_value(&mut t, Theme::Postman, "Postman");
-                self.editing_settings.theme = t;
-            });
-            ui.label(
-                egui::RichText::new(
-                    "Light theme flips egui's chrome (panels, text, borders). \
-                         HTTP method colors and status pills stay the same across \
-                         themes.",
-                )
-                .size(10.5)
-                .color(muted()),
-            );
-
-            ui.add_space(10.0);
-            // Check for updates on launch — single outbound call to
-            // GitHub's releases API. Disable for strict offline use.
-            ui.checkbox(
-                &mut self.editing_settings.check_updates_on_launch,
-                "Check for updates on launch",
-            );
-            ui.label(
-                egui::RichText::new(
-                    "Silent GET to github.com/.../releases/latest once per \
-                         launch. No account, no telemetry — disable for \
-                         zero outbound traffic.",
-                )
-                .size(10.5)
-                .color(muted()),
-            );
-            ui.add_space(4.0);
-            // Manual "Check now" — forces a fresh GitHub API call
-            // without restarting. Useful after dismissing a pill, or
-            // when the launch check is turned off.
-            if ui
-                .add(
-                    egui::Button::new(
-                        egui::RichText::new("Check for updates now")
-                            .size(11.0)
-                            .color(text()),
-                    )
-                    .fill(elevated())
-                    .min_size(egui::vec2(0.0, 26.0)),
-                )
-                .on_hover_cursor(egui::CursorIcon::PointingHand)
-                .clicked()
-            {
-                do_check_updates = true;
-            }
-
-            // Inline check-result block — surfaces the outcome right
-            // where the user asked, so they don't have to close the
-            // Settings modal to find the Update button.
-            //
-            // Precedence: a known available update wins over any other
-            // state, since it's the actionable case the user cares
-            // about most (works even if the launch-time auto-check is
-            // what populated `update_available`).
-            let available = self.update_available.clone();
-            let inline_state = if available.is_some() {
-                "available"
-            } else if matches!(self.manual_update_check, UpdateCheckOutcome::Checking) {
-                "checking"
-            } else if matches!(self.manual_update_check, UpdateCheckOutcome::NoUpdate) {
-                "uptodate"
-            } else {
-                "idle"
-            };
-            match inline_state {
-                "checking" => {
-                    ui.add_space(8.0);
-                    ui.horizontal(|ui| {
-                        ui.spinner();
-                        ui.label(
-                            egui::RichText::new("Checking GitHub…")
-                                .size(11.0)
-                                .color(muted()),
-                        );
-                    });
-                }
-                "uptodate" => {
-                    ui.add_space(8.0);
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "{}  You're on the latest version (v{})",
-                            egui_phosphor::regular::CHECK,
-                            env!("CARGO_PKG_VERSION"),
-                        ))
-                        .size(11.0)
-                        .color(muted()),
-                    );
-                }
-                "available" => {
-                    let tag = available.unwrap_or_default();
-                    let version = tag.trim_start_matches('v');
-                    let release_url = format!(
-                        "https://github.com/chud-lori/rusty-requester/releases/tag/{}",
-                        tag,
-                    );
-                    let in_app_ok = in_app_update_supported();
-                    ui.add_space(8.0);
-                    egui::Frame::none()
-                        .fill(elevated())
-                        .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(76, 175, 80)))
-                        .rounding(egui::Rounding::same(6.0))
-                        .inner_margin(egui::Margin::symmetric(10.0, 8.0))
-                        .show(ui, |ui| {
-                            ui.label(
-                                egui::RichText::new(format!(
-                                    "Update available: v{}  (you're on v{})",
-                                    version,
-                                    env!("CARGO_PKG_VERSION"),
-                                ))
-                                .size(12.0)
-                                .strong()
-                                .color(text()),
-                            );
-                            ui.add_space(6.0);
-                            ui.horizontal(|ui| {
-                                // Primary "Update now" only on platforms
-                                // where the in-app update path actually
-                                // works. On Windows we fall through to
-                                // the existing update modal so the user
-                                // still sees the copy-command flow.
-                                if in_app_ok
-                                    && ui
-                                        .add(
-                                            egui::Button::new(
-                                                egui::RichText::new("Update now")
-                                                    .color(egui::Color32::WHITE)
-                                                    .strong()
-                                                    .size(11.0),
-                                            )
-                                            .fill(accent())
-                                            .min_size(egui::vec2(110.0, 26.0)),
-                                        )
-                                        .on_hover_cursor(egui::CursorIcon::PointingHand)
-                                        .clicked()
-                                {
-                                    do_inline_update_now = true;
-                                }
-                                if ui
-                                    .add(
-                                        egui::Button::new(
-                                            egui::RichText::new("Release notes")
-                                                .color(text())
-                                                .size(11.0),
-                                        )
-                                        .fill(elevated())
-                                        .min_size(egui::vec2(110.0, 26.0)),
-                                    )
-                                    .on_hover_cursor(egui::CursorIcon::PointingHand)
-                                    .clicked()
-                                {
-                                    do_open_releases_url = Some(release_url);
-                                }
-                            });
-                        });
-                }
-                _ => {}
-            }
-
-            ui.add_space(14.0);
-            ui.separator();
-            ui.add_space(6.0);
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button("Cancel").clicked() {
-                    do_cancel = true;
-                }
-                let save_btn = egui::Button::new(
-                    egui::RichText::new("Save")
-                        .color(egui::Color32::WHITE)
-                        .strong(),
-                )
-                .fill(accent())
-                .min_size(egui::vec2(80.0, 28.0));
-                if ui.add(save_btn).clicked() {
-                    do_save = true;
-                }
-            });
-
-            ui.input(|i| {
-                if i.key_pressed(egui::Key::Escape) {
-                    do_cancel = true;
-                }
-            });
-        });
-        self.show_settings_modal = open;
-
-        if do_save {
-            self.state.settings = self.editing_settings.clone();
-            self.http_client = crate::net::build_client(&self.state.settings);
-            self.save_state();
-            self.show_toast("Settings saved");
-            self.show_settings_modal = false;
-        }
-        if do_cancel || !self.show_settings_modal {
-            self.show_settings_modal = false;
-            self.editing_settings = self.state.settings.clone();
-        }
-        if do_check_updates {
-            // Fresh GitHub API call — replaces any in-flight rx.
-            // The polling loop in `update()` picks up the result and
-            // sets `update_available` / surfaces the sidebar pill.
-            // Also clears any previous per-version dismissal so a
-            // manual re-check always reveals a pending update.
-            self.update_check_rx = Some(spawn_update_check(&self.http_runtime));
-            self.state.settings.dismissed_update_version = None;
-            self.editing_settings.dismissed_update_version = None;
-            self.manual_update_check = UpdateCheckOutcome::Checking;
-            self.save_state();
-            self.show_toast("Checking for updates…");
-        }
-        if do_inline_update_now {
-            // Save any pending settings edits before kicking off the
-            // update — the in-app updater is about to kill the running
-            // process and there's no chance afterwards.
-            self.state.settings = self.editing_settings.clone();
-            self.http_client = crate::net::build_client(&self.state.settings);
-            self.save_state();
-            self.show_settings_modal = false;
-            self.spawn_update();
-        }
-        if let Some(url) = do_open_releases_url {
-            #[cfg(target_os = "macos")]
-            let _ = std::process::Command::new("open").arg(&url).spawn();
-            #[cfg(target_os = "linux")]
-            let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
-            #[cfg(target_os = "windows")]
-            let _ = std::process::Command::new("cmd")
-                .args(["/C", "start", "", &url])
-                .spawn();
-        }
-    }
-
     /// In-window menu bar along the top of the window. Cross-platform
     /// (macOS + Linux) — egui doesn't drive the native macOS NSMenu
     /// bar, so we render our own strip here. Keeps the same items
@@ -2921,6 +2587,7 @@ impl ApiClient {
         let mut action_paste_curl = false;
         let mut action_create_backup = false;
         let mut action_open_backups = false;
+        let mut action_open_sync = false;
         let mut action_export_json = false;
         let mut action_export_yaml = false;
         let mut action_open_runner = false;
@@ -2963,6 +2630,10 @@ impl ApiClient {
                         }
                         if ui.button("Backups…").clicked() {
                             action_open_backups = true;
+                            ui.close_menu();
+                        }
+                        if ui.button("Workspace Sync…").clicked() {
+                            action_open_sync = true;
                             ui.close_menu();
                         }
                         if ui.button("Export all as JSON…").clicked() {
@@ -3061,6 +2732,9 @@ impl ApiClient {
         }
         if action_open_backups {
             self.show_backup_modal = true;
+        }
+        if action_open_sync {
+            self.open_sync_or_settings();
         }
         if action_export_json {
             self.pending_export_json = true;

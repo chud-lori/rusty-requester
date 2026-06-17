@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use crate::model::{Auth, BodyExt, Folder, KvRow, OAuth2State, Request};
 use crate::privacy::{is_sensitive_key, mask_secret_value, redact_url_query_and_fragment};
 use serde::{Deserialize, Serialize};
@@ -89,6 +87,14 @@ pub fn export_workspace_to_dir(
 
     let requests_root = root.join(REQUESTS_DIR);
     if requests_root.exists() {
+        let meta = fs::symlink_metadata(&requests_root)
+            .map_err(|e| format!("Inspect request directory: {}", e))?;
+        if meta.file_type().is_symlink() {
+            return Err("Refusing to replace symlinked requests directory".to_string());
+        }
+        if !meta.is_dir() {
+            return Err("Refusing to replace non-directory requests path".to_string());
+        }
         fs::remove_dir_all(&requests_root).map_err(|e| format!("Clean request files: {}", e))?;
     }
     fs::create_dir_all(&requests_root).map_err(|e| format!("Create request directory: {}", e))?;
@@ -644,6 +650,24 @@ mod tests {
         assert_eq!(imported[0].requests[0].id, "request-1");
         assert_eq!(imported[0].subfolders[0].requests[0].id, "request-2");
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn export_refuses_symlinked_requests_directory() {
+        use std::os::unix::fs::symlink;
+
+        let root = temp_workspace("symlink-requests");
+        let outside = temp_workspace("symlink-target");
+        symlink(&outside, root.join(REQUESTS_DIR)).unwrap();
+
+        let err = export_workspace_to_dir(&fixture_folders(), &root, ExportOptions::default())
+            .unwrap_err();
+
+        assert!(err.contains("symlinked requests directory"), "{err}");
+        let _ = fs::remove_file(root.join(REQUESTS_DIR));
+        let _ = fs::remove_dir_all(root);
+        let _ = fs::remove_dir_all(outside);
     }
 
     #[test]

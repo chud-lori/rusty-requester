@@ -11,6 +11,17 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Added
+- **Optional Workspace Sync.** Workspace Sync is now disabled by default in
+  Settings and can be enabled when users want local Git workspace pull/push and
+  OpenAPI refresh workflows. The sync modal stores user-selected local paths,
+  pulls/pushes the deterministic Git workspace directory, can pull/push GitHub
+  remotes through the user's existing local Git credentials for public or
+  private repos, keeps exports masked by default, and refreshes
+  OpenAPI-generated requests from a local JSON/YAML spec.
+
 ## [0.24.1] — 2026-06-17
 
 ### Changed

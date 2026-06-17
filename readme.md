@@ -78,9 +78,11 @@ views, **Server-Sent Events streaming** for LLM APIs, **Cancel**
 mid-flight, **Response diff** across sends, **Collection Runner** with
 CSV/JSON data rows, presets, detail drilldowns, scoped runs, safe
 CSV/HTML reports, redacted code snippets, Git-friendly workspace
-exports, **⌘P request finder** + **⇧⌘P actions palette**, and a native
-macOS menu bar. Full catalog in [`docs/FEATURES.md`](docs/FEATURES.md)
-and the usage guide in [`docs/usage.html`](docs/usage.html).
+exports, opt-in Workspace Sync for GitHub/local Git pull-push and
+OpenAPI refresh, request finder + actions palette (`Cmd` on macOS,
+`Ctrl` on Linux/Windows), and platform menus. Full catalog in
+[`docs/FEATURES.md`](docs/FEATURES.md) and the usage guide in
+[`docs/usage.html`](docs/usage.html).
 
 ---
 
