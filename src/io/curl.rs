@@ -559,6 +559,59 @@ mod tests {
     }
 
     #[test]
+    fn parse_edge_flags_cookies_and_decoded_query() {
+        let r = parse_curl(
+            "curl --url 'https://api.example.com/search?q=rust%20lang&tag=a+b' \
+             -A 'Rusty Test/1.0' \
+             -e 'https://ref.example.com/start' \
+             -b 'sid=abc; theme=dark' \
+             -u 'alice:secret' \
+             --compressed",
+        )
+        .unwrap();
+
+        assert_eq!(r.method, HttpMethod::GET);
+        assert_eq!(r.url, "https://api.example.com/search");
+        assert_eq!(r.query_params.len(), 2);
+        assert_eq!(r.query_params[0].key, "q");
+        assert_eq!(r.query_params[0].value, "rust lang");
+        assert_eq!(r.query_params[1].key, "tag");
+        assert_eq!(r.query_params[1].value, "a b");
+        assert_eq!(r.headers.len(), 2);
+        assert_eq!(r.headers[0].key, "User-Agent");
+        assert_eq!(r.headers[0].value, "Rusty Test/1.0");
+        assert_eq!(r.headers[1].key, "Referer");
+        assert_eq!(r.headers[1].value, "https://ref.example.com/start");
+        assert_eq!(r.cookies.len(), 2);
+        assert_eq!(r.cookies[0].key, "sid");
+        assert_eq!(r.cookies[0].value, "abc");
+        assert_eq!(r.cookies[1].key, "theme");
+        assert_eq!(r.cookies[1].value, "dark");
+        assert!(
+            matches!(r.auth, Auth::Basic { username, password } if username == "alice" && password == "secret")
+        );
+    }
+
+    #[test]
+    fn parse_head_and_file_data_reference() {
+        let r = parse_curl("curl -I https://api.example.com/upload --data-binary @payload.json")
+            .unwrap();
+
+        assert_eq!(r.method, HttpMethod::HEAD);
+        assert_eq!(r.url, "https://api.example.com/upload");
+        assert_eq!(r.body, "// file ref skipped: @payload.json");
+    }
+
+    #[test]
+    fn parse_get_keeps_body_when_get_flag_is_explicit() {
+        let r = parse_curl("curl -G https://api.example.com/search --data-urlencode 'q=rust lang'")
+            .unwrap();
+
+        assert_eq!(r.method, HttpMethod::GET);
+        assert_eq!(r.body, "q=rust lang");
+    }
+
+    #[test]
     fn to_curl_round_trip_shape() {
         let r = Request {
             id: "x".into(),

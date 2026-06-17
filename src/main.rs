@@ -1,5 +1,6 @@
 mod actions;
 mod assertion;
+mod backup;
 mod cookies;
 mod diff;
 mod extract;
@@ -1866,6 +1867,10 @@ impl ApiClient {
         let Some(path) = path else { return };
         match io::import_from_file(&path) {
             Ok(folders) => {
+                if let Err(e) = backup::create_backup(&self.storage_path) {
+                    self.show_toast(format!("Import aborted: backup failed: {}", e));
+                    return;
+                }
                 let n = folders.len();
                 self.state.folders.extend(folders);
                 self.save_state();
