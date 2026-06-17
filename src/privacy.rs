@@ -76,6 +76,22 @@ pub fn mask_secret_value(value: &str) -> String {
     format!("{}...{}", prefix, suffix)
 }
 
+/// Escape text for safe insertion into HTML text/attribute contexts.
+pub fn escape_html(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&#39;"),
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
 fn normalize_key(key: &str) -> String {
     key.chars()
         .filter(|c| c.is_ascii_alphanumeric())
@@ -147,6 +163,14 @@ mod tests {
         assert_eq!(
             mask_secret_value("abcdefghijklmnopqrstuvwxyz"),
             "abcdef...wxyz"
+        );
+    }
+
+    #[test]
+    fn escape_html_escapes_text_and_attribute_breakouts() {
+        assert_eq!(
+            escape_html(r#"<script x="1">Tom & 'Jerry'</script>"#),
+            "&lt;script x=&quot;1&quot;&gt;Tom &amp; &#39;Jerry&#39;&lt;/script&gt;"
         );
     }
 }

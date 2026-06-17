@@ -12,6 +12,7 @@ mod model;
 mod net;
 mod oauth;
 mod privacy;
+mod runner;
 mod snippet;
 mod sse;
 mod theme;
@@ -31,6 +32,11 @@ use model::*;
 struct InFlightRequest {
     handle: tokio::task::JoinHandle<()>,
     rx: std::sync::mpsc::Receiver<net::RequestUpdate>,
+}
+
+struct InFlightCollectionRun {
+    handle: tokio::task::JoinHandle<()>,
+    rx: std::sync::mpsc::Receiver<runner::CollectionRunEvent>,
 }
 
 /// Result of a successful OAuth2 flow, ready to be copied into the
@@ -78,6 +84,17 @@ struct CachedResponse {
     previous_text: Option<String>,
     streaming_events: Vec<crate::sse::SseEvent>,
     assertion_results: Vec<Option<AssertionResult>>,
+}
+
+#[derive(Clone, Debug)]
+struct RunnerResultRow {
+    collection: String,
+    request: String,
+    method: HttpMethod,
+    url: String,
+    status: String,
+    duration_ms: Option<u64>,
+    note: String,
 }
 
 struct ApiClient {
@@ -148,6 +165,12 @@ struct ApiClient {
     show_paste_modal: bool,
     paste_curl_text: String,
     paste_error: String,
+    show_runner_modal: bool,
+    runner_scope_folder_id: Option<String>,
+    runner_data_rows: String,
+    runner_results: Vec<RunnerResultRow>,
+    runner_status: String,
+    runner_in_flight: Option<InFlightCollectionRun>,
 
     show_snippet_panel: bool,
     snippet_lang: SnippetLang,
@@ -442,6 +465,12 @@ impl Default for ApiClient {
             show_paste_modal: false,
             paste_curl_text: String::new(),
             paste_error: String::new(),
+            show_runner_modal: false,
+            runner_scope_folder_id: None,
+            runner_data_rows: String::new(),
+            runner_results: Vec::new(),
+            runner_status: String::new(),
+            runner_in_flight: None,
             show_snippet_panel: false,
             snippet_lang: SnippetLang::Curl,
             snippet_copied_at: None,
@@ -1736,6 +1765,7 @@ impl ApiClient {
                 self.paste_curl_text.clear();
                 self.paste_error.clear();
             }
+            A::OpenCollectionRunner => self.show_runner_modal = true,
             A::ImportCollection => self.pending_import = true,
             A::ExportJson => self.pending_export_json = true,
             A::ExportYaml => self.pending_export_yaml = true,
@@ -1956,6 +1986,7 @@ impl ApiClient {
                     self.palette_focus_pending = true;
                 }
                 m::MENU_SEND => self.send_request(),
+                m::MENU_COLLECTION_RUNNER => self.show_runner_modal = true,
                 m::MENU_SETTINGS => {
                     self.editing_settings = self.state.settings.clone();
                     self.show_settings_modal = true;
@@ -2171,6 +2202,7 @@ impl eframe::App for ApiClient {
             && !self.show_env_modal
             && !self.show_settings_modal
             && !self.show_paste_modal
+            && !self.show_runner_modal
             && !self.show_about_modal
             && !self.save_draft_open
             && self.confirm_close_draft_idx.is_none()
@@ -2339,6 +2371,41 @@ impl eframe::App for ApiClient {
             }
         }
 
+        while let Some(f) = &self.runner_in_flight {
+            match f.rx.try_recv() {
+                Ok(runner::CollectionRunEvent::RequestFinished(progress)) => {
+                    self.runner_results.push(runner_progress_row(&progress));
+                    self.runner_status = format!(
+                        "Running: {} / {} request runs complete.",
+                        progress.completed_requests, progress.total_requests
+                    );
+                    ctx.request_repaint();
+                }
+                Ok(runner::CollectionRunEvent::Finished(result)) => {
+                    self.runner_results = runner_result_rows(&result);
+                    self.runner_status = format!(
+                        "Finished: {} request run{}, {} passed, {} failed, {} errored.",
+                        result.total_requests,
+                        if result.total_requests == 1 { "" } else { "s" },
+                        result.passed_assertions,
+                        result.failed_assertions,
+                        result.errored_assertions
+                    );
+                    self.runner_in_flight = None;
+                    break;
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {
+                    ctx.request_repaint();
+                    break;
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    self.runner_status = "Runner stopped before returning results.".to_string();
+                    self.runner_in_flight = None;
+                    break;
+                }
+            }
+        }
+
         let display_theme = self.effective_theme();
         theme::apply_style(ctx, display_theme);
 
@@ -2369,6 +2436,7 @@ impl eframe::App for ApiClient {
         self.render_snippet_panel(ctx);
         self.render_central(ctx);
         self.render_paste_modal(ctx);
+        self.render_runner_modal(ctx);
         self.render_env_modal(ctx);
         self.render_settings_modal(ctx);
         self.render_update_modal(ctx);
@@ -2380,6 +2448,86 @@ impl eframe::App for ApiClient {
         self.render_command_palette(ctx);
         self.render_actions_palette(ctx);
         self.render_toast(ctx);
+    }
+}
+
+fn runner_result_rows(result: &runner::CollectionRunResult) -> Vec<RunnerResultRow> {
+    let mut rows = Vec::new();
+    for iteration in &result.iterations {
+        let row_label = if iteration.data.is_empty() {
+            format!("Row {}", iteration.index + 1)
+        } else {
+            let keys = iteration
+                .data
+                .keys()
+                .take(3)
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("Row {} ({})", iteration.index + 1, keys)
+        };
+        for request in &iteration.requests {
+            let (passed, failed, errored) =
+                request.assertions.iter().fold((0, 0, 0), |acc, assertion| {
+                    match assertion.result {
+                        AssertionResult::Pass => (acc.0 + 1, acc.1, acc.2),
+                        AssertionResult::Fail(_) => (acc.0, acc.1 + 1, acc.2),
+                        AssertionResult::Error(_) => (acc.0, acc.1, acc.2 + 1),
+                    }
+                });
+            let mut note_parts = vec![format!(
+                "{} pass / {} fail / {} err",
+                passed, failed, errored
+            )];
+            if !request.extracted.is_empty() {
+                note_parts.push(format!("{} extracted", request.extracted.len()));
+            }
+            if !request.extractor_misses.is_empty() {
+                note_parts.push(format!("{} missed", request.extractor_misses.len()));
+            }
+            rows.push(RunnerResultRow {
+                collection: request.folder_path.join(" / "),
+                request: format!("{} · {}", row_label, request.request_name),
+                method: request.method.clone(),
+                url: privacy::redact_url_query_and_fragment(&request.url_template),
+                status: request.response.status.clone(),
+                duration_ms: Some(request.response.total_ms),
+                note: note_parts.join(", "),
+            });
+        }
+    }
+    rows
+}
+
+fn runner_progress_row(progress: &runner::RunnerRequestProgress) -> RunnerResultRow {
+    let row_label = runner_data_row_label(progress.iteration_index, &progress.data);
+    let mut note_parts = vec![format!(
+        "{} pass / {} fail / {} err",
+        progress.passed_assertions, progress.failed_assertions, progress.errored_assertions
+    )];
+    if progress.extracted_count > 0 {
+        note_parts.push(format!("{} extracted", progress.extracted_count));
+    }
+    if progress.extractor_miss_count > 0 {
+        note_parts.push(format!("{} missed", progress.extractor_miss_count));
+    }
+    RunnerResultRow {
+        collection: progress.collection.clone(),
+        request: format!("{} · {}", row_label, progress.request_name),
+        method: progress.method.clone(),
+        url: privacy::redact_url_query_and_fragment(&progress.url_template),
+        status: progress.status.clone(),
+        duration_ms: Some(progress.duration_ms),
+        note: note_parts.join(", "),
+    }
+}
+
+fn runner_data_row_label(index: usize, data: &runner::DataRow) -> String {
+    if data.is_empty() {
+        format!("Row {}", index + 1)
+    } else {
+        let keys = data.keys().take(3).cloned().collect::<Vec<_>>().join(", ");
+        format!("Row {} ({})", index + 1, keys)
     }
 }
 
