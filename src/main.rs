@@ -2894,64 +2894,6 @@ fn install_panic_hook() {
     }));
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn tab(folder_path: Vec<&str>, request_id: &str, pinned: bool) -> OpenTab {
-        OpenTab {
-            folder_path: folder_path.into_iter().map(str::to_string).collect(),
-            request_id: request_id.to_string(),
-            pinned,
-        }
-    }
-
-    #[test]
-    fn restored_active_tab_prefers_persisted_active_id() {
-        let open_tabs = vec![
-            tab(vec!["collection-a"], "first", false),
-            tab(vec!["collection-b"], "second", true),
-        ];
-
-        let restored = restored_active_tab(&open_tabs, Some("second")).unwrap();
-
-        assert_eq!(restored.request_id, "second");
-        assert_eq!(restored.folder_path, vec!["collection-b".to_string()]);
-        assert!(restored.pinned);
-    }
-
-    #[test]
-    fn restored_active_tab_falls_back_to_first_open_tab_when_saved_id_is_stale() {
-        let open_tabs = vec![
-            tab(vec!["collection-a"], "first", false),
-            tab(vec!["collection-b"], "second", false),
-        ];
-
-        let restored = restored_active_tab(&open_tabs, Some("missing")).unwrap();
-
-        assert_eq!(restored.request_id, "first");
-        assert_eq!(restored.folder_path, vec!["collection-a".to_string()]);
-    }
-
-    #[test]
-    fn restored_active_tab_falls_back_to_first_open_tab_without_saved_id() {
-        let open_tabs = vec![
-            tab(vec![], "draft", false),
-            tab(vec!["collection-b"], "saved", false),
-        ];
-
-        let restored = restored_active_tab(&open_tabs, None).unwrap();
-
-        assert_eq!(restored.request_id, "draft");
-        assert!(restored.folder_path.is_empty());
-    }
-
-    #[test]
-    fn restored_active_tab_returns_none_for_empty_workspace() {
-        assert!(restored_active_tab(&[], Some("missing")).is_none());
-    }
-}
-
 fn main() -> Result<(), eframe::Error> {
     // Cheap `--version` / `-V` flag so anyone (user or `install.sh`)
     // can confirm which build is actually on disk without opening the
@@ -3036,4 +2978,62 @@ fn main() -> Result<(), eframe::Error> {
         options,
         Box::new(|_cc| Ok(Box::new(ApiClient::default()))),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tab(folder_path: Vec<&str>, request_id: &str, pinned: bool) -> OpenTab {
+        OpenTab {
+            folder_path: folder_path.into_iter().map(str::to_string).collect(),
+            request_id: request_id.to_string(),
+            pinned,
+        }
+    }
+
+    #[test]
+    fn restored_active_tab_prefers_persisted_active_id() {
+        let open_tabs = vec![
+            tab(vec!["collection-a"], "first", false),
+            tab(vec!["collection-b"], "second", true),
+        ];
+
+        let restored = restored_active_tab(&open_tabs, Some("second")).unwrap();
+
+        assert_eq!(restored.request_id, "second");
+        assert_eq!(restored.folder_path, vec!["collection-b".to_string()]);
+        assert!(restored.pinned);
+    }
+
+    #[test]
+    fn restored_active_tab_falls_back_to_first_open_tab_when_saved_id_is_stale() {
+        let open_tabs = vec![
+            tab(vec!["collection-a"], "first", false),
+            tab(vec!["collection-b"], "second", false),
+        ];
+
+        let restored = restored_active_tab(&open_tabs, Some("missing")).unwrap();
+
+        assert_eq!(restored.request_id, "first");
+        assert_eq!(restored.folder_path, vec!["collection-a".to_string()]);
+    }
+
+    #[test]
+    fn restored_active_tab_falls_back_to_first_open_tab_without_saved_id() {
+        let open_tabs = vec![
+            tab(vec![], "draft", false),
+            tab(vec!["collection-b"], "saved", false),
+        ];
+
+        let restored = restored_active_tab(&open_tabs, None).unwrap();
+
+        assert_eq!(restored.request_id, "draft");
+        assert!(restored.folder_path.is_empty());
+    }
+
+    #[test]
+    fn restored_active_tab_returns_none_for_empty_workspace() {
+        assert!(restored_active_tab(&[], Some("missing")).is_none());
+    }
 }

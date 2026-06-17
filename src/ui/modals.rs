@@ -2877,18 +2877,6 @@ fn spreadsheet_safe_cell(value: &str) -> String {
     }
 }
 
-#[cfg(test)]
-mod runner_report_tests {
-    use super::*;
-
-    #[test]
-    fn csv_cell_neutralizes_spreadsheet_formulas() {
-        assert_eq!(csv_cell("=cmd|' /C calc'!A0"), "'=cmd|' /C calc'!A0");
-        assert_eq!(csv_cell("+SUM(A1:A2)"), "'+SUM(A1:A2)");
-        assert_eq!(csv_cell("@user"), "'@user");
-    }
-}
-
 /// One row in the command palette result list.
 struct PaletteEntry {
     folder_path: Vec<String>,
@@ -3010,4 +2998,16 @@ fn palette_frame(theme: Theme) -> egui::Frame {
                 Theme::Postman => 60,
             }),
         })
+}
+
+#[cfg(test)]
+mod runner_report_tests {
+    use super::*;
+
+    #[test]
+    fn csv_cell_neutralizes_spreadsheet_formulas() {
+        assert_eq!(csv_cell("=cmd|' /C calc'!A0"), "'=cmd|' /C calc'!A0");
+        assert_eq!(csv_cell("+SUM(A1:A2)"), "'+SUM(A1:A2)");
+        assert_eq!(csv_cell("@user"), "'@user");
+    }
 }
