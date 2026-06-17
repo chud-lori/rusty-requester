@@ -11,15 +11,19 @@ Git workspace imports preserve IDs so branches can round-trip cleanly.
 workspace.json
 requests/
   001-collection-name-collection-id/
-    001-request-name-request-id.json
-    002-other-request-other-request-id.json
+    001-request-name-request-id.rr
+    002-other-request-other-request-id.rr
     001-nested-folder-folder-id/
-      001-nested-request-request-id.json
+      001-nested-request-request-id.rr
 ```
 
 - `workspace.json` is the manifest. It records the format name, version, secret
   policy, ordered folder tree, and each request file path.
-- Each request lives in its own readable JSON file under `requests/`.
+- Each request lives in its own readable `.rr` file under `requests/`. The
+  contents are still pretty JSON, so diffs stay readable in GitHub, GitLab,
+  Bitbucket, terminals, and normal editors.
+- Imports remain backward-compatible with older workspaces whose manifest
+  points at `.json` request files.
 - Folder and request file names include a 1-based order prefix, a readable slug,
   and the stable object ID. The manifest is the source of truth for order.
 - Export rewrites the managed `requests/` directory so stale request files do
@@ -58,7 +62,7 @@ in the files, including masked placeholders.
 Expected conflict shape:
 
 - Two people edit different request files: Git usually merges cleanly.
-- Two people edit the same request file: resolve the JSON object like any other
+- Two people edit the same request file: resolve the `.rr` JSON object like any other
   small source file, keeping the original `id`.
 - Two people reorder or move requests: resolve `workspace.json` first because it
   owns ordering and file paths.
@@ -68,4 +72,5 @@ Expected conflict shape:
   after resolving conflicts if you want to normalize paths and ordering.
 
 The safest manual resolution rule is: preserve IDs, keep one manifest entry per
-request, and make every manifest `path` point to a JSON file with the same `id`.
+request, and make every manifest `path` point to a `.rr` or legacy `.json` file
+with the same `id`.

@@ -266,6 +266,7 @@ impl ApiClient {
                 requests: vec![],
                 subfolders: vec![],
                 description: String::new(),
+                sync: SyncConfig::default(),
             };
             let inserted = if parent_path.is_empty() {
                 self.state.folders.push(new_folder);

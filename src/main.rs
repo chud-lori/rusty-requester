@@ -176,6 +176,9 @@ struct ApiClient {
     show_runner_modal: bool,
     show_backup_modal: bool,
     show_sync_modal: bool,
+    show_collection_settings_modal: bool,
+    collection_settings_folder_id: Option<String>,
+    collection_git_status: String,
     confirm_restore_backup_path: Option<PathBuf>,
     runner_scope_folder_id: Option<String>,
     runner_data_rows: String,
@@ -488,6 +491,9 @@ impl Default for ApiClient {
             show_runner_modal: false,
             show_backup_modal: false,
             show_sync_modal: false,
+            show_collection_settings_modal: false,
+            collection_settings_folder_id: None,
+            collection_git_status: String::new(),
             confirm_restore_backup_path: None,
             runner_scope_folder_id: None,
             runner_data_rows: String::new(),
@@ -629,6 +635,7 @@ impl ApiClient {
                 requests: vec![],
                 subfolders: vec![],
                 description: String::new(),
+                sync: SyncConfig::default(),
             }],
             environments: vec![],
             active_env_id: None,
@@ -1876,6 +1883,16 @@ impl ApiClient {
         }
     }
 
+    pub(crate) fn open_collection_settings(&mut self, folder_id: &str) {
+        if crate::find_folder_by_id(&self.state.folders, folder_id).is_none() {
+            self.show_toast("Collection not found");
+            return;
+        }
+        self.collection_settings_folder_id = Some(folder_id.to_string());
+        self.collection_git_status.clear();
+        self.show_collection_settings_modal = true;
+    }
+
     fn rename_request(&mut self, request_id: &str, new_name: String) {
         fn go(folders: &mut Vec<Folder>, id: &str, name: &str) -> bool {
             for f in folders {
@@ -2081,6 +2098,7 @@ impl ApiClient {
                         requests: vec![],
                         subfolders: vec![],
                         description: String::new(),
+                        sync: SyncConfig::default(),
                     });
                     self.save_state();
                 }
@@ -2586,6 +2604,7 @@ impl eframe::App for ApiClient {
         self.render_runner_modal(ctx);
         self.render_backup_modal(ctx);
         self.render_sync_modal(ctx);
+        self.render_collection_settings_modal(ctx);
         self.render_env_modal(ctx);
         self.render_settings_modal(ctx);
         self.render_update_modal(ctx);
@@ -2657,6 +2676,7 @@ impl ApiClient {
                 id: Uuid::new_v4().to_string(),
                 name: src.name.clone(),
                 description: src.description.clone(),
+                sync: src.sync.clone(),
                 requests: src
                     .requests
                     .iter()

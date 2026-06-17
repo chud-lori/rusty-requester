@@ -246,6 +246,7 @@ impl ApiClient {
                         requests: vec![],
                         subfolders: vec![],
                         description: String::new(),
+                        sync: SyncConfig::default(),
                     });
                     self.save_state();
                 }
@@ -1077,6 +1078,7 @@ impl ApiClient {
                 ui.memory_mut(|m| m.toggle_popup(popup_id));
             }
             let mut open_overview = false;
+            let mut open_collection_settings = false;
             egui::popup::popup_below_widget(
                 ui,
                 popup_id,
@@ -1086,6 +1088,9 @@ impl ApiClient {
                     ui.set_min_width(180.0);
                     if ui.button("Open overview").clicked() {
                         open_overview = true;
+                    }
+                    if depth == 0 && ui.button("Collection settings...").clicked() {
+                        open_collection_settings = true;
                     }
                     ui.separator();
                     if ui.button("Add request").clicked() {
@@ -1121,6 +1126,10 @@ impl ApiClient {
             header_response.header_response.context_menu(|ui| {
                 if ui.button("Open overview").clicked() {
                     open_overview = true;
+                    ui.close_menu();
+                }
+                if depth == 0 && ui.button("Collection settings...").clicked() {
+                    open_collection_settings = true;
                     ui.close_menu();
                 }
                 ui.separator();
@@ -1200,6 +1209,7 @@ impl ApiClient {
                         requests: vec![],
                         subfolders: vec![],
                         description: String::new(),
+                        sync: SyncConfig::default(),
                     });
                 }
                 self.save_state();
@@ -1209,6 +1219,9 @@ impl ApiClient {
             }
             if open_overview {
                 self.open_folder_overview(&folder_id);
+            }
+            if open_collection_settings {
+                self.open_collection_settings(&folder_id);
             }
             if delete_folder {
                 self.delete_folder(&folder_id);

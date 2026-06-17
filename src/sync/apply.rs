@@ -1,3 +1,4 @@
+use crate::find_folder_by_id_mut;
 use crate::sync::job::SyncApply;
 use crate::{backup, ApiClient};
 use eframe::egui;
@@ -33,6 +34,28 @@ impl ApiClient {
                 self.prune_stale_tabs();
                 self.save_state();
                 self.show_toast(message);
+            }
+            Ok(SyncApply::ReplaceCollection {
+                folder_id,
+                mut folder,
+                message,
+            }) => {
+                if let Err(e) = backup::create_backup(&self.storage_path) {
+                    self.show_toast(format!("Sync aborted: backup failed: {}", e));
+                    return;
+                }
+                if let Some(existing) = find_folder_by_id_mut(&mut self.state.folders, &folder_id) {
+                    folder.sync = existing.sync.clone();
+                    *existing = folder;
+                    self.prune_stale_tabs();
+                    self.save_state();
+                    self.show_toast(message);
+                } else {
+                    self.show_toast("Sync aborted: collection no longer exists");
+                }
+            }
+            Ok(SyncApply::CollectionGitStatus { status }) => {
+                self.collection_git_status = status;
             }
             Ok(SyncApply::RefreshFolders { folders, updated }) => {
                 if let Err(e) = backup::create_backup(&self.storage_path) {

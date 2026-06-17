@@ -1,7 +1,9 @@
 pub mod curl;
 pub mod git_workspace;
 
-use crate::model::{Auth, Folder, HttpMethod, KvRow, OpenApiSource, Request, RequestSource};
+use crate::model::{
+    Auth, Folder, HttpMethod, KvRow, OpenApiSource, Request, RequestSource, SyncConfig,
+};
 use crate::privacy::is_sensitive_key;
 use crate::secret_scanner;
 use serde::{Deserialize, Serialize};
@@ -235,6 +237,7 @@ fn folder_by_name_mut<'a>(folders: &'a mut Vec<Folder>, name: &str) -> &'a mut F
         requests: Vec::new(),
         subfolders: Vec::new(),
         description: String::new(),
+        sync: SyncConfig::default(),
     });
     folders.last_mut().expect("folder was just pushed")
 }
@@ -850,6 +853,7 @@ fn postman_to_folder(pc: &PostmanCollection) -> Folder {
         requests: Vec::new(),
         subfolders: Vec::new(),
         description: String::new(),
+        sync: SyncConfig::default(),
     };
     for item in &pc.item {
         process_item(item, &mut root);
@@ -869,6 +873,7 @@ fn process_item(item: &PostmanItem, parent: &mut Folder) {
             requests: Vec::new(),
             subfolders: Vec::new(),
             description: String::new(),
+            sync: SyncConfig::default(),
         };
         for s in subitems {
             process_item(s, &mut sub);
@@ -1087,8 +1092,10 @@ mod tests {
                 }],
                 subfolders: vec![],
                 description: "nested folder fixture".into(),
+                sync: SyncConfig::default(),
             }],
             description: "top-level collection fixture".into(),
+            sync: SyncConfig::default(),
         }]
     }
 
@@ -1151,6 +1158,7 @@ mod tests {
             }],
             subfolders: vec![],
             description: String::new(),
+            sync: SyncConfig::default(),
         }];
         let s = export_string(&folders, Format::Json).unwrap();
         let back = import_from_str(&s, "json").unwrap();
@@ -1168,6 +1176,7 @@ mod tests {
             requests: vec![],
             subfolders: vec![],
             description: String::new(),
+            sync: SyncConfig::default(),
         }];
         let s = export_string(&folders, Format::Yaml).unwrap();
         let back = import_from_str(&s, "yaml").unwrap();

@@ -387,6 +387,7 @@ fn redact_folder(folder: &Folder) -> Folder {
         requests: folder.requests.iter().map(redact_request).collect(),
         subfolders: folder.subfolders.iter().map(redact_folder).collect(),
         description: redact_text(&folder.description),
+        sync: folder.sync.clone(),
     }
 }
 
@@ -598,6 +599,7 @@ mod tests {
             requests: vec![request],
             subfolders: vec![],
             description: String::new(),
+            sync: crate::model::SyncConfig::default(),
         }]
     }
 

@@ -12,6 +12,7 @@ const FORMAT_NAME: &str = "rusty-requester-git-workspace";
 const FORMAT_VERSION: u32 = 1;
 const MANIFEST_FILE: &str = "workspace.json";
 const REQUESTS_DIR: &str = "requests";
+const REQUEST_FILE_EXTENSION: &str = "rr";
 const MAX_REQUEST_FILES: usize = 5_000;
 const MAX_FOLDER_DEPTH: usize = 32;
 const MAX_IMPORT_BYTES: u64 = 50 * 1024 * 1024;
@@ -201,8 +202,9 @@ fn manifest_folder(
             request_path.push(component);
         }
         request_path.push(format!(
-            "{}.json",
-            path_component(request_index, &request.name, &request.id, "request")
+            "{}.{}",
+            path_component(request_index, &request.name, &request.id, "request"),
+            REQUEST_FILE_EXTENSION
         ));
 
         requests.push(ManifestRequest {
@@ -280,6 +282,7 @@ fn import_manifest_folders(
             requests,
             subfolders: import_manifest_folders(root, &folder.subfolders, budget, depth + 1)?,
             description: folder.description.clone(),
+            sync: crate::model::SyncConfig::default(),
         });
     }
     Ok(out)
@@ -325,9 +328,10 @@ fn validate_manifest_path(path: &str) -> Result<PathBuf, String> {
     if relative.is_absolute() {
         return Err(format!("Workspace request path must be relative: {}", path));
     }
-    if relative.extension() != Some(OsStr::new("json")) {
+    let ext = relative.extension();
+    if ext != Some(OsStr::new(REQUEST_FILE_EXTENSION)) && ext != Some(OsStr::new("json")) {
         return Err(format!(
-            "Workspace request path must be a JSON file: {}",
+            "Workspace request path must be a .rr or .json file: {}",
             path
         ));
     }
@@ -521,6 +525,7 @@ mod tests {
                 id: "collection-1-sub".into(),
                 name: "Nested".into(),
                 description: String::new(),
+                sync: crate::model::SyncConfig::default(),
                 requests: vec![Request {
                     id: "request-2".into(),
                     name: "Status".into(),
@@ -552,6 +557,7 @@ mod tests {
                 }],
                 subfolders: vec![],
             }],
+            sync: crate::model::SyncConfig::default(),
         }]
     }
 
@@ -585,18 +591,18 @@ mod tests {
         assert_eq!(summary.manifest_path, root.join(MANIFEST_FILE));
         assert!(root.join(MANIFEST_FILE).is_file());
         assert!(root
-            .join("requests/001-fixture-api-collection-1/001-create-widget-request-1.json")
+            .join("requests/001-fixture-api-collection-1/001-create-widget-request-1.rr")
             .is_file());
         assert!(root
             .join(
-                "requests/001-fixture-api-collection-1/001-nested-collection-1-sub/001-status-request-2.json"
+                "requests/001-fixture-api-collection-1/001-nested-collection-1-sub/001-status-request-2.rr"
             )
             .is_file());
 
         let manifest = read(root.join(MANIFEST_FILE));
         assert!(manifest.contains("\"format\": \"rusty-requester-git-workspace\""));
         assert!(manifest.contains(
-            "\"path\": \"requests/001-fixture-api-collection-1/001-create-widget-request-1.json\""
+            "\"path\": \"requests/001-fixture-api-collection-1/001-create-widget-request-1.rr\""
         ));
 
         let first_manifest = manifest.clone();
@@ -610,9 +616,8 @@ mod tests {
         let root = temp_workspace("mask");
         export_workspace_to_dir(&fixture_folders(), &root, ExportOptions::default()).unwrap();
 
-        let first_request = read(
-            root.join("requests/001-fixture-api-collection-1/001-create-widget-request-1.json"),
-        );
+        let first_request =
+            read(root.join("requests/001-fixture-api-collection-1/001-create-widget-request-1.rr"));
         assert!(!first_request.contains("query-secret"));
         assert!(!first_request.contains("header-secret"));
         assert!(!first_request.contains("cookie-secret"));
@@ -622,7 +627,7 @@ mod tests {
         assert!(first_request.contains("https://api.example.com/widgets?...#..."));
 
         let second_request = read(root.join(
-            "requests/001-fixture-api-collection-1/001-nested-collection-1-sub/001-status-request-2.json",
+            "requests/001-fixture-api-collection-1/001-nested-collection-1-sub/001-status-request-2.rr",
         ));
         assert!(!second_request.contains("oauth-client-secret"));
         assert!(!second_request.contains("oauth-access-token"));
@@ -649,6 +654,37 @@ mod tests {
         assert_eq!(imported[0].id, "collection-1");
         assert_eq!(imported[0].requests[0].id, "request-1");
         assert_eq!(imported[0].subfolders[0].requests[0].id, "request-2");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn import_accepts_legacy_json_request_files() {
+        let root = temp_workspace("legacy-json");
+        export_workspace_to_dir(
+            &fixture_folders(),
+            &root,
+            ExportOptions {
+                secret_policy: SecretPolicy::Include,
+            },
+        )
+        .unwrap();
+
+        let rr_path =
+            root.join("requests/001-fixture-api-collection-1/001-create-widget-request-1.rr");
+        let json_path =
+            root.join("requests/001-fixture-api-collection-1/001-create-widget-request-1.json");
+        fs::rename(&rr_path, &json_path).unwrap();
+
+        let manifest_path = root.join(MANIFEST_FILE);
+        let mut manifest: serde_json::Value = serde_json::from_str(&read(&manifest_path)).unwrap();
+        manifest["folders"][0]["requests"][0]["path"] = serde_json::json!(
+            "requests/001-fixture-api-collection-1/001-create-widget-request-1.json"
+        );
+        write_json_file(&manifest_path, &manifest).unwrap();
+
+        let imported = import_workspace_from_dir(&root).unwrap();
+
+        assert_eq!(imported[0].requests[0].id, "request-1");
         let _ = fs::remove_dir_all(root);
     }
 
@@ -683,7 +719,7 @@ mod tests {
         .unwrap();
 
         let path =
-            root.join("requests/001-fixture-api-collection-1/001-create-widget-request-1.json");
+            root.join("requests/001-fixture-api-collection-1/001-create-widget-request-1.rr");
         let mut request: Request = serde_json::from_str(&read(&path)).unwrap();
         request.id = "different".into();
         write_json_file(&path, &request).unwrap();
@@ -700,7 +736,7 @@ mod tests {
 
         let manifest_path = root.join(MANIFEST_FILE);
         let mut manifest: serde_json::Value = serde_json::from_str(&read(&manifest_path)).unwrap();
-        manifest["folders"][0]["requests"][0]["path"] = serde_json::json!("../outside.json");
+        manifest["folders"][0]["requests"][0]["path"] = serde_json::json!("../outside.rr");
         write_json_file(&manifest_path, &manifest).unwrap();
 
         let err = import_workspace_from_dir(&root).unwrap_err();

@@ -22,7 +22,25 @@ impl fmt::Display for GitError {
 }
 
 pub(crate) fn run(repo_root: &Path, args: &[&str]) -> Result<(), GitError> {
-    let output = Command::new("git")
+    let output = command_output(repo_root, args)?;
+    output_result(args, output)
+}
+
+pub(crate) fn output(repo_root: &Path, args: &[&str]) -> Result<String, GitError> {
+    let output = command_output(repo_root, args)?;
+    output_result(
+        args,
+        Output {
+            status: output.status,
+            stdout: output.stdout.clone(),
+            stderr: output.stderr.clone(),
+        },
+    )?;
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+fn command_output(repo_root: &Path, args: &[&str]) -> Result<Output, GitError> {
+    Command::new("git")
         .arg("-C")
         .arg(repo_root)
         .args(args)
@@ -33,9 +51,7 @@ pub(crate) fn run(repo_root: &Path, args: &[&str]) -> Result<(), GitError> {
             } else {
                 GitError::StartFailed
             }
-        })?;
-
-    output_result(args, output)
+        })
 }
 
 fn output_result(args: &[&str], output: Output) -> Result<(), GitError> {
