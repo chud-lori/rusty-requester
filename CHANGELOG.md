@@ -11,7 +11,7 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
-## Unreleased
+## [0.24.0] — 2026-06-17
 
 ### Added
 - **Environment compare.** The environment manager can now compare a
