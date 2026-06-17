@@ -592,8 +592,10 @@ mod tests {
                 requests: vec![request("b", "B")],
                 subfolders: vec![],
                 description: String::new(),
+                sync: crate::model::SyncConfig::default(),
             }],
             description: String::new(),
+            sync: crate::model::SyncConfig::default(),
         }];
 
         let all = collect_requests(&folders, None);

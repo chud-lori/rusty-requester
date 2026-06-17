@@ -151,16 +151,21 @@ the original values.
 - **Right-click any collection / folder → Export as JSON / YAML…** — exports just that subtree (this is the "collection-level" export for sharing).
 - Before collection export, Rusty Requester runs a local-only secret scan for common API keys, bearer/JWT-style tokens, OAuth/basic auth secrets, cookies, and sensitive key names such as `Authorization`, `token`, `password`, `client_secret`, and `api_key`. If likely secrets are found, you can cancel, continue with the original export, or export a redacted copy with likely secret values replaced by `[REDACTED]`. This scanner never uploads export content. It is heuristic: unusual secret formats may be missed, and placeholder or example values may still produce false positives.
 - **Git workspace format** — core import/export code can write a deterministic
-  directory with `workspace.json` plus one readable JSON file per request. It
-  preserves IDs for Git round-trips and masks secrets by default. See
+  directory with `workspace.json` plus one readable `.rr` request file per
+  request. `.rr` files contain pretty JSON, preserve IDs for Git round-trips,
+  and mask secrets by default. See
   [`GIT_WORKSPACE_FORMAT.md`](./GIT_WORKSPACE_FORMAT.md) for layout and
   merge-conflict expectations.
+- **Collection-level Git UI** — each top-level collection can point at its own
+  local Git repository from **Collection settings...**. The free Git panel can
+  show status/diff summary, pull from remote, export the collection, commit,
+  and push through your existing local Git credentials.
 - **Workspace Sync** — optional, off by default in Settings. When enabled,
   **Workspace Sync…** lets you pull from a Git workspace directory, push a
-  masked Git workspace snapshot, pull/push a GitHub or other Git remote through
-  your local Git credentials, and refresh OpenAPI-generated requests from a
-  local JSON/YAML spec. Private repos work through your SSH key or Git
-  credential helper; Rusty Requester stores no GitHub token.
+  masked Git workspace snapshot, pull/push a Git remote through your local Git
+  credentials, and refresh OpenAPI-generated requests from a local JSON/YAML
+  spec. Private repos work through your SSH key or Git credential helper; Rusty
+  Requester stores no GitHub token.
 
 ### Running collections with data rows
 
@@ -359,4 +364,4 @@ _Nothing open — OAuth 2.0 Auth Code + PKCE *(v0.15)* was the last v1.0 item._
 - [ ] **Pre-request scripts** — Rhai/Boa scripting engine for transformations before send.
 - [ ] **Windows builds** — CI + installer parity with macOS/Linux.
 - [x] **OpenAPI import / refresh** — import a spec into collections and refresh existing generated requests.
-- [x] **Git-backed workspace sync** — optional local-file and GitHub/local Git mode for teams that want normal Git review / merge flow.
+- [x] **Git-backed workspace sync** — optional collection-level and whole-workspace local Git mode for teams that want normal Git review / merge flow.

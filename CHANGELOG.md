@@ -11,6 +11,18 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Added
+- **Collection-level Git sync settings.** Top-level collections now have a
+  Collection Settings entry with a local collection directory, Git remote
+  pull/push actions, a compact Git status/diff summary, and collection-scoped
+  OpenAPI refresh. Private Git remotes use the user's existing local Git
+  credentials; Rusty Requester stores no GitHub tokens.
+- **Reviewable `.rr` request files.** Git workspace exports now write each
+  request as pretty JSON with a Rusty Requester `.rr` extension while still
+  importing older `.json` request files.
+
 ## [0.25.0] — 2026-06-17
 
 ### Added

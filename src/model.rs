@@ -385,6 +385,10 @@ pub struct Folder {
     /// page. Multiline; can be empty.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub description: String,
+    /// Optional per-collection sync settings. Top-level collections can point
+    /// at different local Git repositories or OpenAPI specs.
+    #[serde(default, skip_serializing_if = "SyncConfig::is_empty")]
+    pub sync: SyncConfig,
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -435,9 +439,18 @@ pub struct SyncConfig {
     /// lossless local/private exports per operation.
     #[serde(default)]
     pub include_secrets_in_git_workspace: bool,
-    /// Commit message used by the optional GitHub/local Git push workflow.
+    /// Commit message used by the optional local Git push workflow.
     #[serde(default = "default_git_commit_message")]
     pub git_commit_message: String,
+}
+
+impl SyncConfig {
+    pub fn is_empty(&self) -> bool {
+        self.git_workspace_dir.is_empty()
+            && self.openapi_spec_path.is_empty()
+            && !self.include_secrets_in_git_workspace
+            && self.git_commit_message == default_git_commit_message()
+    }
 }
 
 fn default_git_commit_message() -> String {

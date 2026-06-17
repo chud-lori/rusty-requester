@@ -3,6 +3,7 @@
 //! The `ApiClient` struct itself stays in `main.rs` (for now); these
 //! files only add `impl ApiClient { ... }` blocks.
 
+pub mod collection_settings;
 pub mod editor;
 pub mod modals;
 pub mod response;

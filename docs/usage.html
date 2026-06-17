@@ -593,25 +593,26 @@ bob,secret2,staging-b</code></pre>
         </div>
       </div>
       <h3>OpenAPI refresh</h3>
-      <p>Generated OpenAPI metadata lets the app refresh imported requests from an updated spec while preserving user-edited names, auth values, tests, and extractors where possible. Enable <strong>Workspace Sync</strong> in Settings, open <strong>Workspace Sync…</strong>, choose a local OpenAPI JSON/YAML file, then click <strong>Refresh from OpenAPI spec</strong>.</p>
+      <p>Generated OpenAPI metadata lets the app refresh imported requests from an updated spec while preserving user-edited names, auth values, tests, and extractors where possible. For collection-scoped refresh, open a collection's <strong>Collection settings...</strong>, choose a local OpenAPI JSON/YAML file, then click <strong>Refresh collection from OpenAPI</strong>.</p>
     </section>
 
     <section id="git-workspace">
-      <h2>Git Workspace Sync</h2>
-      <p>Workspace Sync is optional and off by default. Enable it in Settings to pull from or push to a local Git workspace directory, then use your normal GitHub repository as the remote. Private repos work through your local SSH key or Git credential helper; Rusty Requester does not store GitHub tokens. The app writes a deterministic directory instead of one giant export file.</p>
+      <h2>Collection Git Sync</h2>
+      <p>Each top-level collection can be linked to its own local folder or Git repository. Open the collection menu, choose <strong>Collection settings...</strong>, select a repository root, then use <strong>Export to folder</strong>, <strong>Refresh changes</strong>, <strong>Pull from remote</strong>, or <strong>Commit and push</strong>. Private GitHub/GitLab/Bitbucket repos work through your local SSH key or Git credential helper; Rusty Requester does not sign in to Git providers or store GitHub tokens.</p>
       <pre><code>workspace.json
 requests/
   001-my-api-collection-id/
-    001-login-request-id.json
+    001-login-request-id.rr
     001-users-folder-id/
-      001-list-users-request-id.json</code></pre>
+      001-list-users-request-id.rr</code></pre>
       <ul>
-        <li>One readable JSON file per request.</li>
+        <li>One readable <code>.rr</code> file per request, containing pretty JSON.</li>
         <li>Stable IDs for round trips.</li>
         <li>Deterministic ordering for cleaner diffs.</li>
         <li>Secret masking by default for safer commits.</li>
-        <li>Manual GitHub/local Git actions: pull, export + commit, and push.</li>
+        <li>Free Git UI: status/diff summary, pull, export, commit, and push.</li>
       </ul>
+      <p>The older <strong>Workspace Sync...</strong> modal is still available for whole-workspace import/export, but collection settings are the recommended path for team Git review.</p>
       <p>Full format reference: <a href="./GIT_WORKSPACE_FORMAT.md">GIT_WORKSPACE_FORMAT.md</a>.</p>
     </section>
 

@@ -67,6 +67,7 @@ impl ApiClient {
                     requests: vec![],
                     subfolders: vec![],
                     description: String::new(),
+                    sync: SyncConfig::default(),
                 });
             }
 

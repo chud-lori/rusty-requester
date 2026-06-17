@@ -11,6 +11,14 @@ pub(crate) enum SyncApply {
         folders: Vec<Folder>,
         message: String,
     },
+    ReplaceCollection {
+        folder_id: String,
+        folder: Folder,
+        message: String,
+    },
+    CollectionGitStatus {
+        status: String,
+    },
     RefreshFolders {
         folders: Vec<Folder>,
         updated: usize,
