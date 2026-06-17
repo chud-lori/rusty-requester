@@ -11,6 +11,14 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## [Unreleased]
+
+### Added
+- **Saved Collection Runner presets.** Runner configurations can now be
+  saved, loaded, renamed, duplicated, and deleted, including all-collection
+  or folder scope, active environment selection, and explicit data-row text.
+  Missing folder or environment references fall back gracefully when loaded.
+
 ## [0.23.0] — 2026-06-17
 
 ### Added
