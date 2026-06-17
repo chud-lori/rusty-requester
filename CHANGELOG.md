@@ -11,7 +11,7 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
-## Unreleased
+## [0.24.1] — 2026-06-17
 
 ### Changed
 - **Cleaner dense UI selection states.** Request tabs and editor tabs now use
