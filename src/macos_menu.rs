@@ -15,6 +15,8 @@ pub const MENU_NEW_REQUEST: &str = "new_request";
 pub const MENU_NEW_COLLECTION: &str = "new_collection";
 pub const MENU_IMPORT: &str = "import";
 pub const MENU_PASTE_CURL: &str = "paste_curl";
+pub const MENU_CREATE_BACKUP: &str = "create_backup";
+pub const MENU_BACKUPS: &str = "backups";
 pub const MENU_EXPORT_JSON: &str = "export_json";
 pub const MENU_EXPORT_YAML: &str = "export_yaml";
 pub const MENU_TOGGLE_SNIPPET: &str = "toggle_snippet";
@@ -96,6 +98,9 @@ pub fn install() {
             Some(Accelerator::new(Some(cmd), Code::KeyO)),
         ),
         &MenuItem::with_id(MENU_PASTE_CURL, "Paste cURL command…", true, None),
+        &PredefinedMenuItem::separator(),
+        &MenuItem::with_id(MENU_CREATE_BACKUP, "Create Workspace Backup", true, None),
+        &MenuItem::with_id(MENU_BACKUPS, "Backups…", true, None),
         &PredefinedMenuItem::separator(),
         &MenuItem::with_id(MENU_EXPORT_JSON, "Export all as JSON…", true, None),
         &MenuItem::with_id(MENU_EXPORT_YAML, "Export all as YAML…", true, None),

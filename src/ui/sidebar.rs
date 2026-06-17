@@ -1132,9 +1132,11 @@ impl ApiClient {
                 let new_req = Request {
                     id: Uuid::new_v4().to_string(),
                     name: format!("Request {}", count),
+                    description: String::new(),
                     method: HttpMethod::GET,
                     url: "https://api.example.com".to_string(),
                     query_params: vec![],
+                    path_params: vec![],
                     headers: vec![],
                     cookies: vec![],
                     body: String::new(),
@@ -1142,6 +1144,7 @@ impl ApiClient {
                     auth: Auth::None,
                     extractors: vec![],
                     assertions: vec![],
+                    source: None,
                 };
                 let new_id = new_req.id.clone();
                 if let Some(f) = self.get_current_folder_mut() {

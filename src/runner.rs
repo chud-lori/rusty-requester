@@ -534,9 +534,11 @@ mod tests {
         Request {
             id: id.to_string(),
             name: name.to_string(),
+            description: String::new(),
             method: HttpMethod::GET,
             url: "http://example.test".to_string(),
             query_params: vec![],
+            path_params: vec![],
             headers: vec![],
             cookies: vec![],
             body: String::new(),
@@ -544,6 +546,7 @@ mod tests {
             auth: Auth::None,
             extractors: vec![],
             assertions: vec![],
+            source: None,
         }
     }
 

@@ -1,6 +1,6 @@
 pub mod curl;
 
-use crate::model::{Auth, Folder, HttpMethod, KvRow, Request};
+use crate::model::{Auth, Folder, HttpMethod, KvRow, OpenApiSource, Request, RequestSource};
 use crate::privacy::is_sensitive_key;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -173,6 +173,47 @@ fn openapi_to_folders(root: &Value) -> Result<Vec<Folder>, String> {
     Ok(folders)
 }
 
+#[allow(dead_code)]
+pub fn refresh_openapi_folders(folders: &mut [Folder], content: &str) -> Result<usize, String> {
+    let value = serde_json::from_str::<Value>(content)
+        .or_else(|_| serde_yaml::from_str::<Value>(content))
+        .map_err(|e| format!("OpenAPI parse error: {}", e))?;
+    if !looks_like_openapi(&value) {
+        return Err("OpenAPI parse error: expected OpenAPI 3.x document".to_string());
+    }
+
+    let generated = openapi_to_folders(&value)?;
+    let generated_requests = generated
+        .iter()
+        .flat_map(|folder| folder.requests.iter())
+        .collect::<Vec<_>>();
+
+    Ok(refresh_openapi_folder_slice(folders, &generated_requests))
+}
+
+fn refresh_openapi_folder_slice(folders: &mut [Folder], generated_requests: &[&Request]) -> usize {
+    let mut updated = 0;
+    for folder in folders {
+        for request in &mut folder.requests {
+            let Some(existing_key) = openapi_request_key(request) else {
+                continue;
+            };
+            let Some(generated) = generated_requests.iter().find(|candidate| {
+                openapi_request_key(candidate)
+                    .as_ref()
+                    .map(|candidate_key| openapi_keys_match(&existing_key, candidate_key))
+                    .unwrap_or(false)
+            }) else {
+                continue;
+            };
+            merge_openapi_refresh(request, generated);
+            updated += 1;
+        }
+        updated += refresh_openapi_folder_slice(&mut folder.subfolders, generated_requests);
+    }
+    updated
+}
+
 fn folder_by_name_mut<'a>(folders: &'a mut Vec<Folder>, name: &str) -> &'a mut Folder {
     if let Some(idx) = folders.iter().position(|f| f.name == name) {
         return &mut folders[idx];
@@ -187,6 +228,86 @@ fn folder_by_name_mut<'a>(folders: &'a mut Vec<Folder>, name: &str) -> &'a mut F
     folders.last_mut().expect("folder was just pushed")
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct OpenApiRequestKey {
+    operation_id: Option<String>,
+    method: String,
+    path: String,
+}
+
+fn openapi_request_key(request: &Request) -> Option<OpenApiRequestKey> {
+    let RequestSource::OpenApi(source) = request.source.as_ref()?;
+    Some(OpenApiRequestKey {
+        operation_id: (!source.operation_id.is_empty()).then(|| source.operation_id.clone()),
+        method: source.method.to_ascii_uppercase(),
+        path: source.path.clone(),
+    })
+}
+
+fn openapi_keys_match(left: &OpenApiRequestKey, right: &OpenApiRequestKey) -> bool {
+    match (&left.operation_id, &right.operation_id) {
+        (Some(left), Some(right)) if left == right => true,
+        _ => left.method == right.method && left.path == right.path,
+    }
+}
+
+fn merge_openapi_refresh(existing: &mut Request, generated: &Request) {
+    let old_source = match existing.source.as_ref() {
+        Some(RequestSource::OpenApi(source)) => source.clone(),
+        _ => OpenApiSource {
+            operation_id: String::new(),
+            method: String::new(),
+            path: String::new(),
+            generated_query_keys: Vec::new(),
+            generated_path_keys: Vec::new(),
+            generated_header_keys: Vec::new(),
+        },
+    };
+
+    existing.method = generated.method.clone();
+    existing.url = generated.url.clone();
+    existing.description = generated.description.clone();
+    existing.query_params = merge_openapi_rows(
+        &existing.query_params,
+        &generated.query_params,
+        &old_source.generated_query_keys,
+    );
+    existing.path_params = merge_openapi_rows(
+        &existing.path_params,
+        &generated.path_params,
+        &old_source.generated_path_keys,
+    );
+    existing.headers = merge_openapi_rows(
+        &existing.headers,
+        &generated.headers,
+        &old_source.generated_header_keys,
+    );
+    existing.body = generated.body.clone();
+    existing.body_ext = generated.body_ext.clone();
+    if matches!(existing.auth, Auth::None) {
+        existing.auth = generated.auth.clone();
+    }
+    existing.source = generated.source.clone();
+}
+
+fn merge_openapi_rows(
+    existing: &[KvRow],
+    generated: &[KvRow],
+    old_generated_keys: &[String],
+) -> Vec<KvRow> {
+    let mut rows = generated.to_vec();
+    for row in existing {
+        if old_generated_keys.iter().any(|key| key == &row.key) {
+            continue;
+        }
+        if rows.iter().any(|generated| generated.key == row.key) {
+            continue;
+        }
+        rows.push(row.clone());
+    }
+    rows
+}
+
 fn openapi_operation_to_request(
     root: &Value,
     path: &str,
@@ -196,33 +317,54 @@ fn openapi_operation_to_request(
     operation: &Value,
 ) -> Request {
     let mut query_params = Vec::new();
+    let mut path_params = Vec::new();
     let mut headers = Vec::new();
     collect_openapi_parameters(
         path_item.get("parameters"),
         root,
         &mut query_params,
+        &mut path_params,
         &mut headers,
     );
     collect_openapi_parameters(
         operation.get("parameters"),
         root,
         &mut query_params,
+        &mut path_params,
         &mut headers,
     );
+
+    let generated_query_keys = kv_keys(&query_params);
+    let generated_path_keys = kv_keys(&path_params);
+    let generated_header_keys = kv_keys(&headers);
 
     Request {
         id: Uuid::new_v4().to_string(),
         name: openapi_operation_name(operation, method_name, path),
+        description: openapi_operation_description(operation),
         method,
         url: path.to_string(),
         query_params,
+        path_params,
         headers,
         cookies: Vec::new(),
         body: openapi_request_body(root, operation),
         body_ext: None,
-        auth: Auth::None,
+        auth: openapi_auth_hint(root, operation),
         extractors: Vec::new(),
         assertions: Vec::new(),
+        source: Some(RequestSource::OpenApi(OpenApiSource {
+            operation_id: operation
+                .get("operationId")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            method: method_name.to_ascii_uppercase(),
+            path: path.to_string(),
+            generated_query_keys,
+            generated_path_keys,
+            generated_header_keys,
+        })),
     }
 }
 
@@ -271,10 +413,21 @@ fn openapi_operation_name(operation: &Value, method_name: &str, path: &str) -> S
     format!("{} {}", method_name.to_ascii_uppercase(), path)
 }
 
+fn openapi_operation_description(operation: &Value) -> String {
+    operation
+        .get("description")
+        .or_else(|| operation.get("summary"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .trim()
+        .to_string()
+}
+
 fn collect_openapi_parameters(
     parameters: Option<&Value>,
     root: &Value,
     query_params: &mut Vec<KvRow>,
+    path_params: &mut Vec<KvRow>,
     headers: &mut Vec<KvRow>,
 ) {
     let Some(parameters) = parameters.and_then(|v| v.as_array()) else {
@@ -302,10 +455,18 @@ fn collect_openapi_parameters(
 
         match location {
             "query" => upsert_kv_row(query_params, row),
+            "path" => upsert_kv_row(path_params, row),
             "header" => upsert_kv_row(headers, row),
             _ => {}
         }
     }
+}
+
+fn kv_keys(rows: &[KvRow]) -> Vec<String> {
+    rows.iter()
+        .map(|row| row.key.clone())
+        .filter(|key| !key.is_empty())
+        .collect()
 }
 
 fn upsert_kv_row(rows: &mut Vec<KvRow>, row: KvRow) {
@@ -383,6 +544,54 @@ fn openapi_request_body(root: &Value, operation: &Value) -> String {
 
     body.map(|value| serde_json::to_string_pretty(&value).unwrap_or_default())
         .unwrap_or_default()
+}
+
+fn openapi_auth_hint(root: &Value, operation: &Value) -> Auth {
+    let security = operation.get("security").or_else(|| root.get("security"));
+    let Some(requirements) = security.and_then(|v| v.as_array()) else {
+        return Auth::None;
+    };
+
+    for requirement in requirements {
+        let Some(requirement) = requirement.as_object() else {
+            continue;
+        };
+        for scheme_name in requirement.keys() {
+            let Some(scheme) = root
+                .pointer(&format!(
+                    "/components/securitySchemes/{}",
+                    escape_json_pointer_segment(scheme_name)
+                ))
+                .and_then(|v| v.as_object())
+            else {
+                continue;
+            };
+
+            match (
+                scheme.get("type").and_then(|v| v.as_str()),
+                scheme.get("scheme").and_then(|v| v.as_str()),
+            ) {
+                (Some("http"), Some(scheme)) if scheme.eq_ignore_ascii_case("bearer") => {
+                    return Auth::Bearer {
+                        token: String::new(),
+                    };
+                }
+                (Some("http"), Some(scheme)) if scheme.eq_ignore_ascii_case("basic") => {
+                    return Auth::Basic {
+                        username: String::new(),
+                        password: String::new(),
+                    };
+                }
+                _ => {}
+            }
+        }
+    }
+
+    Auth::None
+}
+
+fn escape_json_pointer_segment(segment: &str) -> String {
+    segment.replace('~', "~0").replace('/', "~1")
 }
 
 fn select_json_media_type(content: &serde_json::Map<String, Value>) -> Option<&Value> {
@@ -692,9 +901,11 @@ fn postman_to_request(name: &str, r: &PostmanRequest) -> Request {
         } else {
             name.to_string()
         },
+        description: String::new(),
         method,
         url,
         query_params,
+        path_params: Vec::new(),
         headers: filtered_headers,
         cookies: Vec::new(),
         body,
@@ -702,6 +913,7 @@ fn postman_to_request(name: &str, r: &PostmanRequest) -> Request {
         auth: final_auth,
         extractors: Vec::new(),
         assertions: Vec::new(),
+        source: None,
     }
 }
 
@@ -810,6 +1022,7 @@ mod tests {
             requests: vec![Request {
                 id: "request-1".into(),
                 name: "Create widget".into(),
+                description: String::new(),
                 method: HttpMethod::POST,
                 url: "https://api.example.com/widgets".into(),
                 query_params: vec![
@@ -821,6 +1034,7 @@ mod tests {
                         description: "disabled query is preserved".into(),
                     },
                 ],
+                path_params: vec![],
                 headers: vec![
                     KvRow::new("Content-Type", "application/json"),
                     KvRow {
@@ -838,6 +1052,7 @@ mod tests {
                 },
                 extractors: vec![],
                 assertions: vec![],
+                source: None,
             }],
             subfolders: vec![Folder {
                 id: "collection-1-sub".into(),
@@ -845,9 +1060,11 @@ mod tests {
                 requests: vec![Request {
                     id: "request-2".into(),
                     name: "Status".into(),
+                    description: String::new(),
                     method: HttpMethod::GET,
                     url: "https://api.example.com/status".into(),
                     query_params: vec![],
+                    path_params: vec![],
                     headers: vec![],
                     cookies: vec![],
                     body: String::new(),
@@ -855,6 +1072,7 @@ mod tests {
                     auth: Auth::None,
                     extractors: vec![],
                     assertions: vec![],
+                    source: None,
                 }],
                 subfolders: vec![],
                 description: "nested folder fixture".into(),
@@ -906,9 +1124,11 @@ mod tests {
             requests: vec![Request {
                 id: "r".into(),
                 name: "GET root".into(),
+                description: String::new(),
                 method: HttpMethod::GET,
                 url: "https://example.com".into(),
                 query_params: vec![KvRow::new("q", "1")],
+                path_params: vec![],
                 headers: vec![KvRow::new("X-Foo", "bar")],
                 cookies: vec![],
                 body: String::new(),
@@ -916,6 +1136,7 @@ mod tests {
                 auth: Auth::None,
                 extractors: vec![],
                 assertions: vec![],
+                source: None,
             }],
             subfolders: vec![],
             description: String::new(),
@@ -1152,6 +1373,7 @@ mod tests {
         let openapi = r##"{
             "openapi": "3.0.3",
             "info": {"title": "Example API", "version": "1.0.0"},
+            "security": [{"bearerAuth": []}],
             "paths": {
                 "/users": {
                     "parameters": [
@@ -1191,6 +1413,12 @@ mod tests {
                 }
             },
             "components": {
+                "securitySchemes": {
+                    "bearerAuth": {
+                        "type": "http",
+                        "scheme": "bearer"
+                    }
+                },
                 "schemas": {
                     "NewUser": {
                         "type": "object",
@@ -1210,8 +1438,11 @@ mod tests {
 
         let list = &folders[0].requests[0];
         assert_eq!(list.name, "List users");
+        assert_eq!(list.description, "List users");
         assert_eq!(list.method, HttpMethod::GET);
         assert_eq!(list.url, "/users");
+        assert!(matches!(list.auth, Auth::Bearer { ref token } if token.is_empty()));
+        assert!(matches!(list.source, Some(RequestSource::OpenApi(_))));
         assert_eq!(list.query_params.len(), 1);
         assert_eq!(list.query_params[0].key, "page");
         assert_eq!(list.query_params[0].value, "2");
@@ -1242,6 +1473,9 @@ paths:
     patch:
       summary: Update order
       parameters:
+        - name: orderId
+          in: path
+          example: ORD-1
         - name: trace
           in: header
           example: abc-123
@@ -1261,12 +1495,96 @@ paths:
         assert_eq!(req.name, "Update order");
         assert_eq!(req.method, HttpMethod::PATCH);
         assert_eq!(req.url, "/orders/{orderId}");
+        assert_eq!(req.path_params.len(), 1);
+        assert_eq!(req.path_params[0].key, "orderId");
+        assert_eq!(req.path_params[0].value, "ORD-1");
         assert_eq!(req.headers.len(), 1);
         assert_eq!(req.headers[0].key, "trace");
         assert_eq!(req.headers[0].value, "abc-123");
         assert_eq!(
             serde_json::from_str::<Value>(&req.body).unwrap(),
             serde_json::json!({"status": "shipped"})
+        );
+    }
+
+    #[test]
+    fn refresh_openapi_updates_generated_fields_and_preserves_user_edits() {
+        let v1 = r##"{
+            "openapi": "3.0.3",
+            "info": {"title": "Example API", "version": "1.0.0"},
+            "paths": {
+                "/users": {
+                    "get": {
+                        "operationId": "listUsers",
+                        "summary": "List users",
+                        "parameters": [
+                            {"name": "page", "in": "query", "schema": {"default": 1}},
+                            {"name": "X-Trace", "in": "header", "example": "old"}
+                        ]
+                    }
+                }
+            }
+        }"##;
+        let v2 = r##"{
+            "openapi": "3.0.3",
+            "info": {"title": "Example API", "version": "1.1.0"},
+            "security": [{"basicAuth": []}],
+            "paths": {
+                "/members": {
+                    "get": {
+                        "operationId": "listUsers",
+                        "summary": "List members",
+                        "parameters": [
+                            {"name": "page", "in": "query", "schema": {"default": 3}},
+                            {"name": "sort", "in": "query", "schema": {"default": "name"}},
+                            {"name": "X-Trace", "in": "header", "example": "new"}
+                        ],
+                        "requestBody": {
+                            "content": {
+                                "application/json": {
+                                    "example": {"filter": "active"}
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "components": {
+                "securitySchemes": {
+                    "basicAuth": {"type": "http", "scheme": "basic"}
+                }
+            }
+        }"##;
+
+        let mut folders = import_from_str(v1, "json").unwrap();
+        let req = &mut folders[0].requests[0];
+        req.name = "My saved list".to_string();
+        req.headers.push(KvRow::new("X-Custom", "keep"));
+        req.auth = Auth::Bearer {
+            token: "saved-token".to_string(),
+        };
+
+        let updated = refresh_openapi_folders(&mut folders, v2).unwrap();
+
+        assert_eq!(updated, 1);
+        let req = &folders[0].requests[0];
+        assert_eq!(req.name, "My saved list");
+        assert_eq!(req.description, "List members");
+        assert_eq!(req.url, "/members");
+        assert_eq!(req.query_params.len(), 2);
+        assert_eq!(req.query_params[0].key, "page");
+        assert_eq!(req.query_params[0].value, "3");
+        assert_eq!(req.query_params[1].key, "sort");
+        assert_eq!(req.query_params[1].value, "name");
+        assert_eq!(req.headers.len(), 2);
+        assert_eq!(req.headers[0].key, "X-Trace");
+        assert_eq!(req.headers[0].value, "new");
+        assert_eq!(req.headers[1].key, "X-Custom");
+        assert_eq!(req.headers[1].value, "keep");
+        assert!(matches!(&req.auth, Auth::Bearer { token } if token == "saved-token"));
+        assert_eq!(
+            serde_json::from_str::<Value>(&req.body).unwrap(),
+            serde_json::json!({"filter": "active"})
         );
     }
 }

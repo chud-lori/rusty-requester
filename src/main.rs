@@ -50,7 +50,7 @@ pub struct OAuth2TokenUpdate {
 use snippet::SnippetLang;
 use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use uuid::Uuid;
 use widgets::*;
 
@@ -167,6 +167,8 @@ struct ApiClient {
     paste_curl_text: String,
     paste_error: String,
     show_runner_modal: bool,
+    show_backup_modal: bool,
+    confirm_restore_backup_path: Option<PathBuf>,
     runner_scope_folder_id: Option<String>,
     runner_data_rows: String,
     runner_results: Vec<RunnerResultRow>,
@@ -467,6 +469,8 @@ impl Default for ApiClient {
             paste_curl_text: String::new(),
             paste_error: String::new(),
             show_runner_modal: false,
+            show_backup_modal: false,
+            confirm_restore_backup_path: None,
             runner_scope_folder_id: None,
             runner_data_rows: String::new(),
             runner_results: Vec::new(),
@@ -1768,6 +1772,8 @@ impl ApiClient {
             }
             A::OpenCollectionRunner => self.show_runner_modal = true,
             A::ImportCollection => self.pending_import = true,
+            A::CreateBackup => self.create_workspace_backup_now(),
+            A::OpenBackups => self.show_backup_modal = true,
             A::ExportJson => self.pending_export_json = true,
             A::ExportYaml => self.pending_export_yaml = true,
             A::ClearHistory => {
@@ -1882,6 +1888,49 @@ impl ApiClient {
         }
     }
 
+    pub(crate) fn create_workspace_backup_now(&mut self) {
+        match backup::create_backup(&self.storage_path) {
+            Ok(Some(path)) => self.show_toast(format!(
+                "Backup created: {}",
+                path.file_name()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("workspace backup")
+            )),
+            Ok(None) => self.show_toast("No saved workspace yet"),
+            Err(e) => self.show_toast(format!("Backup failed: {}", e)),
+        }
+    }
+
+    pub(crate) fn restore_workspace_backup_now(&mut self, backup_path: &Path) {
+        match backup::restore_backup(&self.storage_path, backup_path) {
+            Ok(_) => match Self::load_state(&self.storage_path) {
+                LoadOutcome::Ok(state) => {
+                    self.state = state;
+                    if let Some(tab) = restored_active_tab(
+                        &self.state.open_tabs,
+                        self.state.active_tab_id.as_deref(),
+                    ) {
+                        self.selected_folder_path = tab.folder_path;
+                        self.selected_request_id = Some(tab.request_id.clone());
+                        self.state.active_tab_id = Some(tab.request_id);
+                        self.load_request_for_editing();
+                    } else {
+                        self.selected_folder_path.clear();
+                        self.selected_request_id = None;
+                    }
+                    self.confirm_restore_backup_path = None;
+                    self.show_backup_modal = false;
+                    self.show_toast("Workspace restored");
+                }
+                LoadOutcome::Fresh => self.show_toast("Restore produced an empty workspace"),
+                LoadOutcome::Corrupted { error, .. } => {
+                    self.show_toast(format!("Restore failed: {}", error));
+                }
+            },
+            Err(e) => self.show_toast(format!("Restore failed: {}", e)),
+        }
+    }
+
     fn do_export_all(&mut self, format: io::Format) {
         let (ext, label) = match format {
             io::Format::Json => ("json", "JSON"),
@@ -1981,6 +2030,8 @@ impl ApiClient {
                     self.paste_curl_text.clear();
                     self.paste_error.clear();
                 }
+                m::MENU_CREATE_BACKUP => self.create_workspace_backup_now(),
+                m::MENU_BACKUPS => self.show_backup_modal = true,
                 m::MENU_EXPORT_JSON => self.pending_export_json = true,
                 m::MENU_EXPORT_YAML => self.pending_export_yaml = true,
                 m::MENU_TOGGLE_SNIPPET => self.show_snippet_panel = !self.show_snippet_panel,
@@ -2208,6 +2259,7 @@ impl eframe::App for ApiClient {
             && !self.show_settings_modal
             && !self.show_paste_modal
             && !self.show_runner_modal
+            && !self.show_backup_modal
             && !self.show_about_modal
             && !self.save_draft_open
             && self.confirm_close_draft_idx.is_none()
@@ -2442,6 +2494,7 @@ impl eframe::App for ApiClient {
         self.render_central(ctx);
         self.render_paste_modal(ctx);
         self.render_runner_modal(ctx);
+        self.render_backup_modal(ctx);
         self.render_env_modal(ctx);
         self.render_settings_modal(ctx);
         self.render_update_modal(ctx);

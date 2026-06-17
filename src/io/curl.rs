@@ -244,9 +244,11 @@ pub fn parse_curl(input: &str) -> Result<Request, String> {
     Ok(Request {
         id: Uuid::new_v4().to_string(),
         name: "Imported from cURL".to_string(),
+        description: String::new(),
         method,
         url: base_url,
         query_params,
+        path_params: Vec::new(),
         headers: filtered_headers,
         cookies,
         body,
@@ -254,6 +256,7 @@ pub fn parse_curl(input: &str) -> Result<Request, String> {
         auth,
         extractors: Vec::new(),
         assertions: Vec::new(),
+        source: None,
     })
 }
 
@@ -616,9 +619,11 @@ mod tests {
         let r = Request {
             id: "x".into(),
             name: "n".into(),
+            description: String::new(),
             method: HttpMethod::POST,
             url: "https://a.com".into(),
             query_params: vec![KvRow::new("q", "1")],
+            path_params: Vec::new(),
             headers: vec![KvRow::new("X-Foo", "bar")],
             cookies: vec![],
             body: "{}".into(),
@@ -626,6 +631,7 @@ mod tests {
             auth: Auth::None,
             extractors: vec![],
             assertions: vec![],
+            source: None,
         };
         let s = to_curl(&r);
         assert!(s.contains("curl"));

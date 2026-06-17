@@ -16,9 +16,14 @@ upgrades read old files cleanly.
 ### Added
 - **OpenAPI 3.x import.** JSON and YAML OpenAPI specs can now be
   imported as request collections, grouped by operation tags or path
-  roots, with query/header parameters and JSON request body examples.
-- **Workspace backups before import.** Collection imports now snapshot
-  the current workspace before mutating saved state.
+  roots, with query/path/header parameters, request descriptions, auth
+  hints, JSON request body examples, and generator metadata for refresh.
+- **OpenAPI refresh foundation.** Imported OpenAPI requests can be
+  refreshed from an updated local spec while preserving user-edited
+  request names, saved auth values, custom rows, tests, and extractors.
+- **Workspace backup manager.** Collection imports now snapshot the
+  current workspace before mutating saved state, and users can manually
+  create, inspect, and restore workspace backups from the app menu.
 
 ### Security
 - **Safer import and restore paths.** Imports reject files over 10 MB;
@@ -30,8 +35,8 @@ upgrades read old files cleanly.
 
 ### Tests
 - **Import compatibility coverage.** Added JSON/YAML round-trip,
-  Postman edge-case, cURL edge-case, OpenAPI import, and backup/restore
-  tests.
+  Postman edge-case, cURL edge-case, OpenAPI import/refresh, and
+  backup/restore tests.
 
 ## [0.22.1] — 2026-06-17
 
