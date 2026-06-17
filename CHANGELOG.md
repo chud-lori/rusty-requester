@@ -11,6 +11,33 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Changed
+- **Cleaner dense UI selection states.** Request tabs and editor tabs now use
+  neutral surfaces with orange underline indicators instead of filled orange
+  blocks, and selected sidebar requests use a neutral row highlight with an
+  accent rail so HTTP methods stay readable.
+- **Compact response metadata.** Response status, timing, and size now render
+  as one inline metadata row instead of separate chunky chips.
+- **Compact response body find.** The response search action now opens a
+  right-aligned find widget in the response toolbar, focuses automatically from
+  both the toolbar icon and `Cmd/Ctrl+F`, and shows a small match count without
+  stealing a full body row.
+- **Quieter request table controls.** Query/header/body row toggles are smaller,
+  blank key/value rows no longer use orange background blocks, and table rows
+  keep the editor canvas visually calmer.
+- **Cleaner sidebar tools.** Sidebar search now uses an integrated compact
+  search field, and import/export buttons use consistent icon glyphs instead of
+  emoji-style icons.
+- **Environment modal cleanup.** The environment manager opens at a shorter
+  default height and no longer shows a redundant bottom `Done` button because
+  edits save immediately and the titlebar close control already dismisses it.
+
+### Fixed
+- **Assertion success toast noise.** Requests no longer show assertion summary
+  toasts when all assertions pass; failures and errors still surface.
+
 ## [0.24.0] — 2026-06-17
 
 ### Added

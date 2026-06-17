@@ -22,10 +22,6 @@ app with half a gig of idle RAM — so this is built for them first.
   <img src="https://img.shields.io/badge/linux-000000?style=for-the-badge&logo=linux&logoColor=F0F0F0" alt="Linux" />
 </p>
 
-<p align="center">
-  <img src="docs/media/rusty-requester-demo.gif" alt="Rusty Requester demo showing request editing, response viewing, collection runner presets, environment compare, and redacted sharing" width="960" />
-</p>
-
 ---
 
 ## 🎯 Why Rusty Requester?

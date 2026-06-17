@@ -159,7 +159,6 @@ impl ApiClient {
             return;
         }
         let mut open = self.show_env_modal;
-        let mut close_modal = false;
         let mut create_env = false;
         let mut delete_id: Option<String> = None;
         let mut add_missing_key: Option<(String, KvRow)> = None;
@@ -172,7 +171,7 @@ impl ApiClient {
             .collapsible(false)
             .resizable(true)
             .default_width(760.0)
-            .default_height(560.0)
+            .default_height(420.0)
             .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
@@ -400,24 +399,6 @@ impl ApiClient {
                         }
                     });
                 });
-
-                ui.separator();
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui
-                        .add(
-                            egui::Button::new(
-                                egui::RichText::new("Done")
-                                    .color(egui::Color32::WHITE)
-                                    .strong(),
-                            )
-                            .fill(accent())
-                            .min_size(egui::vec2(80.0, 28.0)),
-                        )
-                        .clicked()
-                    {
-                        close_modal = true;
-                    }
-                });
             });
         self.show_env_modal = open;
 
@@ -466,9 +447,6 @@ impl ApiClient {
         if let Some(summary) = copy_summary {
             ctx.copy_text(summary);
             self.show_toast("Environment diff summary copied");
-        }
-        if close_modal {
-            self.show_env_modal = false;
         }
     }
 

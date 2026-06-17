@@ -1125,8 +1125,8 @@ impl ApiClient {
 
     /// Run each enabled assertion against the latest response and
     /// store the outcome in `assertion_results` (parallel to
-    /// `editing_assertions`). A toast summarizes the pass/fail count
-    /// — the Tests tab shows per-row badges for details.
+    /// `editing_assertions`). The Tests tab shows per-row badges for
+    /// success; toast only when a failure/error needs attention.
     fn apply_response_assertions(&mut self) {
         if self.editing_assertions.is_empty() {
             self.assertion_results.clear();
@@ -1153,7 +1153,7 @@ impl ApiClient {
             })
             .collect();
 
-        let (pass, fail, err) = self
+        let (_pass, fail, err) = self
             .assertion_results
             .iter()
             .fold((0, 0, 0), |acc, r| match r {
@@ -1162,18 +1162,17 @@ impl ApiClient {
                 Some(AssertionResult::Error(_)) => (acc.0, acc.1, acc.2 + 1),
                 None => acc,
             });
-        let total = pass + fail + err;
-        if total > 0 {
-            self.show_toast(format!(
-                "Assertions: {} passed, {} failed{}",
-                pass,
-                fail,
-                if err > 0 {
-                    format!(", {} errored", err)
-                } else {
-                    String::new()
-                },
-            ));
+        if fail > 0 || err > 0 {
+            self.show_toast(match (fail, err) {
+                (f, 0) => format!("{} assertion{} failed", f, if f == 1 { "" } else { "s" }),
+                (0, e) => format!("{} assertion{} errored", e, if e == 1 { "" } else { "s" }),
+                (f, e) => format!(
+                    "{} assertion{} failed, {} errored",
+                    f,
+                    if f == 1 { "" } else { "s" },
+                    e
+                ),
+            });
         }
     }
 

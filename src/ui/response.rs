@@ -37,15 +37,15 @@ impl ApiClient {
 
             let sc = status_color(&self.response_status);
             egui::Frame::none()
-                .fill(sc.linear_multiply(0.16))
-                .rounding(egui::Rounding::same(6.0))
-                .inner_margin(egui::Margin::symmetric(9.0, 4.0))
+                .fill(with_alpha(sc, if is_light() { 22 } else { 34 }))
+                .rounding(egui::Rounding::same(5.0))
+                .inner_margin(egui::Margin::symmetric(7.0, 2.0))
                 .show(ui, |ui| {
                     ui.label(
                         egui::RichText::new(&self.response_status)
                             .color(sc)
                             .strong()
-                            .size(13.0),
+                            .size(12.0),
                     );
                 });
 
@@ -54,7 +54,7 @@ impl ApiClient {
                 let wait = self.response_waiting_ms;
                 let dl = self.response_download_ms;
                 let total = self.response_total_ms;
-                render_response_metric(ui, "Time", &self.response_time).on_hover_ui(move |ui| {
+                render_response_metric(ui, &self.response_time).on_hover_ui(move |ui| {
                     render_time_breakdown(ui, prep, wait, dl, total);
                 });
             }
@@ -65,7 +65,7 @@ impl ApiClient {
                 let resp_b = self.response_body_bytes;
                 let req_h = self.request_headers_bytes;
                 let req_b = self.request_body_bytes;
-                render_response_metric(ui, "Size", &format_bytes(total_resp_bytes)).on_hover_ui(
+                render_response_metric(ui, &format_bytes(total_resp_bytes)).on_hover_ui(
                     move |ui| {
                         render_size_breakdown(ui, resp_h, resp_b, req_h, req_b);
                     },
@@ -494,13 +494,89 @@ impl ApiClient {
                             .desired_width(170.0),
                     );
                 }
+
+                if self.body_search_visible {
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let find_w = ui.available_width().clamp(230.0, 340.0);
+                        egui::Frame::none()
+                            .fill(if is_light() {
+                                egui::Color32::from_rgb(245, 247, 250)
+                            } else {
+                                egui::Color32::from_rgb(22, 25, 31)
+                            })
+                            .stroke(egui::Stroke::new(1.0, with_alpha(border(), 185)))
+                            .rounding(egui::Rounding::same(9.0))
+                            .inner_margin(egui::Margin::symmetric(8.0, 3.0))
+                            .show(ui, |ui| {
+                                ui.set_width(find_w);
+                                ui.horizontal(|ui| {
+                                    ui.spacing_mut().item_spacing.x = 6.0;
+                                    ui.label(
+                                        egui::RichText::new(
+                                            egui_phosphor::regular::MAGNIFYING_GLASS,
+                                        )
+                                        .size(13.0)
+                                        .color(muted()),
+                                    );
+                                    let count_w = 58.0;
+                                    let close_w = 22.0;
+                                    let input_w = (ui.available_width()
+                                        - count_w
+                                        - close_w
+                                        - (ui.spacing().item_spacing.x * 2.0))
+                                        .max(96.0);
+                                    let search_resp = ui.add_sized(
+                                        [input_w, 22.0],
+                                        egui::TextEdit::singleline(&mut self.body_search_query)
+                                            .hint_text(hint("Find"))
+                                            .frame(false),
+                                    );
+                                    if self.body_search_focus_pending {
+                                        self.body_search_focus_pending = false;
+                                        search_resp.request_focus();
+                                    }
+                                    if search_resp.has_focus()
+                                        && ui.input(|i| i.key_pressed(egui::Key::Escape))
+                                    {
+                                        self.body_search_visible = false;
+                                        self.body_search_query.clear();
+                                    }
+
+                                    let match_count = count_case_insensitive_matches(
+                                        &self.response_text,
+                                        &self.body_search_query,
+                                    );
+                                    let count_text = if self.body_search_query.is_empty() {
+                                        String::new()
+                                    } else {
+                                        format!("{} hit{}", match_count, plural(match_count))
+                                    };
+                                    ui.add_sized(
+                                        [count_w, 20.0],
+                                        egui::Label::new(
+                                            egui::RichText::new(count_text)
+                                                .size(11.0)
+                                                .color(muted()),
+                                        ),
+                                    );
+                                    if close_x_button(ui, "Close search").clicked() {
+                                        self.body_search_visible = false;
+                                        self.body_search_query.clear();
+                                    }
+                                });
+                            });
+                    });
+                }
             });
         }
 
         if toggle_search {
-            self.body_search_visible = !self.body_search_visible;
-            if !self.body_search_visible {
+            if self.body_search_visible {
+                self.body_search_visible = false;
                 self.body_search_query.clear();
+            } else {
+                self.body_search_visible = true;
+                self.body_search_focus_pending = true;
             }
         }
         if copy_clicked {
@@ -534,31 +610,6 @@ impl ApiClient {
                     Err(e) => self.show_toast(format!("Save failed: {}", e)),
                 }
             }
-        }
-        if body_active && self.body_search_visible {
-            ui.add_space(4.0);
-            ui.horizontal(|ui| {
-                let search_resp = ui.add(
-                    egui::TextEdit::singleline(&mut self.body_search_query)
-                        .hint_text(hint("Find in body…"))
-                        .desired_width(ui.available_width() - 40.0),
-                );
-                // Cmd/Ctrl+F sets `body_search_focus_pending` in main —
-                // consume it here so the TextEdit actually grabs focus.
-                if self.body_search_focus_pending {
-                    self.body_search_focus_pending = false;
-                    search_resp.request_focus();
-                }
-                // Escape while focused → close (mirrors browser Find).
-                if search_resp.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-                    self.body_search_visible = false;
-                    self.body_search_query.clear();
-                }
-                if icon_btn(ui, egui_phosphor::regular::X, "Close search").clicked() {
-                    self.body_search_visible = false;
-                    self.body_search_query.clear();
-                }
-            });
         }
         ui.add_space(4.0);
 
@@ -949,24 +1000,36 @@ impl ApiClient {
     }
 }
 
-fn render_response_metric(ui: &mut egui::Ui, label: &str, value: &str) -> egui::Response {
-    ui.add_space(8.0);
-    let inner = egui::Frame::none()
-        .fill(elevated().linear_multiply(0.72))
-        .rounding(egui::Rounding::same(6.0))
-        .inner_margin(egui::Margin::symmetric(8.0, 4.0))
-        .show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 5.0;
-                ui.label(
-                    egui::RichText::new(label.to_ascii_uppercase())
-                        .size(9.5)
-                        .color(muted()),
-                );
-                ui.label(egui::RichText::new(value).size(12.0).color(text()).strong());
-            });
-        });
-    inner.response
+fn render_response_metric(ui: &mut egui::Ui, value: &str) -> egui::Response {
+    ui.add_space(2.0);
+    ui.label(egui::RichText::new("·").size(12.0).color(muted()));
+    ui.add_space(2.0);
+    ui.add(
+        egui::Label::new(
+            egui::RichText::new(value)
+                .size(12.0)
+                .color(muted())
+                .strong(),
+        )
+        .sense(egui::Sense::hover()),
+    )
+}
+
+fn count_case_insensitive_matches(text: &str, query: &str) -> usize {
+    if query.is_empty() {
+        return 0;
+    }
+    let text = text.to_lowercase();
+    let query = query.to_lowercase();
+    text.match_indices(&query).count()
+}
+
+fn plural(count: usize) -> &'static str {
+    if count == 1 {
+        ""
+    } else {
+        "s"
+    }
 }
 
 fn effective_body_view(

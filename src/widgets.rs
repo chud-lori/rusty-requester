@@ -76,13 +76,8 @@ pub fn tab_button_with_dot<T: PartialEq + Copy>(
     } else {
         egui::RichText::new(label).color(muted()).size(13.0)
     };
-    let fill = if selected {
-        with_alpha(accent(), if is_light() { 20 } else { 28 })
-    } else {
-        egui::Color32::TRANSPARENT
-    };
     let btn = egui::Button::new(rich)
-        .fill(fill)
+        .fill(egui::Color32::TRANSPARENT)
         .stroke(egui::Stroke::NONE)
         .rounding(egui::Rounding::same(8.0))
         .min_size(egui::vec2(90.0, 30.0));
@@ -218,10 +213,10 @@ pub fn render_kv_table(
     }
 
     let avail = ui.available_width();
-    let cb_w = 28.0;
+    let cb_w = 22.0;
     let del_w = 28.0;
     let key_w = avail.mul_add(0.28, 0.0).clamp(150.0, 240.0);
-    let row_h = 28.0;
+    let row_h = 26.0;
     let cell_pad = 8.0;
     // Trailing gap so the × delete button doesn't sit flush against
     // the panel's right border / scroll bar. Matches the 16 px edge
@@ -280,11 +275,11 @@ pub fn render_kv_table(
     for (i, row) in rows.iter_mut().enumerate() {
         let is_blank = row.is_blank();
         let is_last_blank = is_blank && i == row_count - 1;
-        // Blank ghost-row highlight stays quiet, but no longer disappears:
-        // a faint accent wash makes the ready-to-type row discoverable
-        // without returning to filled input cells.
+        // Keep the trailing ghost row neutral. It is an affordance for
+        // typing the next key/value pair, not a selected/warning row.
+        // Focus below adds a thin accent line when the user enters it.
         let bg = if is_last_blank {
-            with_alpha(accent(), if is_light() { 10 } else { 16 })
+            egui::Color32::TRANSPARENT
         } else if i % 2 == 1 {
             if is_light() {
                 with_alpha(border(), 46)
@@ -316,24 +311,24 @@ pub fn render_kv_table(
                             };
                             let toggle_resp = ui
                                 .add_sized(
-                                    [cb_w, row_h],
+                                    [18.0, 18.0],
                                     egui::Button::new(
-                                        egui::RichText::new(toggle_label).size(11.0).color(text()),
+                                        egui::RichText::new(toggle_label).size(9.5).color(text()),
                                     )
                                     .fill(if row.enabled {
-                                        with_alpha(accent(), if is_light() { 18 } else { 30 })
+                                        with_alpha(accent(), if is_light() { 14 } else { 22 })
                                     } else {
                                         egui::Color32::TRANSPARENT
                                     })
                                     .stroke(egui::Stroke::new(
-                                        if row.enabled { 1.4 } else { 1.2 },
+                                        if row.enabled { 1.2 } else { 1.0 },
                                         if row.enabled {
-                                            with_alpha(accent(), 180)
+                                            with_alpha(accent(), 165)
                                         } else {
                                             border()
                                         },
                                     ))
-                                    .rounding(egui::Rounding::same(5.0)),
+                                    .rounding(egui::Rounding::same(4.0)),
                                 )
                                 .on_hover_cursor(egui::CursorIcon::PointingHand)
                                 .on_hover_text(if row.enabled {
@@ -585,16 +580,15 @@ pub fn render_single_tab(
     }
 
     if ui.is_rect_visible(rect) {
-        // Tab chrome — Postman-style underline.
-        //   * Active:     faint accent wash + bottom accent bar.
-        //   * Hover:      faint elevation so the tab registers as interactive.
-        //   * Inactive:   transparent; strip bg shows through.
-        // The previous top-accent + tinted-fill combo stacked three
-        // accent colors (red bar + peach fill + green method text +
-        // amber draft dot) and read as chaotic. Single bottom accent
-        // marks selection cleanly in both themes.
+        // Tab chrome — neutral surface plus a single selected underline.
+        // In a dense developer tool, selection should be obvious without
+        // turning the whole tab into an accent block.
         let tab_bg = if is_active {
-            with_alpha(accent(), if is_light() { 18 } else { 28 })
+            if is_light() {
+                egui::Color32::from_rgb(248, 250, 253)
+            } else {
+                egui::Color32::from_rgb(22, 25, 31)
+            }
         } else if resp.hovered() {
             if is_light() {
                 egui::Color32::from_rgb(242, 245, 249)
@@ -611,13 +605,6 @@ pub fn render_single_tab(
             se: 0.0,
         };
         ui.painter().rect_filled(rect, rounding, tab_bg);
-        if is_active {
-            ui.painter().rect_stroke(
-                rect.shrink(0.5),
-                rounding,
-                egui::Stroke::new(1.0, with_alpha(accent(), if is_light() { 70 } else { 95 })),
-            );
-        }
 
         if is_active {
             // Bottom underline, inset slightly so it doesn't butt against
@@ -658,21 +645,6 @@ pub fn render_single_tab(
             );
             pad_left += 14.0;
         }
-        let method_pill = egui::Rect::from_min_size(
-            egui::pos2(pad_left - 6.0, mid_y - 9.5),
-            egui::vec2(method_slot_w - 7.0, 19.0),
-        );
-        ui.painter().rect_filled(
-            method_pill,
-            egui::Rounding::same(5.5),
-            with_alpha(mc, if is_light() { 24 } else { 34 }),
-        );
-        ui.painter().rect_stroke(
-            method_pill,
-            egui::Rounding::same(5.5),
-            egui::Stroke::new(1.0, with_alpha(mc, if is_light() { 70 } else { 86 })),
-        );
-
         // Paint the text twice — second pass slightly offset — for a
         // faux-bold effect that matches RichText::strong() in the
         // URL bar combobox (which uses the same color).

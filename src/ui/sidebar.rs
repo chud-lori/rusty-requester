@@ -260,7 +260,12 @@ impl ApiClient {
                 ui.horizontal(|ui| {
                     let btn_w = (ui.available_width() - 6.0) / 2.0;
                     ui.menu_button(
-                        egui::RichText::new("📥 Import").size(12.0).color(text()),
+                        egui::RichText::new(format!(
+                            "{} Import",
+                            egui_phosphor::regular::TRAY_ARROW_DOWN
+                        ))
+                        .size(12.0)
+                        .color(text()),
                         |ui| {
                             ui.set_min_width(200.0);
                             if ui.button("Import collection file...").clicked() {
@@ -278,7 +283,12 @@ impl ApiClient {
                     let _ = btn_w;
 
                     ui.menu_button(
-                        egui::RichText::new("📤 Export").size(12.0).color(text()),
+                        egui::RichText::new(format!(
+                            "{} Export",
+                            egui_phosphor::regular::TRAY_ARROW_UP
+                        ))
+                        .size(12.0)
+                        .color(text()),
                         |ui| {
                             ui.set_min_width(200.0);
                             let enabled = !self.state.folders.is_empty();
@@ -321,44 +331,49 @@ impl ApiClient {
 
                 ui.add_space(10.0);
 
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = 4.0;
-                    let (icon_rect, _) =
-                        ui.allocate_exact_size(egui::vec2(18.0, 24.0), egui::Sense::hover());
-                    ui.painter().text(
-                        icon_rect.center(),
-                        egui::Align2::CENTER_CENTER,
-                        egui_phosphor::regular::MAGNIFYING_GLASS,
-                        egui::FontId::proportional(15.0),
-                        muted(),
-                    );
+                egui::Frame::none()
+                    .fill(if is_light() {
+                        egui::Color32::from_rgb(245, 247, 250)
+                    } else {
+                        egui::Color32::from_rgb(22, 25, 31)
+                    })
+                    .stroke(egui::Stroke::new(1.0, with_alpha(border(), 185)))
+                    .rounding(egui::Rounding::same(9.0))
+                    .inner_margin(egui::Margin::symmetric(10.0, 4.0))
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing.x = 6.0;
+                            ui.label(
+                                egui::RichText::new(egui_phosphor::regular::MAGNIFYING_GLASS)
+                                    .size(14.0)
+                                    .color(muted()),
+                            );
 
-                    // Always reserve the close-button slot (visible or as
-                    // a phantom spacer) so the TextEdit's desired_width
-                    // doesn't change when the user starts typing. Without
-                    // this, the horizontal row claims more space than it
-                    // had, and the resizable SidePanel expands to the
-                    // right on every keystroke.
-                    let clear_w = 22.0;
-                    let spacing = ui.spacing().item_spacing.x;
-                    let search_w = (ui.available_width() - clear_w - spacing).max(80.0);
-                    let search_resp = ui.add_sized(
-                        [search_w, 24.0],
-                        egui::TextEdit::singleline(&mut self.search_query)
-                            .hint_text(hint("Search (⌘K)")),
-                    );
-                    if self.focus_search_next_frame {
-                        self.focus_search_next_frame = false;
-                        search_resp.request_focus();
-                    }
-                    if self.search_query.is_empty() {
-                        // Phantom slot — same footprint as `close_x_button`
-                        // so the layout is stable across empty/typed states.
-                        ui.allocate_exact_size(egui::vec2(20.0, 20.0), egui::Sense::hover());
-                    } else if close_x_button(ui, "Clear search").clicked() {
-                        self.search_query.clear();
-                    }
-                });
+                            // Always reserve the close-button slot (visible
+                            // or phantom) so the sidebar width never shifts.
+                            let clear_w = 22.0;
+                            let spacing = ui.spacing().item_spacing.x;
+                            let search_w = (ui.available_width() - clear_w - spacing).max(80.0);
+                            let search_resp = ui.add_sized(
+                                [search_w, 22.0],
+                                egui::TextEdit::singleline(&mut self.search_query)
+                                    .hint_text(hint("Search requests"))
+                                    .frame(false),
+                            );
+                            if self.focus_search_next_frame {
+                                self.focus_search_next_frame = false;
+                                search_resp.request_focus();
+                            }
+                            if self.search_query.is_empty() {
+                                ui.allocate_exact_size(
+                                    egui::vec2(20.0, 20.0),
+                                    egui::Sense::hover(),
+                                );
+                            } else if close_x_button(ui, "Clear search").clicked() {
+                                self.search_query.clear();
+                            }
+                        });
+                    });
                 if !self.search_query.is_empty() {
                     let total =
                         count_matches(&self.state.folders, &self.search_query.to_lowercase());
@@ -722,7 +737,11 @@ impl ApiClient {
 
                 if ui.is_rect_visible(rect) {
                     let bg = if is_selected {
-                        accent().linear_multiply(0.18)
+                        if is_light() {
+                            egui::Color32::from_rgb(242, 245, 249)
+                        } else {
+                            egui::Color32::from_rgb(24, 28, 35)
+                        }
                     } else if resp.hovered() {
                         elevated()
                     } else {
