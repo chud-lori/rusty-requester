@@ -470,41 +470,77 @@ impl SnippetLang {
 }
 
 pub fn render_snippet(req: &Request, lang: SnippetLang) -> String {
+    render_snippet_inner(req, lang, false)
+}
+
+pub fn render_snippet_redacted(req: &Request, lang: SnippetLang) -> String {
+    render_snippet_inner(req, lang, true)
+}
+
+fn render_snippet_inner(req: &Request, lang: SnippetLang, redact: bool) -> String {
     match lang {
-        SnippetLang::Curl => curl::to_curl(req),
-        SnippetLang::Python => python(req),
-        SnippetLang::JavaScript => javascript(req),
-        SnippetLang::HttpieShell => httpie(req),
+        SnippetLang::Curl => {
+            if redact {
+                curl::to_curl_redacted(req)
+            } else {
+                curl::to_curl(req)
+            }
+        }
+        SnippetLang::Python => python(req, redact),
+        SnippetLang::JavaScript => javascript(req, redact),
+        SnippetLang::HttpieShell => httpie(req, redact),
     }
 }
 
-fn collect_send_headers(req: &Request) -> Vec<(String, String)> {
+fn collect_send_headers(req: &Request, redact: bool) -> Vec<(String, String)> {
     let mut out: Vec<(String, String)> = req
         .headers
         .iter()
         .filter(|h| h.enabled && !h.key.trim().is_empty())
-        .map(|h| (h.key.clone(), h.value.clone()))
+        .map(|h| {
+            let value = if redact {
+                crate::privacy::redact_header_value(&h.key, &h.value)
+            } else {
+                h.value.clone()
+            };
+            (h.key.clone(), value)
+        })
         .collect();
     if let Auth::Bearer { token } = &req.auth {
         if !token.is_empty() {
+            let token = if redact {
+                crate::privacy::REDACTED_VALUE
+            } else {
+                token
+            };
             out.push(("Authorization".into(), format!("Bearer {}", token)));
         }
     }
     // OAuth2 → Bearer <access_token>, mirroring the send path.
     if let Auth::OAuth2(s) = &req.auth {
         if !s.access_token.is_empty() {
-            out.push(("Authorization".into(), format!("Bearer {}", s.access_token)));
+            let token = if redact {
+                crate::privacy::REDACTED_VALUE
+            } else {
+                &s.access_token
+            };
+            out.push(("Authorization".into(), format!("Bearer {}", token)));
         }
     }
     out
 }
 
-fn python(req: &Request) -> String {
+fn python(req: &Request, redact: bool) -> String {
     let mut s = String::new();
     s.push_str("import requests\n\n");
     let url = curl::build_full_url(&crate::net::ensure_url_scheme(&req.url), &req.query_params);
+    let url = if redact {
+        crate::privacy::redact_url_sensitive_query_values(&url)
+    } else {
+        url
+    };
     s.push_str(&format!("url = {:?}\n", url));
-    let headers = collect_send_headers(req);
+    let headers = collect_send_headers(req, redact);
     if !headers.is_empty() {
         s.push_str("headers = {\n");
         for (k, v) in &headers {
@@ -514,11 +550,18 @@ fn python(req: &Request) -> String {
     } else {
         s.push_str("headers = {}\n");
     }
-    let cookies: Vec<(&String, &String)> = req
+    let cookies: Vec<(&String, &str)> = req
         .cookies
         .iter()
         .filter(|c| c.enabled && !c.key.is_empty())
-        .map(|c| (&c.key, &c.value))
+        .map(|c| {
+            let value = if redact {
+                crate::privacy::REDACTED_VALUE
+            } else {
+                c.value.as_str()
+            };
+            (&c.key, value)
+        })
         .collect();
     if !cookies.is_empty() {
         s.push_str("cookies = {\n");
@@ -530,6 +573,11 @@ fn python(req: &Request) -> String {
     let mut auth_arg = String::new();
     if let Auth::Basic { username, password } = &req.auth {
         if !username.is_empty() {
+            let password = if redact {
+                crate::privacy::REDACTED_VALUE
+            } else {
+                password
+            };
             auth_arg = format!(", auth=({:?}, {:?})", username, password);
         }
     }
@@ -540,7 +588,12 @@ fn python(req: &Request) -> String {
     };
     let method = format!("{}", req.method).to_lowercase();
     if !req.body.is_empty() {
-        s.push_str(&format!("payload = {:?}\n\n", req.body));
+        let body = if redact {
+            crate::privacy::redact_body_text(&req.body)
+        } else {
+            req.body.clone()
+        };
+        s.push_str(&format!("payload = {:?}\n\n", body));
         s.push_str(&format!(
             "response = requests.{}(url, headers=headers{}{}, data=payload)\n",
             method, cookies_arg, auth_arg
@@ -555,18 +608,30 @@ fn python(req: &Request) -> String {
     s
 }
 
-fn javascript(req: &Request) -> String {
+fn javascript(req: &Request, redact: bool) -> String {
     let mut s = String::new();
     let url = curl::build_full_url(&crate::net::ensure_url_scheme(&req.url), &req.query_params);
+    let url = if redact {
+        crate::privacy::redact_url_sensitive_query_values(&url)
+    } else {
+        url
+    };
     s.push_str(&format!("const url = {:?};\n\n", url));
     s.push_str("const options = {\n");
     s.push_str(&format!("  method: {:?},\n", req.method.to_string()));
-    let headers = collect_send_headers(req);
+    let headers = collect_send_headers(req, redact);
     let cookies: Vec<String> = req
         .cookies
         .iter()
         .filter(|c| c.enabled && !c.key.is_empty())
-        .map(|c| format!("{}={}", c.key, c.value))
+        .map(|c| {
+            let value = if redact {
+                crate::privacy::REDACTED_VALUE
+            } else {
+                &c.value
+            };
+            format!("{}={}", c.key, value)
+        })
         .collect();
     let mut header_lines: Vec<String> = headers
         .iter()
@@ -581,7 +646,12 @@ fn javascript(req: &Request) -> String {
         s.push_str(",\n  },\n");
     }
     if !req.body.is_empty() {
-        s.push_str(&format!("  body: {:?},\n", req.body));
+        let body = if redact {
+            crate::privacy::redact_body_text(&req.body)
+        } else {
+            req.body.clone()
+        };
+        s.push_str(&format!("  body: {:?},\n", body));
     }
     s.push_str("};\n\n");
     s.push_str("fetch(url, options)\n");
@@ -591,15 +661,25 @@ fn javascript(req: &Request) -> String {
     s
 }
 
-fn httpie(req: &Request) -> String {
+fn httpie(req: &Request, redact: bool) -> String {
     let mut parts: Vec<String> = vec!["http".into(), format!("{}", req.method)];
     let url = curl::build_full_url(&crate::net::ensure_url_scheme(&req.url), &req.query_params);
+    let url = if redact {
+        crate::privacy::redact_url_sensitive_query_values(&url)
+    } else {
+        url
+    };
     parts.push(format!("'{}'", url.replace('\'', "'\\''")));
-    for (k, v) in collect_send_headers(req) {
+    for (k, v) in collect_send_headers(req, redact) {
         parts.push(format!("'{}:{}'", k, v));
     }
     if let Auth::Basic { username, password } = &req.auth {
         if !username.is_empty() {
+            let password = if redact {
+                crate::privacy::REDACTED_VALUE
+            } else {
+                password
+            };
             parts.push(format!("--auth='{}:{}'", username, password));
         }
     }
@@ -607,17 +687,112 @@ fn httpie(req: &Request) -> String {
         .cookies
         .iter()
         .filter(|c| c.enabled && !c.key.is_empty())
-        .map(|c| format!("{}={}", c.key, c.value))
+        .map(|c| {
+            let value = if redact {
+                crate::privacy::REDACTED_VALUE
+            } else {
+                &c.value
+            };
+            format!("{}={}", c.key, value)
+        })
         .collect();
     if !cookies.is_empty() {
         parts.push(format!("'Cookie:{}'", cookies.join("; ")));
     }
     let mut s = parts.join(" ");
     if !req.body.is_empty() {
+        let body = if redact {
+            crate::privacy::redact_body_text(&req.body)
+        } else {
+            req.body.clone()
+        };
         s.push_str(&format!(
             "\n# body (use --raw or pipe stdin):\n# echo {:?} | http ...",
-            req.body
+            body
         ));
     }
     s
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::{Auth, HttpMethod, KvRow, Request};
+
+    fn secret_request() -> Request {
+        Request {
+            id: "x".into(),
+            name: "n".into(),
+            description: String::new(),
+            method: HttpMethod::POST,
+            url: "https://api.example.com/login".into(),
+            query_params: vec![
+                KvRow::new("page", "1"),
+                KvRow::new("access_token", "query-secret"),
+            ],
+            path_params: vec![],
+            headers: vec![
+                KvRow::new("Content-Type", "application/json"),
+                KvRow::new("Authorization", "Bearer header-secret"),
+                KvRow::new("X-Api-Key", "header-key-secret"),
+            ],
+            cookies: vec![KvRow::new("sid", "cookie-secret")],
+            body: r#"{"username":"ada","password":"body-secret"}"#.into(),
+            body_ext: None,
+            auth: Auth::Basic {
+                username: "ada".into(),
+                password: "basic-secret".into(),
+            },
+            extractors: vec![],
+            assertions: vec![],
+            source: None,
+        }
+    }
+
+    #[test]
+    fn redacts_curl_snippet() {
+        let s = render_snippet_redacted(&secret_request(), SnippetLang::Curl);
+        assert!(s.contains("access_token=<redacted>"));
+        assert!(s.contains("-H 'Authorization: Bearer <redacted>'"));
+        assert!(s.contains("-H 'X-Api-Key: <redacted>'"));
+        assert!(s.contains("-b 'sid=<redacted>'"));
+        assert!(s.contains("-u 'ada:<redacted>'"));
+        assert!(s.contains("\"password\": \"<redacted>\""));
+        assert!(!s.contains("secret"));
+    }
+
+    #[test]
+    fn redacts_python_snippet() {
+        let s = render_snippet_redacted(&secret_request(), SnippetLang::Python);
+        assert!(s.contains("access_token=<redacted>"));
+        assert!(s.contains("\"Authorization\": \"Bearer <redacted>\""));
+        assert!(s.contains("\"X-Api-Key\": \"<redacted>\""));
+        assert!(s.contains("\"sid\": \"<redacted>\""));
+        assert!(s.contains("auth=(\"ada\", \"<redacted>\")"));
+        assert!(s.contains("\\\"password\\\": \\\"<redacted>\\\""));
+        assert!(!s.contains("secret"));
+    }
+
+    #[test]
+    fn redacts_javascript_fetch_snippet() {
+        let s = render_snippet_redacted(&secret_request(), SnippetLang::JavaScript);
+        assert!(s.contains("access_token=<redacted>"));
+        assert!(s.contains("\"Authorization\": \"Bearer <redacted>\""));
+        assert!(s.contains("\"X-Api-Key\": \"<redacted>\""));
+        assert!(s.contains("\"Cookie\": \"sid=<redacted>\""));
+        assert!(s.contains("\\\"password\\\": \\\"<redacted>\\\""));
+        assert!(!s.contains("secret"));
+    }
+
+    #[test]
+    fn redacts_httpie_snippet() {
+        let s = render_snippet_redacted(&secret_request(), SnippetLang::HttpieShell);
+        assert!(s.contains("access_token=<redacted>"));
+        assert!(s.contains("'Authorization:Bearer <redacted>'"));
+        assert!(s.contains("'X-Api-Key:<redacted>'"));
+        assert!(s.contains("'Cookie:sid=<redacted>'"));
+        assert!(s.contains("--auth='ada:<redacted>'"));
+        assert!(s.contains("\\\"password\\\": \\\"<redacted>\\\""));
+        assert!(!s.contains("secret"));
+    }
 }

@@ -11,6 +11,15 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## [Unreleased]
+
+### Changed
+- **Code snippet sharing is redacted by default.** cURL, Python
+  `requests`, JavaScript `fetch`, and HTTPie exports now preserve
+  request shape while masking authorization, cookie, sensitive query,
+  and sensitive body values. The snippet panel keeps an explicit
+  **Copy raw** action for intentional unredacted copies.
+
 ## [0.23.0] — 2026-06-17
 
 ### Added

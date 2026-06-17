@@ -1,6 +1,7 @@
 const MASK_SHORT_MAX: usize = 8;
 const MASK_LONG_PREFIX: usize = 6;
 const MASK_LONG_SUFFIX: usize = 4;
+pub const REDACTED_VALUE: &str = "<redacted>";
 
 /// Returns true for common header, cookie, query, and form keys that
 /// usually carry credentials or session material.
@@ -76,6 +77,88 @@ pub fn mask_secret_value(value: &str) -> String {
     format!("{}...{}", prefix, suffix)
 }
 
+/// Redact a value when its key commonly carries credentials.
+pub fn redact_sensitive_value(key: &str, value: &str) -> String {
+    if is_sensitive_key(key) {
+        REDACTED_VALUE.to_string()
+    } else {
+        value.to_string()
+    }
+}
+
+/// Redact request header values while preserving enough protocol shape
+/// to keep generated snippets useful.
+pub fn redact_header_value(key: &str, value: &str) -> String {
+    if !is_sensitive_key(key) {
+        return value.to_string();
+    }
+
+    let normalized = normalize_key(key);
+    if normalized == "authorization" || normalized == "proxyauthorization" {
+        return redact_authorization_value(value);
+    }
+    if normalized == "cookie" || normalized == "setcookie" {
+        return redact_cookie_header_value(value);
+    }
+
+    REDACTED_VALUE.to_string()
+}
+
+/// Redact URL query values whose keys look sensitive and hide fragments.
+pub fn redact_url_sensitive_query_values(url: &str) -> String {
+    let trimmed = url.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+
+    let (without_fragment, fragment) = match trimmed.split_once('#') {
+        Some((base, frag)) if !frag.is_empty() => (base, Some("#...")),
+        Some((base, _)) => (base, Some("#")),
+        None => (trimmed, None),
+    };
+
+    let mut out = match without_fragment.split_once('?') {
+        Some((base, query)) if !query.is_empty() => {
+            let redacted_query = query
+                .split('&')
+                .map(redact_query_part)
+                .collect::<Vec<_>>()
+                .join("&");
+            format!("{}?{}", base, redacted_query)
+        }
+        Some((base, _)) => format!("{}?", base),
+        None => without_fragment.to_string(),
+    };
+    if let Some(fragment) = fragment {
+        out.push_str(fragment);
+    }
+    out
+}
+
+/// Redact sensitive JSON or form-like body fields. Bodies that do not
+/// expose key/value structure are returned unchanged.
+pub fn redact_body_text(body: &str) -> String {
+    let trimmed = body.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+
+    if let Ok(mut value) = serde_json::from_str::<serde_json::Value>(body) {
+        redact_json_value(&mut value, None);
+        return serde_json::to_string_pretty(&value).unwrap_or_else(|_| body.to_string());
+    }
+
+    if looks_like_form_body(body) {
+        return body
+            .split('&')
+            .map(redact_query_part)
+            .collect::<Vec<_>>()
+            .join("&");
+    }
+
+    body.to_string()
+}
+
 /// Escape text for safe insertion into HTML text/attribute contexts.
 pub fn escape_html(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
@@ -97,6 +180,76 @@ fn normalize_key(key: &str) -> String {
         .filter(|c| c.is_ascii_alphanumeric())
         .flat_map(|c| c.to_lowercase())
         .collect()
+}
+
+fn redact_authorization_value(value: &str) -> String {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    match trimmed.split_once(char::is_whitespace) {
+        Some((scheme, _)) if !scheme.is_empty() => format!("{} {}", scheme, REDACTED_VALUE),
+        _ => REDACTED_VALUE.to_string(),
+    }
+}
+
+fn redact_cookie_header_value(value: &str) -> String {
+    value
+        .split(';')
+        .map(|part| {
+            let trimmed = part.trim();
+            if trimmed.is_empty() {
+                return String::new();
+            }
+            match trimmed.split_once('=') {
+                Some((name, _)) if !name.trim().is_empty() => {
+                    format!("{}={}", name.trim(), REDACTED_VALUE)
+                }
+                _ => REDACTED_VALUE.to_string(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
+fn redact_query_part(part: &str) -> String {
+    match part.split_once('=') {
+        Some((key, value)) => {
+            let redacted = redact_sensitive_value(key, value);
+            format!("{}={}", key, redacted)
+        }
+        None if is_sensitive_key(part) => format!("{}={}", part, REDACTED_VALUE),
+        None => part.to_string(),
+    }
+}
+
+fn looks_like_form_body(body: &str) -> bool {
+    body.split('&').any(|part| {
+        part.split_once('=')
+            .map(|(key, _)| is_sensitive_key(key))
+            .unwrap_or(false)
+    })
+}
+
+fn redact_json_value(value: &mut serde_json::Value, parent_key: Option<&str>) {
+    if parent_key.is_some_and(is_sensitive_key) {
+        *value = serde_json::Value::String(REDACTED_VALUE.to_string());
+        return;
+    }
+
+    match value {
+        serde_json::Value::Object(map) => {
+            for (key, child) in map {
+                redact_json_value(child, Some(key));
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for child in items {
+                redact_json_value(child, None);
+            }
+        }
+        _ => {}
+    }
 }
 
 #[cfg(test)]
@@ -132,6 +285,40 @@ mod tests {
         assert_eq!(
             redact_url_query_and_fragment(url),
             "https://api.example.com/users?..."
+        );
+    }
+
+    #[test]
+    fn url_sensitive_redaction_preserves_non_secret_query_values() {
+        let url = "https://api.example.com/users?page=2&api_key=secret#access_token=secret";
+        assert_eq!(
+            redact_url_sensitive_query_values(url),
+            "https://api.example.com/users?page=2&api_key=<redacted>#..."
+        );
+    }
+
+    #[test]
+    fn header_redaction_preserves_auth_and_cookie_shape() {
+        assert_eq!(
+            redact_header_value("Authorization", "Bearer abc123"),
+            "Bearer <redacted>"
+        );
+        assert_eq!(
+            redact_header_value("Cookie", "sid=abc; theme=dark"),
+            "sid=<redacted>; theme=<redacted>"
+        );
+        assert_eq!(redact_header_value("X-Trace", "abc123"), "abc123");
+    }
+
+    #[test]
+    fn body_redaction_handles_json_and_form_keys() {
+        assert_eq!(
+            redact_body_text(r#"{"user":"ada","password":"secret","nested":{"token":"abc"}}"#),
+            "{\n  \"nested\": {\n    \"token\": \"<redacted>\"\n  },\n  \"password\": \"<redacted>\",\n  \"user\": \"ada\"\n}"
+        );
+        assert_eq!(
+            redact_body_text("username=ada&access_token=abc"),
+            "username=ada&access_token=<redacted>"
         );
     }
 

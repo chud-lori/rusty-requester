@@ -1743,14 +1743,14 @@ impl ApiClient {
             }
             A::CopyAsCurl => {
                 if let Some(req) = self.get_current_request() {
-                    let s = curl::to_curl(&req);
+                    let s = curl::to_curl_redacted(&req);
                     // egui's Context::copy_text is frame-scoped; show a
                     // toast and use arboard-like behavior via ctx next
                     // frame would be ideal, but render_toast is the
                     // immediate confirmation users expect.
                     // Use egui's clipboard by writing to the context.
                     self.pending_clipboard = Some(s);
-                    self.show_toast("Copied cURL to clipboard");
+                    self.show_toast("Copied redacted cURL to clipboard");
                 }
             }
             A::ToggleSnippetPanel => self.show_snippet_panel = !self.show_snippet_panel,

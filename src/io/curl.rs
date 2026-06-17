@@ -1,33 +1,64 @@
 use crate::model::{Auth, HttpMethod, KvRow, Request};
 use crate::net::ensure_url_scheme;
+use crate::privacy;
 use uuid::Uuid;
 
 pub fn to_curl(req: &Request) -> String {
+    to_curl_inner(req, false)
+}
+
+pub fn to_curl_redacted(req: &Request) -> String {
+    to_curl_inner(req, true)
+}
+
+fn to_curl_inner(req: &Request, redact: bool) -> String {
     let mut parts: Vec<String> = Vec::new();
     parts.push("curl".to_string());
     parts.push(format!("-X {}", req.method));
 
     let full_url = build_full_url(&ensure_url_scheme(&req.url), &req.query_params);
+    let full_url = if redact {
+        privacy::redact_url_sensitive_query_values(&full_url)
+    } else {
+        full_url
+    };
     parts.push(format!("'{}'", esc(&full_url)));
 
     for h in &req.headers {
         if !h.enabled || h.key.trim().is_empty() {
             continue;
         }
-        parts.push(format!("-H '{}: {}'", esc(&h.key), esc(&h.value)));
+        let value = if redact {
+            privacy::redact_header_value(&h.key, &h.value)
+        } else {
+            h.value.clone()
+        };
+        parts.push(format!("-H '{}: {}'", esc(&h.key), esc(&value)));
     }
 
     match &req.auth {
         Auth::Bearer { token } if !token.is_empty() => {
+            let token = if redact {
+                privacy::REDACTED_VALUE
+            } else {
+                token
+            };
             parts.push(format!("-H 'Authorization: Bearer {}'", esc(token)));
         }
         Auth::OAuth2(s) if !s.access_token.is_empty() => {
-            parts.push(format!(
-                "-H 'Authorization: Bearer {}'",
-                esc(&s.access_token)
-            ));
+            let token = if redact {
+                privacy::REDACTED_VALUE
+            } else {
+                &s.access_token
+            };
+            parts.push(format!("-H 'Authorization: Bearer {}'", esc(token)));
         }
         Auth::Basic { username, password } if !username.is_empty() => {
+            let password = if redact {
+                privacy::REDACTED_VALUE
+            } else {
+                password
+            };
             parts.push(format!("-u '{}:{}'", esc(username), esc(password)));
         }
         _ => {}
@@ -37,7 +68,14 @@ pub fn to_curl(req: &Request) -> String {
         .cookies
         .iter()
         .filter(|c| c.enabled && !c.key.is_empty())
-        .map(|c| format!("{}={}", c.key, c.value))
+        .map(|c| {
+            let value = if redact {
+                privacy::REDACTED_VALUE
+            } else {
+                &c.value
+            };
+            format!("{}={}", c.key, value)
+        })
         .collect::<Vec<_>>()
         .join("; ");
     if !cookie_str.is_empty() {
@@ -45,7 +83,12 @@ pub fn to_curl(req: &Request) -> String {
     }
 
     if !req.body.is_empty() {
-        parts.push(format!("--data-raw '{}'", esc(&req.body)));
+        let body = if redact {
+            privacy::redact_body_text(&req.body)
+        } else {
+            req.body.clone()
+        };
+        parts.push(format!("--data-raw '{}'", esc(&body)));
     }
 
     parts.join(" \\\n  ")
@@ -639,5 +682,47 @@ mod tests {
         assert!(s.contains("https://a.com?q=1"));
         assert!(s.contains("-H 'X-Foo: bar'"));
         assert!(s.contains("--data-raw '{}'"));
+    }
+
+    #[test]
+    fn to_curl_redacted_preserves_shape_without_secrets() {
+        let r = Request {
+            id: "x".into(),
+            name: "n".into(),
+            description: String::new(),
+            method: HttpMethod::POST,
+            url: "https://a.com/login?token=base-secret".into(),
+            query_params: vec![
+                KvRow::new("page", "1"),
+                KvRow::new("api_key", "query-secret"),
+            ],
+            path_params: Vec::new(),
+            headers: vec![
+                KvRow::new("Authorization", "Bearer header-secret"),
+                KvRow::new("Set-Cookie", "sid=set-secret; Path=/"),
+                KvRow::new("X-Trace", "trace-1"),
+            ],
+            cookies: vec![KvRow::new("sid", "cookie-secret")],
+            body: r#"{"username":"ada","password":"body-secret"}"#.into(),
+            body_ext: None,
+            auth: Auth::Basic {
+                username: "ada".into(),
+                password: "basic-secret".into(),
+            },
+            extractors: vec![],
+            assertions: vec![],
+            source: None,
+        };
+
+        let s = to_curl_redacted(&r);
+        assert!(s.contains("-X POST"));
+        assert!(s.contains("https://a.com/login?token=<redacted>&page=1&api_key=<redacted>"));
+        assert!(s.contains("-H 'Authorization: Bearer <redacted>'"));
+        assert!(s.contains("-H 'Set-Cookie: sid=<redacted>; Path=<redacted>'"));
+        assert!(s.contains("-H 'X-Trace: trace-1'"));
+        assert!(s.contains("-b 'sid=<redacted>'"));
+        assert!(s.contains("-u 'ada:<redacted>'"));
+        assert!(s.contains("\"password\": \"<redacted>\""));
+        assert!(!s.contains("secret"));
     }
 }
