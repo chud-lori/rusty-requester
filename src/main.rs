@@ -3,6 +3,7 @@ mod assertion;
 mod backup;
 mod cookies;
 mod diff;
+mod env_compare;
 mod extract;
 mod html_preview;
 mod icon;
@@ -196,6 +197,8 @@ struct ApiClient {
     sidebar_view: SidebarView,
     show_env_modal: bool,
     selected_env_for_edit: Option<String>,
+    env_compare_source_id: Option<String>,
+    env_compare_target_id: Option<String>,
 
     toast: Option<(String, f32)>,
     focus_search_next_frame: bool,
@@ -484,6 +487,8 @@ impl Default for ApiClient {
             sidebar_view: SidebarView::Collections,
             show_env_modal: false,
             selected_env_for_edit: None,
+            env_compare_source_id: None,
+            env_compare_target_id: None,
             toast: None,
             focus_search_next_frame: false,
             app_icon: None,
