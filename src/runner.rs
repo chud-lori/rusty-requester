@@ -37,7 +37,7 @@ pub struct CollectionRunResult {
 }
 
 pub enum CollectionRunEvent {
-    RequestFinished(RunnerRequestProgress),
+    RequestFinished(Box<RunnerRequestProgress>),
     Finished(CollectionRunResult),
 }
 
@@ -53,11 +53,16 @@ pub struct RunnerRequestProgress {
     pub url_template: String,
     pub status: String,
     pub duration_ms: u64,
+    pub prepare_ms: u64,
+    pub waiting_ms: u64,
+    pub download_ms: u64,
     pub passed_assertions: usize,
     pub failed_assertions: usize,
     pub errored_assertions: usize,
+    pub assertions: Vec<AssertionRunResult>,
     pub extracted_count: usize,
     pub extractor_miss_count: usize,
+    pub extractor_misses: Vec<String>,
 }
 
 pub struct RunIterationResult {
@@ -195,23 +200,30 @@ async fn run_collection_inner(
 
             if let Some(progress) = &progress {
                 let (passed, failed, errored) = assertion_counts(&assertions);
-                let _ = progress.send(CollectionRunEvent::RequestFinished(RunnerRequestProgress {
-                    iteration_index: index,
-                    data: data.clone(),
-                    completed_requests: completed_runs,
-                    total_requests: total_runs,
-                    collection: runner_request.folder_path.join(" / "),
-                    request_name: runner_request.request.name.clone(),
-                    method: runner_request.request.method.clone(),
-                    url_template: runner_request.request.url.clone(),
-                    status: response.status.clone(),
-                    duration_ms: response.total_ms,
-                    passed_assertions: passed,
-                    failed_assertions: failed,
-                    errored_assertions: errored,
-                    extracted_count: extracted.len(),
-                    extractor_miss_count: extractor_misses.len(),
-                }));
+                let _ = progress.send(CollectionRunEvent::RequestFinished(Box::new(
+                    RunnerRequestProgress {
+                        iteration_index: index,
+                        data: data.clone(),
+                        completed_requests: completed_runs,
+                        total_requests: total_runs,
+                        collection: runner_request.folder_path.join(" / "),
+                        request_name: runner_request.request.name.clone(),
+                        method: runner_request.request.method.clone(),
+                        url_template: runner_request.request.url.clone(),
+                        status: response.status.clone(),
+                        duration_ms: response.total_ms,
+                        prepare_ms: response.prepare_ms,
+                        waiting_ms: response.waiting_ms,
+                        download_ms: response.download_ms,
+                        passed_assertions: passed,
+                        failed_assertions: failed,
+                        errored_assertions: errored,
+                        assertions: assertions.clone(),
+                        extracted_count: extracted.len(),
+                        extractor_miss_count: extractor_misses.len(),
+                        extractor_misses: extractor_misses.clone(),
+                    },
+                )));
             }
 
             let mut stored_response = response;

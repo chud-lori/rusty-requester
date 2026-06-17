@@ -411,6 +411,41 @@ pub struct AppState {
     /// Exposed via the Settings modal in the sidebar.
     #[serde(default)]
     pub settings: AppSettings,
+    /// Named Collection Runner configurations. Presets intentionally store
+    /// only runner scope, active environment selection, and optional data-row
+    /// text; they do not copy environment variables or secrets.
+    #[serde(default)]
+    pub runner_presets: Vec<RunnerPreset>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct RunnerPreset {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub scope: RunnerPresetScope,
+    /// Active environment id to select when loading the preset. This is only a
+    /// reference; environment variables and cookies are never copied here.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub env_id: Option<String>,
+    /// Display fallback for missing/deleted environments.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub env_name: String,
+    /// Optional CSV/JSON runner data rows. These values are visible in the
+    /// preset UI before saving because they may contain sensitive values.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub data_rows: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
+pub enum RunnerPresetScope {
+    #[default]
+    All,
+    Folder {
+        folder_id: String,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        folder_name: String,
+    },
 }
 
 /// User-configurable networking / safety knobs. Defaults are tuned so
@@ -644,4 +679,45 @@ pub struct ResponseData {
     pub waiting_ms: u64,
     pub download_ms: u64,
     pub total_ms: u64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn app_state_loads_without_runner_presets() {
+        let state: AppState = serde_json::from_str(r#"{"folders":[]}"#).unwrap();
+        assert!(state.runner_presets.is_empty());
+    }
+
+    #[test]
+    fn runner_preset_defaults_to_all_scope() {
+        let preset: RunnerPreset =
+            serde_json::from_str(r#"{"id":"preset-1","name":"Smoke"}"#).unwrap();
+
+        assert_eq!(preset.scope, RunnerPresetScope::All);
+        assert_eq!(preset.env_id, None);
+        assert!(preset.env_name.is_empty());
+        assert!(preset.data_rows.is_empty());
+    }
+
+    #[test]
+    fn runner_preset_stores_env_selection_not_env_values() {
+        let preset = RunnerPreset {
+            id: "preset-1".to_string(),
+            name: "Prod smoke".to_string(),
+            scope: RunnerPresetScope::All,
+            env_id: Some("env-prod".to_string()),
+            env_name: "Production".to_string(),
+            data_rows: String::new(),
+        };
+
+        let json = serde_json::to_string(&preset).unwrap();
+
+        assert!(json.contains("env-prod"));
+        assert!(json.contains("Production"));
+        assert!(!json.contains("variables"));
+        assert!(!json.contains("cookies"));
+    }
 }
