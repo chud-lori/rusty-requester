@@ -2,6 +2,7 @@ pub mod curl;
 
 use crate::model::{Auth, Folder, HttpMethod, KvRow, OpenApiSource, Request, RequestSource};
 use crate::privacy::is_sensitive_key;
+use crate::secret_scanner;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::Path;
@@ -15,13 +16,22 @@ pub struct Export {
     pub folders: Vec<Folder>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Format {
     Json,
     Yaml,
 }
 
 pub fn export_string(folders: &[Folder], format: Format) -> Result<String, String> {
+    export_folders(folders, format)
+}
+
+pub fn export_string_redacted(folders: &[Folder], format: Format) -> Result<String, String> {
+    let redacted = secret_scanner::redact_folders(folders);
+    export_folders(&redacted, format)
+}
+
+fn export_folders(folders: &[Folder], format: Format) -> Result<String, String> {
     let export = Export {
         version: "1".to_string(),
         folders: folders.to_vec(),
@@ -1186,6 +1196,25 @@ mod tests {
         assert_fixture_shape(&back);
         assert_ne!(back[0].id, "collection-1");
         assert_ne!(back[0].subfolders[0].id, "collection-1-sub");
+    }
+
+    #[test]
+    fn redacted_export_masks_secrets_and_stays_importable() {
+        let folders = fixture_folders();
+        let s = export_string_redacted(&folders, Format::Json).unwrap();
+
+        assert!(s.contains(crate::secret_scanner::REDACTED));
+        assert!(!s.contains("fixture-token"));
+        assert!(!s.contains("abc123"));
+
+        let back = import_from_str(&s, "json").unwrap();
+        assert_eq!(
+            back[0].requests[0].cookies[0].value,
+            crate::secret_scanner::REDACTED
+        );
+        assert!(
+            matches!(&back[0].requests[0].auth, Auth::Bearer { token } if token == crate::secret_scanner::REDACTED)
+        );
     }
 
     #[test]

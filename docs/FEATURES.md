@@ -147,6 +147,7 @@ to grab it.
 - **Sidebar → 📥 Import → Import collection file…** — pick a `.json`, `.yaml`, or `.yml` file. Postman Collection v2.1 files are auto-detected (schema sniffed) and land as one new collection. IDs are regenerated on import so nothing collides with your existing data.
 - **Sidebar → 📤 Export → Export all as JSON / YAML…** — dumps every collection into a single file (good for backups).
 - **Right-click any collection / folder → Export as JSON / YAML…** — exports just that subtree (this is the "collection-level" export for sharing).
+- Before collection export, Rusty Requester runs a local-only secret scan for common API keys, bearer/JWT-style tokens, OAuth/basic auth secrets, cookies, and sensitive key names such as `Authorization`, `token`, `password`, `client_secret`, and `api_key`. If likely secrets are found, you can cancel, continue with the original export, or export a redacted copy with likely secret values replaced by `[REDACTED]`. This scanner never uploads export content. It is heuristic: unusual secret formats may be missed, and placeholder or example values may still produce false positives.
 
 ### Running collections with data rows
 

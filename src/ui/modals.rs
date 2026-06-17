@@ -11,7 +11,7 @@ use crate::theme::*;
 use crate::widgets::*;
 use crate::{
     backup, in_app_update_supported, open_update_log_in_os, runner, spawn_update_check,
-    update_log_path, ApiClient, RunnerResultRow, UpdateCheckOutcome,
+    update_log_path, ApiClient, ExportDecision, RunnerResultRow, UpdateCheckOutcome,
 };
 use eframe::egui;
 use std::path::PathBuf;
@@ -1693,6 +1693,111 @@ impl ApiClient {
         self.show_update_modal = open;
         if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             self.show_update_modal = false;
+        }
+    }
+
+    pub(crate) fn render_export_secret_warning_modal(&mut self, ctx: &egui::Context) {
+        let Some(warning) = self.export_secret_warning.clone() else {
+            return;
+        };
+
+        let label = match warning.format {
+            crate::io::Format::Json => "JSON",
+            crate::io::Format::Yaml => "YAML",
+        };
+        let mut open = true;
+        let mut decision: Option<ExportDecision> = None;
+        let mut cancel = false;
+
+        egui::Window::new("Likely Secrets in Export")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .fixed_size([560.0, 0.0])
+            .open(&mut open)
+            .show(ctx, |ui| {
+                ui.add_space(4.0);
+                ui.label(
+                    egui::RichText::new(format!(
+                        "This {} export appears to include {} likely secret{}.",
+                        label,
+                        warning.findings.len(),
+                        if warning.findings.len() == 1 { "" } else { "s" }
+                    ))
+                    .color(text())
+                    .size(13.0),
+                );
+                ui.add_space(8.0);
+                ui.label(
+                    egui::RichText::new(
+                        "Scanning happens only on this device. Redacted export replaces likely secret values with [REDACTED].",
+                    )
+                    .color(muted())
+                    .size(10.5),
+                );
+                ui.add_space(10.0);
+
+                egui::Frame::none()
+                    .fill(panel_dark())
+                    .stroke(egui::Stroke::new(1.0, border()))
+                    .rounding(egui::Rounding::same(6.0))
+                    .inner_margin(egui::Margin::symmetric(10.0, 8.0))
+                    .show(ui, |ui| {
+                        for finding in warning.findings.iter().take(6) {
+                            ui.label(
+                                egui::RichText::new(finding.summary())
+                                    .color(muted())
+                                    .size(10.5),
+                            );
+                        }
+                        if warning.findings.len() > 6 {
+                            ui.label(
+                                egui::RichText::new(format!(
+                                    "...and {} more",
+                                    warning.findings.len() - 6
+                                ))
+                                .color(muted())
+                                .size(10.5),
+                            );
+                        }
+                    });
+
+                ui.add_space(12.0);
+                ui.horizontal(|ui| {
+                    if ui
+                        .add(
+                            egui::Button::new(
+                                egui::RichText::new("Export redacted")
+                                    .color(egui::Color32::WHITE)
+                                    .strong(),
+                            )
+                            .fill(accent())
+                            .rounding(egui::Rounding::same(6.0)),
+                        )
+                        .clicked()
+                    {
+                        decision = Some(ExportDecision {
+                            format: warning.format,
+                            redacted: true,
+                        });
+                    }
+                    if ui.button("Export original").clicked() {
+                        decision = Some(ExportDecision {
+                            format: warning.format,
+                            redacted: false,
+                        });
+                    }
+                    if ui.button("Cancel").clicked() {
+                        cancel = true;
+                    }
+                });
+            });
+
+        if decision.is_some() || cancel || !open {
+            self.export_secret_warning = None;
+        }
+        if let Some(decision) = decision {
+            self.pending_export_decision = Some(decision);
         }
     }
 

@@ -11,6 +11,14 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## [Unreleased]
+
+### Security
+- **Secret scanner for collection exports.** JSON/YAML exports now run
+  a local-only scan for common token/key patterns and sensitive key
+  names before opening the save dialog. When likely secrets are found,
+  users can cancel, export the original file, or export a redacted copy.
+
 ## [0.23.0] — 2026-06-17
 
 ### Added
