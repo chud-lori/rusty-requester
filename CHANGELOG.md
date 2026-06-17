@@ -11,6 +11,15 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Added
+- **Collection Runner result details.** Runner rows can now be selected
+  by mouse or keyboard to inspect method, redacted URL, collection
+  path, status, timing phases, assertion outcomes, and extractor
+  misses, with copy-safe summaries that keep response bodies, headers,
+  cookies, and extracted values out of reports and copied text.
+
 ## [0.23.0] — 2026-06-17
 
 ### Added

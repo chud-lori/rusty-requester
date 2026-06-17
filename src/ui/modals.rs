@@ -10,8 +10,8 @@ use crate::snippet::{build_snippet_layout_job_content_only, render_snippet, Snip
 use crate::theme::*;
 use crate::widgets::*;
 use crate::{
-    backup, in_app_update_supported, open_update_log_in_os, runner, spawn_update_check,
-    update_log_path, ApiClient, RunnerResultRow, UpdateCheckOutcome,
+    backup, in_app_update_supported, open_update_log_in_os, runner, runner_detail,
+    spawn_update_check, update_log_path, ApiClient, RunnerResultRow, UpdateCheckOutcome,
 };
 use eframe::egui;
 use std::path::PathBuf;
@@ -1087,7 +1087,15 @@ impl ApiClient {
         let mut cancel_requested = false;
         let mut export_csv_requested = false;
         let mut export_html_requested = false;
+        let mut copy_summary_requested: Option<String> = None;
         let runner_busy = self.runner_in_flight.is_some();
+        if self
+            .runner_selected_result
+            .is_some_and(|index| index >= self.runner_results.len())
+        {
+            self.runner_selected_result = None;
+        }
+        let mut selected_result = self.runner_selected_result;
 
         egui::Window::new("Collection Runner")
             .open(&mut open)
@@ -1259,6 +1267,21 @@ impl ApiClient {
                                     {
                                         export_csv_requested = true;
                                     }
+                                    let can_copy = selected_result
+                                        .and_then(|index| self.runner_results.get(index))
+                                        .is_some();
+                                    if ui
+                                        .add_enabled(can_copy, egui::Button::new("Copy Summary"))
+                                        .on_hover_text("Copy a secret-safe summary for the selected result")
+                                        .clicked()
+                                    {
+                                        if let Some(row) = selected_result
+                                            .and_then(|index| self.runner_results.get(index))
+                                        {
+                                            copy_summary_requested =
+                                                Some(runner_detail::summary_text(row));
+                                        }
+                                    }
                                 },
                             );
                         });
@@ -1312,27 +1335,54 @@ impl ApiClient {
                                             ui.label("");
                                             ui.end_row();
                                         } else {
-                                            for row in &self.runner_results {
-                                                ui.label(&row.collection);
-                                                ui.label(&row.request);
-                                                ui.label(row.method.to_string());
-                                                ui.label(&row.status);
-                                                ui.label(
-                                                    row.duration_ms
-                                                        .map(|ms| format!("{} ms", ms))
-                                                        .unwrap_or_else(|| "-".to_string()),
+                                            for (index, row) in self.runner_results.iter().enumerate()
+                                            {
+                                                let selected = selected_result == Some(index);
+                                                let mut choose = false;
+                                                choose |= runner_result_cell(
+                                                    ui,
+                                                    selected,
+                                                    &row.collection,
                                                 );
-                                                ui.label(&row.note);
+                                                choose |= runner_result_cell(
+                                                    ui,
+                                                    selected,
+                                                    &row.request,
+                                                );
+                                                choose |= runner_result_cell(
+                                                    ui,
+                                                    selected,
+                                                    &row.method.to_string(),
+                                                );
+                                                choose |=
+                                                    runner_result_cell(ui, selected, &row.status);
+                                                choose |= runner_result_cell(
+                                                    ui,
+                                                    selected,
+                                                    &runner_detail::duration_text(row.duration_ms),
+                                                );
+                                                choose |=
+                                                    runner_result_cell(ui, selected, &row.note);
+                                                if choose {
+                                                    selected_result = Some(index);
+                                                }
                                                 ui.end_row();
                                             }
                                         }
                                     });
                             });
+                        if let Some(row) =
+                            selected_result.and_then(|index| self.runner_results.get(index))
+                        {
+                            ui.add_space(10.0);
+                            render_runner_detail_panel(ui, row);
+                        }
                     });
                 });
             });
 
         self.show_runner_modal = open;
+        self.runner_selected_result = selected_result;
 
         if run_requested {
             self.start_collection_runner();
@@ -1348,6 +1398,10 @@ impl ApiClient {
         }
         if export_html_requested {
             self.export_runner_report("html");
+        }
+        if let Some(summary) = copy_summary_requested {
+            ctx.copy_text(summary);
+            self.show_toast("Runner summary copied");
         }
     }
 
@@ -1406,6 +1460,7 @@ impl ApiClient {
         });
         self.runner_in_flight = Some(crate::InFlightCollectionRun { handle, rx });
         self.runner_results.clear();
+        self.runner_selected_result = None;
         self.runner_status = format!(
             "Running {} request{} across {} iteration{}...",
             request_count,
@@ -3066,6 +3121,150 @@ fn build_runner_report_html(rows: &[RunnerResultRow]) -> String {
     }
     out.push_str("</tbody></table></body></html>");
     out
+}
+
+fn runner_result_cell(ui: &mut egui::Ui, selected: bool, value: &str) -> bool {
+    let resp = ui
+        .selectable_label(selected, egui::RichText::new(value).color(text()))
+        .on_hover_cursor(egui::CursorIcon::PointingHand);
+    let keyboard_select = resp.has_focus()
+        && ui.input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Space));
+    resp.clicked() || keyboard_select
+}
+
+fn render_runner_detail_panel(ui: &mut egui::Ui, row: &RunnerResultRow) {
+    egui::Frame::none()
+        .fill(elevated())
+        .stroke(egui::Stroke::new(1.0, border()))
+        .rounding(6.0)
+        .inner_margin(egui::Margin::same(10.0))
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new("Result Detail")
+                        .size(11.0)
+                        .strong()
+                        .color(muted()),
+                );
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.label(
+                        egui::RichText::new("body, headers, cookies, and extracted values hidden")
+                            .size(11.0)
+                            .color(muted()),
+                    );
+                });
+            });
+            ui.add_space(8.0);
+
+            egui::Grid::new("runner_result_detail_grid")
+                .num_columns(2)
+                .spacing(egui::vec2(12.0, 4.0))
+                .show(ui, |ui| {
+                    runner_detail_kv(ui, "Method", &row.method.to_string());
+                    runner_detail_kv(ui, "URL", &row.url);
+                    runner_detail_kv(ui, "Collection", &row.collection);
+                    runner_detail_kv(ui, "Data row", &row.row_label);
+                    runner_detail_kv(ui, "Request", &row.request_name);
+                    runner_detail_kv(ui, "Status", &row.status);
+                    runner_detail_kv(
+                        ui,
+                        "Timing",
+                        &format!(
+                            "{} ms total, {} ms prepare, {} ms waiting, {} ms download",
+                            row.timing.total_ms,
+                            row.timing.prepare_ms,
+                            row.timing.waiting_ms,
+                            row.timing.download_ms
+                        ),
+                    );
+                    runner_detail_kv(
+                        ui,
+                        "Extracted",
+                        &format!("{} value(s) hidden", row.extracted_count),
+                    );
+                });
+
+            ui.add_space(8.0);
+            ui.separator();
+            ui.add_space(8.0);
+
+            ui.horizontal(|ui| {
+                ui.vertical(|ui| {
+                    ui.set_min_width(260.0);
+                    ui.label(
+                        egui::RichText::new("Assertions")
+                            .size(11.0)
+                            .strong()
+                            .color(muted()),
+                    );
+                    ui.add_space(4.0);
+                    if row.assertions.is_empty() {
+                        ui.label(egui::RichText::new("No assertions ran").color(muted()));
+                    } else {
+                        for assertion in &row.assertions {
+                            let (label, color) = match assertion.outcome {
+                                runner_detail::RunnerAssertionOutcome::Pass => ("PASS", C_GREEN),
+                                runner_detail::RunnerAssertionOutcome::Fail => ("FAIL", C_RED),
+                                runner_detail::RunnerAssertionOutcome::Error => ("ERROR", C_ORANGE),
+                            };
+                            ui.horizontal_wrapped(|ui| {
+                                ui.label(
+                                    egui::RichText::new(label)
+                                        .font(egui::FontId::monospace(11.0))
+                                        .strong()
+                                        .color(color),
+                                );
+                                ui.label(
+                                    egui::RichText::new(format!("#{}", assertion.index + 1))
+                                        .font(egui::FontId::monospace(11.0))
+                                        .color(muted()),
+                                );
+                                if let Some(message) = &assertion.message {
+                                    ui.label(
+                                        egui::RichText::new(message)
+                                            .font(egui::FontId::monospace(11.0))
+                                            .color(text()),
+                                    );
+                                }
+                            });
+                        }
+                    }
+                });
+
+                ui.separator();
+
+                ui.vertical(|ui| {
+                    ui.label(
+                        egui::RichText::new("Extractor Misses")
+                            .size(11.0)
+                            .strong()
+                            .color(muted()),
+                    );
+                    ui.add_space(4.0);
+                    if row.extractor_misses.is_empty() {
+                        ui.label(egui::RichText::new("No extractor misses").color(muted()));
+                    } else {
+                        for miss in &row.extractor_misses {
+                            ui.label(
+                                egui::RichText::new(miss)
+                                    .font(egui::FontId::monospace(11.0))
+                                    .color(text()),
+                            );
+                        }
+                    }
+                });
+            });
+        });
+}
+
+fn runner_detail_kv(ui: &mut egui::Ui, label: &str, value: &str) {
+    ui.label(egui::RichText::new(label).size(11.0).color(muted()));
+    ui.label(
+        egui::RichText::new(if value.is_empty() { "-" } else { value })
+            .size(12.0)
+            .color(text()),
+    );
+    ui.end_row();
 }
 
 fn csv_cell(value: &str) -> String {
