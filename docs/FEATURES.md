@@ -139,8 +139,10 @@ who'd rather use a dedicated dialog.
 
 Click **`</> Code`** next to Send. A **right-side code panel** opens with a
 language picker (cURL · Python `requests` · JavaScript `fetch` · HTTPie). The
-code respects which headers / params / cookies you've enabled. Click **Copy**
-to grab it.
+code respects which headers / params / cookies you've enabled. The displayed
+snippet and main copy action redact authorization, cookie, sensitive query, and
+sensitive body values for sharing; use **Copy raw** in the panel when you need
+the original values.
 
 ### Importing / exporting collections
 

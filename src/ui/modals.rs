@@ -7,7 +7,9 @@
 use crate::env_compare::{compare_environments, display_value, safe_summary, EnvDiffEntry};
 use crate::io::curl;
 use crate::model::*;
-use crate::snippet::{build_snippet_layout_job_content_only, render_snippet, SnippetLang};
+use crate::snippet::{
+    build_snippet_layout_job_content_only, render_snippet, render_snippet_redacted, SnippetLang,
+};
 use crate::theme::*;
 use crate::widgets::*;
 use crate::{
@@ -1029,8 +1031,10 @@ impl ApiClient {
                 return;
             }
         };
-        let snippet = render_snippet(&req, self.snippet_lang);
+        let snippet = render_snippet_redacted(&req, self.snippet_lang);
+        let raw_snippet = render_snippet(&req, self.snippet_lang);
         let mut copy_clicked = false;
+        let mut copy_raw_clicked = false;
         let mut close_clicked = false;
 
         egui::SidePanel::right("snippet_panel")
@@ -1072,8 +1076,17 @@ impl ApiClient {
                             }
                         });
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if icon_btn(ui, egui_phosphor::regular::COPY, "Copy snippet").clicked() {
+                        if icon_btn(ui, egui_phosphor::regular::COPY, "Copy redacted snippet")
+                            .clicked()
+                        {
                             copy_clicked = true;
+                        }
+                        if ui
+                            .button("Copy raw")
+                            .on_hover_text("Copy snippet with original values")
+                            .clicked()
+                        {
+                            copy_raw_clicked = true;
                         }
                         // "Copied!" flash sits to the LEFT of the button
                         // (layout is right-to-left). Visible for ~1.5s
@@ -1167,6 +1180,10 @@ impl ApiClient {
 
         if copy_clicked {
             ctx.output_mut(|o| o.copied_text = snippet);
+            self.snippet_copied_at = Some(ctx.input(|i| i.time));
+        }
+        if copy_raw_clicked {
+            ctx.output_mut(|o| o.copied_text = raw_snippet);
             self.snippet_copied_at = Some(ctx.input(|i| i.time));
         }
         if close_clicked {

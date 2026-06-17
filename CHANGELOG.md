@@ -33,6 +33,11 @@ upgrades read old files cleanly.
   a local-only scan for common token/key patterns and sensitive key
   names before opening the save dialog. When likely secrets are found,
   users can cancel, export the original file, or export a redacted copy.
+- **Code snippet sharing is redacted by default.** cURL, Python
+  `requests`, JavaScript `fetch`, and HTTPie exports now preserve
+  request shape while masking authorization, cookie, sensitive query,
+  and sensitive body values. The snippet panel keeps an explicit
+  **Copy raw** action for intentional unredacted copies.
 
 ## [0.23.0] — 2026-06-17
 
