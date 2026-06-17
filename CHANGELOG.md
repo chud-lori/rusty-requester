@@ -14,6 +14,10 @@ upgrades read old files cleanly.
 ## Unreleased
 
 ### Added
+- **Environment compare.** The environment manager can now compare a
+  source and target environment, group added/missing/changed/unchanged
+  variable keys, mask sensitive-looking values by default, copy a safe
+  summary, and add missing source keys to the target.
 - **Collection Runner result details.** Runner rows can now be selected
   by mouse or keyboard to inspect method, redacted URL, collection
   path, status, timing phases, assertion outcomes, and extractor
