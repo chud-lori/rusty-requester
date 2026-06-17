@@ -171,6 +171,9 @@ struct ApiClient {
     confirm_restore_backup_path: Option<PathBuf>,
     runner_scope_folder_id: Option<String>,
     runner_data_rows: String,
+    runner_selected_preset_id: Option<String>,
+    runner_preset_name_input: String,
+    runner_preset_rename_input: String,
     runner_results: Vec<RunnerResultRow>,
     runner_status: String,
     runner_in_flight: Option<InFlightCollectionRun>,
@@ -404,7 +407,7 @@ impl Default for ApiClient {
         // backup by `load_state`; we surface the path via
         // `startup_warning` so the user sees a toast on first frame.
         let (state, startup_warning) = match Self::load_state(&storage_path) {
-            LoadOutcome::Ok(s) => (s, None),
+            LoadOutcome::Ok(s) => (*s, None),
             LoadOutcome::Fresh => (Self::fresh_state(), None),
             LoadOutcome::Corrupted { backup_path, error } => {
                 eprintln!(
@@ -473,6 +476,9 @@ impl Default for ApiClient {
             confirm_restore_backup_path: None,
             runner_scope_folder_id: None,
             runner_data_rows: String::new(),
+            runner_selected_preset_id: None,
+            runner_preset_name_input: String::new(),
+            runner_preset_rename_input: String::new(),
             runner_results: Vec::new(),
             runner_status: String::new(),
             runner_in_flight: None,
@@ -585,7 +591,7 @@ fn restored_active_tab(open_tabs: &[OpenTab], active_tab_id: Option<&str>) -> Op
 /// caller should surface the backup path so the user knows where
 /// their old data went.
 enum LoadOutcome {
-    Ok(AppState),
+    Ok(Box<AppState>),
     Fresh,
     Corrupted { backup_path: PathBuf, error: String },
 }
@@ -610,6 +616,7 @@ impl ApiClient {
             open_tabs: vec![],
             active_tab_id: None,
             settings: AppSettings::default(),
+            runner_presets: vec![],
         }
     }
 
@@ -620,7 +627,7 @@ impl ApiClient {
             Err(_) => return LoadOutcome::Fresh, // treat other IO errors as fresh; worst case is an empty workspace
         };
         match serde_json::from_str::<AppState>(&data) {
-            Ok(state) => LoadOutcome::Ok(state),
+            Ok(state) => LoadOutcome::Ok(Box::new(state)),
             Err(e) => {
                 // Move the broken file aside so we never silently clobber
                 // the user's data on the next save. Timestamped so
@@ -1905,7 +1912,7 @@ impl ApiClient {
         match backup::restore_backup(&self.storage_path, backup_path) {
             Ok(_) => match Self::load_state(&self.storage_path) {
                 LoadOutcome::Ok(state) => {
-                    self.state = state;
+                    self.state = *state;
                     if let Some(tab) = restored_active_tab(
                         &self.state.open_tabs,
                         self.state.active_tab_id.as_deref(),

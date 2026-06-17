@@ -1074,7 +1074,7 @@ impl ApiClient {
         }
 
         if let Some(scope_id) = self.runner_scope_folder_id.as_deref() {
-            if runner::collect_requests(&self.state.folders, Some(scope_id)).is_empty() {
+            if crate::find_folder_by_id(&self.state.folders, scope_id).is_none() {
                 self.runner_scope_folder_id = None;
             }
         }
@@ -1082,11 +1082,39 @@ impl ApiClient {
             count_runner_requests(&self.state.folders, self.runner_scope_folder_id.as_deref());
         let scope_options = runner_scope_options(&self.state.folders);
         let data_rows_label = runner_data_rows_label(&self.runner_data_rows);
+        let preset_options: Vec<(String, String)> = self
+            .state
+            .runner_presets
+            .iter()
+            .map(|p| (p.id.clone(), p.name.clone()))
+            .collect();
+        if self
+            .runner_selected_preset_id
+            .as_ref()
+            .is_some_and(|id| !preset_options.iter().any(|(preset_id, _)| preset_id == id))
+        {
+            self.runner_selected_preset_id = None;
+            self.runner_preset_rename_input.clear();
+        }
+        let selected_preset = self
+            .runner_selected_preset_id
+            .as_ref()
+            .and_then(|id| self.state.runner_presets.iter().find(|p| &p.id == id))
+            .cloned();
+        let selected_preset_label = selected_preset
+            .as_ref()
+            .map(|p| p.name.clone())
+            .unwrap_or_else(|| "Choose preset".to_string());
         let mut open = self.show_runner_modal;
         let mut run_requested = false;
         let mut cancel_requested = false;
         let mut export_csv_requested = false;
         let mut export_html_requested = false;
+        let mut save_preset_requested = false;
+        let mut load_preset_id: Option<String> = None;
+        let mut rename_preset_id: Option<String> = None;
+        let mut duplicate_preset_id: Option<String> = None;
+        let mut delete_preset_id: Option<String> = None;
         let runner_busy = self.runner_in_flight.is_some();
 
         egui::Window::new("Collection Runner")
@@ -1167,6 +1195,123 @@ impl ApiClient {
                                     .size(11.0)
                                     .color(muted()),
                                 );
+                            });
+
+                        ui.add_space(12.0);
+                        ui.label(
+                            egui::RichText::new("Presets")
+                                .size(11.0)
+                                .strong()
+                                .color(muted()),
+                        );
+                        ui.add_space(4.0);
+                        egui::Frame::none()
+                            .fill(elevated())
+                            .stroke(egui::Stroke::new(1.0, border()))
+                            .rounding(6.0)
+                            .inner_margin(egui::Margin::same(10.0))
+                            .show(ui, |ui| {
+                                ui.label(
+                                    egui::RichText::new(
+                                        "Presets save scope, active environment selection, and data rows as shown. Data row values may include secrets.",
+                                    )
+                                    .size(11.0)
+                                    .color(muted()),
+                                );
+                                ui.add_space(6.0);
+                                ui.horizontal(|ui| {
+                                    ui.add(
+                                        egui::TextEdit::singleline(
+                                            &mut self.runner_preset_name_input,
+                                        )
+                                        .desired_width(130.0)
+                                        .hint_text(hint("Preset name")),
+                                    );
+                                    if ui
+                                        .add_enabled(
+                                            !runner_busy,
+                                            egui::Button::new("Save current"),
+                                        )
+                                        .on_hover_text(
+                                            "Saves the current scope, active environment id, and visible data rows",
+                                        )
+                                        .clicked()
+                                    {
+                                        save_preset_requested = true;
+                                    }
+                                });
+
+                                ui.add_space(6.0);
+                                egui::ComboBox::from_id_salt("runner_preset_picker")
+                                    .selected_text(selected_preset_label)
+                                    .width(ui.available_width())
+                                    .show_ui(ui, |ui| {
+                                        for (id, name) in &preset_options {
+                                            let selected =
+                                                self.runner_selected_preset_id.as_deref()
+                                                    == Some(id.as_str());
+                                            if ui.selectable_label(selected, name).clicked() {
+                                                self.runner_selected_preset_id = Some(id.clone());
+                                                self.runner_preset_rename_input = name.clone();
+                                            }
+                                        }
+                                    });
+
+                                if let Some(preset) = &selected_preset {
+                                    if self.runner_preset_rename_input.is_empty() {
+                                        self.runner_preset_rename_input = preset.name.clone();
+                                    }
+                                    ui.add_space(6.0);
+                                    ui.horizontal(|ui| {
+                                        if ui
+                                            .add_enabled(!runner_busy, egui::Button::new("Load"))
+                                            .clicked()
+                                        {
+                                            load_preset_id = Some(preset.id.clone());
+                                        }
+                                        if ui
+                                            .add_enabled(!runner_busy, egui::Button::new("Duplicate"))
+                                            .clicked()
+                                        {
+                                            duplicate_preset_id = Some(preset.id.clone());
+                                        }
+                                        if ui
+                                            .add_enabled(!runner_busy, egui::Button::new("Delete"))
+                                            .clicked()
+                                        {
+                                            delete_preset_id = Some(preset.id.clone());
+                                        }
+                                    });
+                                    ui.add_space(4.0);
+                                    ui.horizontal(|ui| {
+                                        ui.add(
+                                            egui::TextEdit::singleline(
+                                                &mut self.runner_preset_rename_input,
+                                            )
+                                            .desired_width(130.0)
+                                            .hint_text(hint("Rename preset")),
+                                        );
+                                        if ui
+                                            .add_enabled(!runner_busy, egui::Button::new("Rename"))
+                                            .clicked()
+                                        {
+                                            rename_preset_id = Some(preset.id.clone());
+                                        }
+                                    });
+                                    ui.add_space(4.0);
+                                    ui.label(
+                                        egui::RichText::new(runner_preset_summary(preset))
+                                            .size(11.0)
+                                            .color(muted()),
+                                    );
+                                } else if preset_options.is_empty() {
+                                    ui.add_space(4.0);
+                                    ui.label(
+                                        egui::RichText::new("No presets saved")
+                                            .size(11.0)
+                                            .color(muted()),
+                                    );
+                                }
                             });
 
                         ui.add_space(12.0);
@@ -1334,6 +1479,21 @@ impl ApiClient {
 
         self.show_runner_modal = open;
 
+        if save_preset_requested {
+            self.save_current_runner_preset();
+        }
+        if let Some(id) = load_preset_id {
+            self.load_runner_preset(&id);
+        }
+        if let Some(id) = rename_preset_id {
+            self.rename_runner_preset(&id);
+        }
+        if let Some(id) = duplicate_preset_id {
+            self.duplicate_runner_preset(&id);
+        }
+        if let Some(id) = delete_preset_id {
+            self.delete_runner_preset(&id);
+        }
         if run_requested {
             self.start_collection_runner();
         }
@@ -1348,6 +1508,166 @@ impl ApiClient {
         }
         if export_html_requested {
             self.export_runner_report("html");
+        }
+    }
+
+    fn save_current_runner_preset(&mut self) {
+        let name = trimmed_or_default(
+            &self.runner_preset_name_input,
+            format!("Runner Preset {}", self.state.runner_presets.len() + 1),
+        );
+        let preset = self.current_runner_preset(name);
+        self.runner_selected_preset_id = Some(preset.id.clone());
+        self.runner_preset_rename_input = preset.name.clone();
+        self.runner_preset_name_input.clear();
+        self.state.runner_presets.push(preset);
+        self.save_state();
+        self.show_toast("Runner preset saved");
+    }
+
+    fn load_runner_preset(&mut self, preset_id: &str) {
+        let Some(preset) = self
+            .state
+            .runner_presets
+            .iter()
+            .find(|p| p.id == preset_id)
+            .cloned()
+        else {
+            return;
+        };
+
+        let mut notes = Vec::new();
+        match &preset.scope {
+            RunnerPresetScope::All => {
+                self.runner_scope_folder_id = None;
+            }
+            RunnerPresetScope::Folder {
+                folder_id,
+                folder_name,
+            } => {
+                if crate::find_folder_by_id(&self.state.folders, folder_id).is_some() {
+                    self.runner_scope_folder_id = Some(folder_id.clone());
+                } else {
+                    self.runner_scope_folder_id = None;
+                    let label = if folder_name.is_empty() {
+                        "saved folder".to_string()
+                    } else {
+                        format!("'{}'", folder_name)
+                    };
+                    notes.push(format!(
+                        "folder scope {} was not found; using all collections",
+                        label
+                    ));
+                }
+            }
+        }
+
+        if let Some(env_id) = &preset.env_id {
+            if self.state.environments.iter().any(|env| &env.id == env_id) {
+                self.state.active_env_id = Some(env_id.clone());
+            } else {
+                self.state.active_env_id = None;
+                let label = if preset.env_name.is_empty() {
+                    "saved environment".to_string()
+                } else {
+                    format!("'{}'", preset.env_name)
+                };
+                notes.push(format!(
+                    "environment {} was not found; using no environment",
+                    label
+                ));
+            }
+        } else {
+            self.state.active_env_id = None;
+        }
+
+        self.runner_data_rows = preset.data_rows.clone();
+        self.runner_selected_preset_id = Some(preset.id.clone());
+        self.runner_preset_rename_input = preset.name.clone();
+        self.runner_status = if notes.is_empty() {
+            format!("Loaded runner preset '{}'.", preset.name)
+        } else {
+            format!(
+                "Loaded runner preset '{}': {}.",
+                preset.name,
+                notes.join("; ")
+            )
+        };
+        self.save_state();
+    }
+
+    fn rename_runner_preset(&mut self, preset_id: &str) {
+        let name = self.runner_preset_rename_input.trim();
+        if name.is_empty() {
+            self.runner_status = "Preset name cannot be empty.".to_string();
+            return;
+        }
+        let Some(preset) = self
+            .state
+            .runner_presets
+            .iter_mut()
+            .find(|p| p.id == preset_id)
+        else {
+            return;
+        };
+        preset.name = name.to_string();
+        self.save_state();
+        self.show_toast("Runner preset renamed");
+    }
+
+    fn duplicate_runner_preset(&mut self, preset_id: &str) {
+        let Some(mut preset) = self
+            .state
+            .runner_presets
+            .iter()
+            .find(|p| p.id == preset_id)
+            .cloned()
+        else {
+            return;
+        };
+        preset.id = Uuid::new_v4().to_string();
+        preset.name = unique_runner_preset_name(&self.state.runner_presets, &preset.name);
+        self.runner_selected_preset_id = Some(preset.id.clone());
+        self.runner_preset_rename_input = preset.name.clone();
+        self.state.runner_presets.push(preset);
+        self.save_state();
+        self.show_toast("Runner preset duplicated");
+    }
+
+    fn delete_runner_preset(&mut self, preset_id: &str) {
+        let before = self.state.runner_presets.len();
+        self.state
+            .runner_presets
+            .retain(|preset| preset.id != preset_id);
+        if self.state.runner_presets.len() == before {
+            return;
+        }
+        if self.runner_selected_preset_id.as_deref() == Some(preset_id) {
+            self.runner_selected_preset_id = None;
+            self.runner_preset_rename_input.clear();
+        }
+        self.save_state();
+        self.show_toast("Runner preset deleted");
+    }
+
+    fn current_runner_preset(&self, name: String) -> RunnerPreset {
+        let scope = match &self.runner_scope_folder_id {
+            Some(folder_id) => RunnerPresetScope::Folder {
+                folder_id: folder_id.clone(),
+                folder_name: crate::find_folder_by_id(&self.state.folders, folder_id)
+                    .map(|folder| folder.name.clone())
+                    .unwrap_or_default(),
+            },
+            None => RunnerPresetScope::All,
+        };
+        let env = self.active_environment();
+        RunnerPreset {
+            id: Uuid::new_v4().to_string(),
+            name,
+            scope,
+            env_id: env.map(|env| env.id.clone()),
+            env_name: env.map(|env| env.name.clone()).unwrap_or_default(),
+            data_rows: self.runner_data_rows.clone(),
         }
     }
 
@@ -3001,6 +3321,60 @@ fn runner_data_rows_label(data_rows: &str) -> String {
     } else {
         format!("{} data row{}", count, if count == 1 { "" } else { "s" })
     }
+}
+
+fn runner_preset_summary(preset: &RunnerPreset) -> String {
+    let scope = match &preset.scope {
+        RunnerPresetScope::All => "all collections".to_string(),
+        RunnerPresetScope::Folder {
+            folder_name,
+            folder_id,
+        } => {
+            if folder_name.is_empty() {
+                format!("folder {}", folder_id)
+            } else {
+                format!("folder '{}'", folder_name)
+            }
+        }
+    };
+    let env = preset
+        .env_id
+        .as_ref()
+        .map(|_| {
+            if preset.env_name.is_empty() {
+                "saved environment".to_string()
+            } else {
+                format!("environment '{}'", preset.env_name)
+            }
+        })
+        .unwrap_or_else(|| "no environment".to_string());
+    let rows = runner_data_rows_label(&preset.data_rows);
+    format!("Loads {}, {}, {}", scope, env, rows.to_ascii_lowercase())
+}
+
+fn trimmed_or_default(value: &str, default: String) -> String {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        default
+    } else {
+        trimmed.to_string()
+    }
+}
+
+fn unique_runner_preset_name(presets: &[RunnerPreset], base: &str) -> String {
+    let base = base.trim();
+    let base = if base.is_empty() {
+        "Runner Preset"
+    } else {
+        base
+    };
+    let mut candidate = format!("{} Copy", base);
+    let mut suffix = 2usize;
+    while presets.iter().any(|preset| preset.name == candidate) {
+        candidate = format!("{} Copy {}", base, suffix);
+        suffix += 1;
+    }
+    candidate
 }
 
 fn build_runner_report_csv(rows: &[RunnerResultRow]) -> String {
