@@ -3,6 +3,7 @@
 #
 # Usage:
 #   ./scripts/deploy.sh v0.2.0
+#   ./scripts/deploy.sh -y v0.2.0
 #
 # Steps:
 #   1. Validate the tag format (vX.Y.Z) and preflight (clean tree, on
@@ -10,7 +11,7 @@
 #   2. Bump the version in Cargo.toml and Makefile.
 #   3. Rebuild so Cargo.lock picks up the new version.
 #   4. Run the test suite.
-#   5. Show the diff and ask for confirmation.
+#   5. Show the diff and ask for confirmation unless -y/--yes is passed.
 #   6. Commit the bump, create an annotated tag, push both.
 #      Pushing the tag triggers .github/workflows/release.yml, which
 #      builds the DMG and uploads it to a new GitHub Release.
@@ -25,9 +26,49 @@ dim()    { printf "\033[2m%s\033[0m\n" "$*"; }
 
 die() { red "error: $*"; exit 1; }
 
-# --- Parse arg -----------------------------------------------------------
+usage() {
+    cat >&2 <<EOF
+usage: $0 [-y|--yes] vX.Y.Z
+
+Options:
+  -y, --yes    Skip the final interactive confirmation prompt.
+  -h, --help   Show this help.
+EOF
+}
+
+# --- Parse args ----------------------------------------------------------
+ASSUME_YES=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -y|--yes)
+            ASSUME_YES=1
+            shift
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        --)
+            shift
+            break
+            ;;
+        -*)
+            usage
+            die "unknown option: $1"
+            ;;
+        *)
+            break
+            ;;
+    esac
+done
+
 if [ $# -lt 1 ]; then
-    die "usage: $0 vX.Y.Z  (e.g. $0 v0.2.0)"
+    usage
+    die "missing release tag"
+fi
+if [ $# -gt 1 ]; then
+    usage
+    die "too many arguments"
 fi
 TAG="$1"
 if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -172,11 +213,15 @@ yellow "  • commit: \"Release $TAG\""
 yellow "  • tag:    $TAG (annotated)"
 yellow "  • push:   origin main && origin $TAG"
 echo
-read -rp "Proceed? [y/N] " CONFIRM
-case "$CONFIRM" in
-    y|Y|yes|YES) ;;
-    *) red "aborted."; exit 1 ;;
-esac
+if [ "$ASSUME_YES" -eq 1 ]; then
+    yellow "Auto-confirm enabled (-y); proceeding."
+else
+    read -rp "Proceed? [y/N] " CONFIRM
+    case "$CONFIRM" in
+        y|Y|yes|YES) ;;
+        *) red "aborted."; exit 1 ;;
+    esac
+fi
 
 # --- Commit + tag + push -------------------------------------------------
 blue "→ Committing"
