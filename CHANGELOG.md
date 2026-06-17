@@ -27,6 +27,9 @@ upgrades read old files cleanly.
   saved, loaded, renamed, duplicated, and deleted, including all-collection
   or folder scope, active environment selection, and explicit data-row text.
   Missing folder or environment references fall back gracefully when loaded.
+- **Usage guide for GitHub Pages.** Added a docs page covering first
+  requests, collections, environments, auth, runner workflows, import/export,
+  safe sharing, backups, and shortcuts.
 
 ### Security
 - **Secret scanner for collection exports.** JSON/YAML exports now run

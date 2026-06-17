@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Rusty Requester Docs — Usage Guide</title>
+<meta name="description" content="How to use Rusty Requester: requests, environments, imports, exports, collection runner, backups, and safe sharing." />
+<link rel="icon" type="image/svg+xml" href="./icon.svg" />
+<style>
+:root {
+  --bg: #0b0b0d;
+  --surface: #15151a;
+  --border: #2a2a32;
+  --text: #e8e8e8;
+  --muted: #9b9ba5;
+  --accent: #d97a4e;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", "Helvetica Neue", Arial, sans-serif;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  line-height: 1.6;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+code, pre { font-family: var(--mono); }
+pre {
+  overflow-x: auto;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.wrap { max-width: 980px; margin: 0 auto; padding: 36px 24px 64px; }
+.top { display: flex; justify-content: space-between; gap: 16px; align-items: center; margin-bottom: 36px; }
+.brand { display: flex; align-items: center; gap: 12px; color: var(--text); font-weight: 600; }
+.brand img { width: 36px; height: 36px; }
+.nav { display: flex; gap: 14px; flex-wrap: wrap; font-size: 0.94rem; }
+h1 { font-size: clamp(2rem, 5vw, 3.2rem); line-height: 1.1; margin: 0 0 12px; }
+h2 { margin-top: 44px; padding-top: 28px; border-top: 1px solid var(--border); }
+h3 { margin-top: 24px; }
+p, li { color: var(--muted); }
+strong, h2, h3 { color: var(--text); }
+.lead { max-width: 760px; font-size: 1.08rem; }
+.grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin-top: 20px; }
+.card { border: 1px solid var(--border); border-radius: 8px; padding: 18px 20px; background: var(--surface); }
+.card h3 { margin-top: 0; }
+.card p { margin-bottom: 0; }
+.toc { margin: 28px 0; padding: 18px 20px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+.toc ul { columns: 2; margin: 0; padding-left: 1.2rem; }
+.note { border-left: 3px solid var(--accent); padding: 10px 14px; background: var(--surface); color: var(--muted); }
+@media (max-width: 720px) {
+  .top { align-items: flex-start; flex-direction: column; }
+  .grid { grid-template-columns: 1fr; }
+  .toc ul { columns: 1; }
+}
+</style>
+</head>
+<body>
+<main class="wrap">
+  <header class="top">
+    <a class="brand" href="./index.html"><img src="./icon.svg" alt="" />Rusty Requester</a>
+    <nav class="nav">
+      <a href="./index.html">Home</a>
+      <a href="./FEATURES.md">Features</a>
+      <a href="./GIT_WORKSPACE_FORMAT.md">Git workspace format</a>
+      <a href="https://github.com/chud-lori/rusty-requester">GitHub</a>
+    </nav>
+  </header>
+
+  <h1>Usage Guide</h1>
+  <p class="lead">
+    Rusty Requester is a local-first API client for building requests,
+    inspecting responses, running collections, and sharing safe snippets
+    without an account or cloud sync.
+  </p>
+
+  <div class="toc">
+    <strong>On this page</strong>
+    <ul>
+      <li><a href="#first-request">First request</a></li>
+      <li><a href="#collections">Collections</a></li>
+      <li><a href="#environments">Environments</a></li>
+      <li><a href="#auth">Auth</a></li>
+      <li><a href="#responses">Responses</a></li>
+      <li><a href="#runner">Collection Runner</a></li>
+      <li><a href="#import-export">Import and export</a></li>
+      <li><a href="#safe-sharing">Safe sharing</a></li>
+      <li><a href="#backups">Backups</a></li>
+      <li><a href="#shortcuts">Shortcuts</a></li>
+    </ul>
+  </div>
+
+  <section id="first-request">
+    <h2>First request</h2>
+    <ol>
+      <li>Create a collection from the sidebar.</li>
+      <li>Add a request inside that collection.</li>
+      <li>Choose a method, enter a URL, then add params, headers, cookies, body, auth, or tests.</li>
+      <li>Click <strong>Send</strong>, or press <code>Cmd/Ctrl + Enter</code>.</li>
+    </ol>
+    <p>Saved requests persist in the local workspace file. Draft tabs persist until you save or close them.</p>
+  </section>
+
+  <section id="collections">
+    <h2>Collections</h2>
+    <div class="grid">
+      <div class="card">
+        <h3>Organize requests</h3>
+        <p>Use collections and nested folders for APIs, projects, or environments. Folder overview pages show recursive request counts and descriptions.</p>
+      </div>
+      <div class="card">
+        <h3>OpenAPI and Postman import</h3>
+        <p>Import JSON, YAML, OpenAPI 3.x, or Postman Collection v2.1 files. OpenAPI imports create generated request metadata for later refresh flows.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="environments">
+    <h2>Environments</h2>
+    <p>
+      Define variables such as <code>base_url</code>, <code>tenant</code>, or
+      <code>token</code>, then reference them as <code>{{base_url}}</code> in
+      URLs, headers, bodies, and auth fields.
+    </p>
+    <p>
+      Use Environment Compare to pick a source and target environment,
+      inspect added, missing, changed, and unchanged keys, copy a masked
+      summary, and add missing keys to the target.
+    </p>
+  </section>
+
+  <section id="auth">
+    <h2>Auth</h2>
+    <p>
+      Requests support no auth, Bearer token, Basic auth, and OAuth 2.0
+      Authorization Code + PKCE. OAuth tokens are stored locally with the
+      workspace, so treat exports and backups as sensitive unless you use a
+      redacted export mode.
+    </p>
+  </section>
+
+  <section id="responses">
+    <h2>Responses</h2>
+    <p>
+      Response views include JSON, Tree, Preview, Events for SSE streams,
+      Diff, and Raw. Status, timing, request/response byte sizes, body search,
+      copying, and save-to-file controls are available from the response toolbar.
+    </p>
+  </section>
+
+  <section id="runner">
+    <h2>Collection Runner</h2>
+    <p>
+      Run all collections or one folder with optional CSV/JSON data rows.
+      Runner-scoped variables overlay the active environment for each row.
+      Results stream live with status, timing, assertion counts, extractor
+      misses, and selectable detail rows.
+    </p>
+    <p>
+      Save runner presets when you repeat the same smoke or regression flow.
+      Presets store scope, selected environment id, and visible data rows.
+    </p>
+  </section>
+
+  <section id="import-export">
+    <h2>Import and export</h2>
+    <ul>
+      <li><strong>Paste cURL:</strong> paste a cURL command into the dialog to create a request.</li>
+      <li><strong>Collection export:</strong> export all collections as JSON or YAML.</li>
+      <li><strong>Git workspace format:</strong> write a deterministic directory with a manifest and one readable request JSON file per request. See <a href="./GIT_WORKSPACE_FORMAT.md">Git workspace format</a>.</li>
+    </ul>
+  </section>
+
+  <section id="safe-sharing">
+    <h2>Safe sharing</h2>
+    <p>
+      Snippet sharing is redacted by default for cURL, Python, JavaScript
+      fetch, and HTTPie. Redaction preserves request shape while masking
+      obvious authorization, cookie, sensitive query, and sensitive body
+      values. Use <strong>Copy raw</strong> only when you intentionally need
+      the unredacted snippet.
+    </p>
+    <p>
+      Collection exports run a local-only secret scan. If likely secrets are
+      found, you can cancel, export original content, or export a redacted
+      copy. Nothing is uploaded.
+    </p>
+    <p class="note">
+      Secret scanning is heuristic. It catches common patterns and sensitive
+      key names, but unusual secret formats can be missed and placeholder
+      examples can produce false positives.
+    </p>
+  </section>
+
+  <section id="backups">
+    <h2>Backups</h2>
+    <p>
+      Rusty Requester can create workspace backups before risky operations
+      such as imports. Use the Backups window to create, inspect, and restore
+      local snapshots. Restoring creates a current-state backup first.
+    </p>
+  </section>
+
+  <section id="shortcuts">
+    <h2>Shortcuts</h2>
+    <ul>
+      <li><code>Cmd/Ctrl + Enter</code> send request</li>
+      <li><code>Cmd/Ctrl + N</code> new request</li>
+      <li><code>Cmd/Ctrl + S</code> save draft</li>
+      <li><code>Cmd/Ctrl + K</code> focus sidebar search</li>
+      <li><code>Cmd/Ctrl + P</code> command palette</li>
+      <li><code>Cmd/Ctrl + Shift + P</code> actions palette</li>
+    </ul>
+  </section>
+</main>
+</body>
+</html>

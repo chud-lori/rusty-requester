@@ -76,9 +76,11 @@ Postman Collection v2.1 import, syntax-highlighted JSON (with
 Postman-style fold chevrons on every `{` / `[`) / Tree / HTML / SSE
 views, **Server-Sent Events streaming** for LLM APIs, **Cancel**
 mid-flight, **Response diff** across sends, **Collection Runner** with
-CSV/JSON data rows, live progress, scoped runs, safe CSV/HTML reports,
-**⌘P request finder** + **⇧⌘P actions palette**, and a native macOS
-menu bar. Full catalog in [`docs/FEATURES.md`](docs/FEATURES.md).
+CSV/JSON data rows, presets, detail drilldowns, scoped runs, safe
+CSV/HTML reports, redacted code snippets, Git-friendly workspace
+exports, **⌘P request finder** + **⇧⌘P actions palette**, and a native
+macOS menu bar. Full catalog in [`docs/FEATURES.md`](docs/FEATURES.md)
+and the usage guide in [`docs/usage.html`](docs/usage.html).
 
 ---
 
@@ -95,6 +97,8 @@ server sends bytes back. The headline guarantees:
   class of CVE.
 - **No shell execution on `curl` paste** — flags are parsed as data,
   never `exec`'d.
+- **Secret-aware sharing** — code snippets are redacted by default, and
+  collection exports can be scanned locally before writing files.
 
 You still own: SSRF from your own machine (`localhost`, internal IPs),
 files you explicitly save and then open in a vulnerable downstream app,

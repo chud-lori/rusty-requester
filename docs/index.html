@@ -241,6 +241,7 @@ footer a:hover { color: var(--accent); }
     </p>
     <div class="cta-row">
       <a class="btn btn-primary" href="#install">Install</a>
+      <a class="btn" href="./usage.html">Docs</a>
       <a class="btn" href="https://github.com/chud-lori/rusty-requester">View on GitHub</a>
       <a class="btn" href="https://github.com/chud-lori/rusty-requester/releases/latest">Releases</a>
     </div>
@@ -327,7 +328,7 @@ footer a:hover { color: var(--accent); }
       </div>
       <div class="feat">
         <h3>Collection Runner</h3>
-        <p>Run all collections or a selected folder with optional CSV/JSON data rows, live progress, assertions, extractors, and safe CSV/HTML reports.</p>
+        <p>Run all collections or a selected folder with optional CSV/JSON data rows, live progress, saved presets, detail drilldowns, assertions, extractors, and safe reports.</p>
       </div>
       <div class="feat">
         <h3>Paste-as-cURL</h3>
@@ -349,6 +350,14 @@ footer a:hover { color: var(--accent); }
         <h3>One-click in-app update</h3>
         <p>When a new version ships, click <b>Update now</b>. The installer runs in the background, the app relaunches itself.</p>
       </div>
+      <div class="feat">
+        <h3>Safe sharing by default</h3>
+        <p>Redacted cURL and code snippets preserve request shape while masking obvious auth, cookie, query, and body secrets. Raw copy stays explicit.</p>
+      </div>
+      <div class="feat">
+        <h3>Git-friendly workspace export</h3>
+        <p>Deterministic local export format with one readable file per request, stable IDs, and secret masking for reviewable Git workflows.</p>
+      </div>
     </div>
   </div>
 </section>
@@ -365,6 +374,7 @@ footer a:hover { color: var(--accent); }
       <li><b>No memory-corruption path.</b> TLS + HTTP via <code>reqwest</code> / <code>hyper</code> / <code>rustls</code>, all safe Rust.</li>
       <li><b>No shell execution on cURL paste.</b> Flags parse as data, never <code>exec</code>'d.</li>
       <li><b>Secret-safe runner reports.</b> Reports omit response bodies, headers, cookies, extracted values, and redact URL query strings / fragments.</li>
+      <li><b>Secret-aware exports and snippets.</b> Collection exports can be scanned/redacted locally, and shared snippets are redacted by default.</li>
       <li><b>No telemetry, no analytics, no account.</b> The only network calls are the ones you make and a single GitHub-API check for new releases.</li>
     </ul>
     <p class="muted" style="margin-top: 1rem; font-size: 0.9rem;">
@@ -399,6 +409,7 @@ footer a:hover { color: var(--accent); }
     <p>
       MIT licensed · made by <a href="https://github.com/chud-lori">@chud-lori</a> ·
       <a href="https://github.com/chud-lori/rusty-requester">source</a> ·
+      <a href="./usage.html">docs</a> ·
       <a href="https://github.com/chud-lori/rusty-requester/blob/main/CHANGELOG.md">changelog</a>
     </p>
   </div>
