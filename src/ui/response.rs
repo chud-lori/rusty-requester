@@ -12,73 +12,66 @@ use eframe::egui;
 use std::collections::HashMap;
 
 impl ApiClient {
-    /// Render `[status pill] · [time ms] · [total bytes]` inside a
-    /// right-to-left layout, with hover tooltips (phase breakdown on
-    /// time, request+response size breakdown on size). Rendered on
-    /// the far-right of the Body/Headers tab row, Postman-style.
-    fn render_response_status_chips(&self, ui: &mut egui::Ui) {
-        if self.response_status.is_empty() {
+    /// Stable response header metadata. This renders inside the single
+    /// response surface so status/time/size do not become a separate
+    /// stacked card above the body.
+    fn render_response_meta_row(&self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
             ui.label(
-                egui::RichText::new("No response yet")
-                    .color(muted())
+                egui::RichText::new("Response")
                     .size(11.5)
-                    .italics(),
+                    .color(muted())
+                    .strong(),
             );
-            return;
-        }
-        let bullet_sep = |ui: &mut egui::Ui| {
-            ui.add_space(4.0);
-            let (rect, _) = ui.allocate_exact_size(egui::vec2(6.0, 12.0), egui::Sense::hover());
-            ui.painter()
-                .circle_filled(rect.center(), 1.5, muted().linear_multiply(0.7));
-            ui.add_space(4.0);
-        };
-        // In a right-to-left layout, items are laid out right-first,
-        // so visually: status · time · size (size ends up leftmost).
-        let total_resp_bytes = self.response_headers_bytes + self.response_body_bytes;
-        if total_resp_bytes > 0 {
-            let resp_h = self.response_headers_bytes;
-            let resp_b = self.response_body_bytes;
-            let req_h = self.request_headers_bytes;
-            let req_b = self.request_body_bytes;
-            ui.label(
-                egui::RichText::new(format_bytes(total_resp_bytes))
-                    .color(muted())
-                    .size(12.0),
-            )
-            .on_hover_ui(move |ui| {
-                render_size_breakdown(ui, resp_h, resp_b, req_h, req_b);
-            });
-            bullet_sep(ui);
-        }
-        if !self.response_time.is_empty() {
-            let prep = self.response_prepare_ms;
-            let wait = self.response_waiting_ms;
-            let dl = self.response_download_ms;
-            let total = self.response_total_ms;
-            ui.label(
-                egui::RichText::new(self.response_time.clone())
-                    .color(muted())
-                    .size(12.0),
-            )
-            .on_hover_ui(move |ui| {
-                render_time_breakdown(ui, prep, wait, dl, total);
-            });
-            bullet_sep(ui);
-        }
-        let sc = status_color(&self.response_status);
-        egui::Frame::none()
-            .fill(sc.linear_multiply(0.18))
-            .rounding(egui::Rounding::same(5.0))
-            .inner_margin(egui::Margin::symmetric(8.0, 3.0))
-            .show(ui, |ui| {
+            ui.add_space(10.0);
+
+            if self.response_status.is_empty() {
                 ui.label(
-                    egui::RichText::new(&self.response_status)
-                        .color(sc)
-                        .strong()
-                        .size(12.0),
+                    egui::RichText::new("No response yet")
+                        .size(12.5)
+                        .color(muted())
+                        .italics(),
                 );
-            });
+                return;
+            }
+
+            let sc = status_color(&self.response_status);
+            egui::Frame::none()
+                .fill(sc.linear_multiply(0.16))
+                .rounding(egui::Rounding::same(6.0))
+                .inner_margin(egui::Margin::symmetric(9.0, 4.0))
+                .show(ui, |ui| {
+                    ui.label(
+                        egui::RichText::new(&self.response_status)
+                            .color(sc)
+                            .strong()
+                            .size(13.0),
+                    );
+                });
+
+            if !self.response_time.is_empty() {
+                let prep = self.response_prepare_ms;
+                let wait = self.response_waiting_ms;
+                let dl = self.response_download_ms;
+                let total = self.response_total_ms;
+                render_response_metric(ui, "Time", &self.response_time).on_hover_ui(move |ui| {
+                    render_time_breakdown(ui, prep, wait, dl, total);
+                });
+            }
+
+            let total_resp_bytes = self.response_headers_bytes + self.response_body_bytes;
+            if total_resp_bytes > 0 {
+                let resp_h = self.response_headers_bytes;
+                let resp_b = self.response_body_bytes;
+                let req_h = self.request_headers_bytes;
+                let req_b = self.request_body_bytes;
+                render_response_metric(ui, "Size", &format_bytes(total_resp_bytes)).on_hover_ui(
+                    move |ui| {
+                        render_size_breakdown(ui, resp_h, resp_b, req_h, req_b);
+                    },
+                );
+            }
+        });
     }
 
     /// Structured SSE event log — one expandable row per event. Newest
@@ -300,12 +293,9 @@ impl ApiClient {
 
     pub(crate) fn render_response(&mut self, ui: &mut egui::Ui) {
         ui.add_space(2.0);
-        // One unified toolbar row — Body / Headers tabs on the left,
-        // then the body-view pills (JSON / Tree / Raw) inline with
-        // them when Body is active, and the save / copy / search
-        // icons pushed to the far right. Matches Postman's second
-        // toolbar strip where format + action icons sit on the same
-        // line as the section tabs.
+        // Stable response header first, then one content surface. The
+        // Body-only JSON/Tree/Raw selector stays secondary to the
+        // primary Body/Headers tabs.
         let mut copy_clicked = false;
         let mut toggle_search = false;
         let mut save_clicked = false;
@@ -313,6 +303,14 @@ impl ApiClient {
         let is_json_body = !self.response_text.is_empty()
             && serde_json::from_str::<serde_json::Value>(&self.response_text).is_ok();
         let body_active = matches!(self.response_tab, ResponseTab::Body);
+        let is_html_body =
+            crate::html_preview::is_html(&self.response_headers, &self.response_text);
+        let is_sse_body = crate::sse::is_event_stream(&self.response_headers)
+            || !self.streaming_events.is_empty();
+        let has_diff_snapshot = self.previous_response_text.is_some();
+
+        self.render_response_meta_row(ui);
+        ui.add_space(6.0);
 
         ui.horizontal(|ui| {
             let body_label = "Body".to_string();
@@ -329,68 +327,7 @@ impl ApiClient {
                 &headers_label,
             );
 
-            if body_active {
-                ui.add_space(18.0);
-                let mut view = self.body_view;
-                // The Events pill is exclusive to SSE responses —
-                // when present we auto-select it and hide the generic
-                // JSON/Tree pills (the per-event body is already
-                // pretty-printed). Streamed SSE bodies aren't JSON-
-                // parseable anyway.
-                let is_sse_body = crate::sse::is_event_stream(&self.response_headers)
-                    || !self.streaming_events.is_empty();
-                if is_sse_body {
-                    body_view_pill(
-                        ui,
-                        &mut view,
-                        BodyView::Events,
-                        &format!("Events ({})", self.streaming_events.len()),
-                    );
-                } else {
-                    body_view_pill(ui, &mut view, BodyView::Json, "JSON");
-                    body_view_pill(ui, &mut view, BodyView::Tree, "Tree");
-                }
-                // The Preview pill only surfaces for HTML responses.
-                // We detect HTML via Content-Type (authoritative) +
-                // body sniff (fallback for header-less responses).
-                let is_html_body =
-                    crate::html_preview::is_html(&self.response_headers, &self.response_text);
-                if is_html_body {
-                    body_view_pill(ui, &mut view, BodyView::Preview, "Preview");
-                }
-                // Diff pill surfaces only when a prior response exists.
-                let has_diff_snapshot = self.previous_response_text.is_some();
-                if has_diff_snapshot {
-                    body_view_pill(ui, &mut view, BodyView::Diff, "Diff");
-                }
-                body_view_pill(ui, &mut view, BodyView::Raw, "Raw");
-                // If the user had a pill selected that no longer
-                // applies to this response, fall back to a sensible
-                // default.
-                if matches!(view, BodyView::Preview) && !is_html_body {
-                    view = BodyView::Raw;
-                }
-                if matches!(view, BodyView::Events) && !is_sse_body {
-                    view = BodyView::Raw;
-                }
-                if is_sse_body && matches!(view, BodyView::Json | BodyView::Tree) {
-                    view = BodyView::Events;
-                }
-                if matches!(view, BodyView::Diff) && !has_diff_snapshot {
-                    view = BodyView::Raw;
-                }
-                self.body_view = view;
-                if matches!(self.body_view, BodyView::Tree) && is_json_body {
-                    ui.add_space(8.0);
-                    ui.add(
-                        egui::TextEdit::singleline(&mut self.body_tree_filter)
-                            .hint_text(hint("Filter keys / values"))
-                            .desired_width(160.0),
-                    );
-                }
-            }
-
-            // Right side: action icons (Body tab only) + status chips.
+            // Right side: action icons (Body tab only).
             // When the panel is narrow (snippet panel open + small
             // window) the right-to-left block would overlap the tab
             // labels, since `ui.horizontal` doesn't reserve space
@@ -399,28 +336,27 @@ impl ApiClient {
             // isn't enough room — drawing nothing inside the inner
             // block keeps it from claiming row height.
             //
-            // Threshold ~360 px = rough sum of chips ("size · time ·
-            // status pill") + 3 icon buttons + paddings. Tuned by eye;
-            // err on the side of wrapping early so the tabs always
-            // read cleanly.
-            inline_room = ui.available_width() >= 360.0;
+            // Threshold ~150 px = 3 icon buttons + paddings. Status
+            // chips have moved to the meta band above.
+            inline_room = ui.available_width() >= 150.0;
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if !inline_room {
                     return;
                 }
-                ui.add_space(16.0);
                 if body_active {
                     if icon_btn(
                         ui,
                         egui_phosphor::regular::DOWNLOAD_SIMPLE,
-                        "Save response to file",
+                        "Save raw response body to file",
                     )
                     .clicked()
                     {
                         save_clicked = true;
                     }
                     ui.add_space(2.0);
-                    if icon_btn(ui, egui_phosphor::regular::COPY, "Copy response body").clicked() {
+                    if icon_btn(ui, egui_phosphor::regular::COPY, "Copy raw response body")
+                        .clicked()
+                    {
                         copy_clicked = true;
                     }
                     // Inline "Copied!" flash, visible for ~1.5s after
@@ -454,31 +390,27 @@ impl ApiClient {
                     {
                         toggle_search = true;
                     }
-                    ui.add_space(12.0);
                 }
-                self.render_response_status_chips(ui);
             });
         });
         // Overflow row — only when the inline block didn't fit.
-        // Renders the same right-side content (icons + status chips)
-        // pushed to the panel's right edge so the visual rhythm is
-        // preserved.
+        // Renders the same right-side content pushed to the panel's
+        // right edge so the visual rhythm is preserved.
         if !inline_room {
             ui.horizontal(|ui| {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.add_space(16.0);
                     if body_active {
                         if icon_btn(
                             ui,
                             egui_phosphor::regular::DOWNLOAD_SIMPLE,
-                            "Save response to file",
+                            "Save raw response body to file",
                         )
                         .clicked()
                         {
                             save_clicked = true;
                         }
                         ui.add_space(2.0);
-                        if icon_btn(ui, egui_phosphor::regular::COPY, "Copy response body")
+                        if icon_btn(ui, egui_phosphor::regular::COPY, "Copy raw response body")
                             .clicked()
                         {
                             copy_clicked = true;
@@ -510,10 +442,58 @@ impl ApiClient {
                         {
                             toggle_search = true;
                         }
-                        ui.add_space(12.0);
                     }
-                    self.render_response_status_chips(ui);
                 });
+            });
+        }
+
+        let body_active = matches!(self.response_tab, ResponseTab::Body);
+        if body_active {
+            ui.add_space(3.0);
+            let requested_view = self.body_view;
+            let effective_view = effective_body_view(
+                requested_view,
+                is_json_body,
+                is_html_body,
+                is_sse_body,
+                has_diff_snapshot,
+            );
+            let mut view = requested_view;
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new("View")
+                        .size(11.0)
+                        .color(muted())
+                        .strong(),
+                );
+                render_body_view_selector(
+                    ui,
+                    &mut view,
+                    effective_view,
+                    is_sse_body,
+                    is_html_body,
+                    has_diff_snapshot,
+                    self.streaming_events.len(),
+                );
+                if view != requested_view {
+                    self.body_view = view;
+                }
+
+                let selected_effective = effective_body_view(
+                    self.body_view,
+                    is_json_body,
+                    is_html_body,
+                    is_sse_body,
+                    has_diff_snapshot,
+                );
+                if matches!(selected_effective, BodyView::Tree) && is_json_body {
+                    ui.add_space(8.0);
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.body_tree_filter)
+                            .hint_text(hint("Filter keys / values"))
+                            .desired_width(170.0),
+                    );
+                }
             });
         }
 
@@ -679,6 +659,28 @@ impl ApiClient {
             return;
         }
 
+        let parsed: Option<serde_json::Value> = serde_json::from_str(&self.response_text).ok();
+        let is_json = parsed.is_some();
+        let effective_view = effective_body_view(
+            self.body_view,
+            is_json,
+            crate::html_preview::is_html(&self.response_headers, &self.response_text),
+            crate::sse::is_event_stream(&self.response_headers)
+                || !self.streaming_events.is_empty(),
+            self.previous_response_text.is_some(),
+        );
+
+        if body_active {
+            render_response_summary(
+                ui,
+                &self.response_status,
+                &self.response_headers,
+                &self.response_text,
+                is_json,
+                self.body_view,
+            );
+        }
+
         let full_w = ui.available_width();
         let full_h = ui.available_height().max(120.0);
         egui::Frame::none()
@@ -699,16 +701,6 @@ impl ApiClient {
                     .auto_shrink([false, false])
                     .show(ui, |ui| match self.response_tab {
                         ResponseTab::Body => {
-                            let parsed: Option<serde_json::Value> =
-                                serde_json::from_str(&self.response_text).ok();
-                            let is_json = parsed.is_some();
-                            let effective_view =
-                                if !is_json && !matches!(self.body_view, BodyView::Raw) {
-                                    BodyView::Raw
-                                } else {
-                                    self.body_view
-                                };
-
                             match effective_view {
                                 BodyView::Json => {
                                     // Postman-style folding viewer.
@@ -888,6 +880,44 @@ impl ApiClient {
                                     egui::RichText::new("No response headers yet.").color(muted()),
                                 );
                             } else {
+                                ui.horizontal(|ui| {
+                                    ui.label(
+                                        egui::RichText::new("Response headers")
+                                            .size(12.5)
+                                            .strong()
+                                            .color(text()),
+                                    );
+                                    ui.label(
+                                        egui::RichText::new(format!(
+                                            "{} total",
+                                            self.response_headers.len()
+                                        ))
+                                        .size(11.0)
+                                        .color(muted()),
+                                    );
+                                    ui.with_layout(
+                                        egui::Layout::right_to_left(egui::Align::Center),
+                                        |ui| {
+                                            if icon_btn(
+                                                ui,
+                                                egui_phosphor::regular::COPY,
+                                                "Copy all response headers",
+                                            )
+                                            .clicked()
+                                            {
+                                                let headers_text = self
+                                                    .response_headers
+                                                    .iter()
+                                                    .map(|(k, v)| format!("{}: {}", k, v))
+                                                    .collect::<Vec<_>>()
+                                                    .join("\n");
+                                                ui.ctx().copy_text(headers_text);
+                                            }
+                                        },
+                                    );
+                                });
+                                ui.add_space(6.0);
+
                                 // Softer header pane: keys use `muted()`
                                 // instead of saturated accent() (the rust
                                 // red on every row felt harsh), and we
@@ -916,6 +946,89 @@ impl ApiClient {
                     });
             });
         let _ = remaining_height;
+    }
+}
+
+fn render_response_metric(ui: &mut egui::Ui, label: &str, value: &str) -> egui::Response {
+    ui.add_space(8.0);
+    let inner = egui::Frame::none()
+        .fill(elevated().linear_multiply(0.72))
+        .rounding(egui::Rounding::same(6.0))
+        .inner_margin(egui::Margin::symmetric(8.0, 4.0))
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 5.0;
+                ui.label(
+                    egui::RichText::new(label.to_ascii_uppercase())
+                        .size(9.5)
+                        .color(muted()),
+                );
+                ui.label(egui::RichText::new(value).size(12.0).color(text()).strong());
+            });
+        });
+    inner.response
+}
+
+fn effective_body_view(
+    selected: BodyView,
+    is_json: bool,
+    is_html: bool,
+    is_sse: bool,
+    has_diff_snapshot: bool,
+) -> BodyView {
+    let mut effective = selected;
+    if !is_json && matches!(effective, BodyView::Json | BodyView::Tree) {
+        effective = BodyView::Raw;
+    }
+    if matches!(effective, BodyView::Preview) && !is_html {
+        effective = BodyView::Raw;
+    }
+    if matches!(effective, BodyView::Events) && !is_sse {
+        effective = BodyView::Raw;
+    }
+    if is_sse && matches!(effective, BodyView::Json | BodyView::Tree) {
+        effective = BodyView::Raw;
+    }
+    if matches!(effective, BodyView::Diff) && !has_diff_snapshot {
+        effective = BodyView::Raw;
+    }
+    effective
+}
+
+fn render_body_view_selector(
+    ui: &mut egui::Ui,
+    current: &mut BodyView,
+    effective: BodyView,
+    _is_sse: bool,
+    _is_html: bool,
+    _has_diff_snapshot: bool,
+    _event_count: usize,
+) {
+    // Specialized renderers still exist for restored state and fallback
+    // compatibility, but M1 exposes only the core Body views here.
+    let _retained_modes = [BodyView::Preview, BodyView::Events, BodyView::Diff];
+    ui.horizontal(|ui| {
+        for view in [BodyView::Json, BodyView::Tree, BodyView::Raw] {
+            let selected = effective == view;
+            if ui
+                .selectable_label(selected, body_view_label(view, 0))
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .clicked()
+            {
+                *current = view;
+            }
+        }
+    });
+}
+
+fn body_view_label(view: BodyView, event_count: usize) -> String {
+    match view {
+        BodyView::Json => "JSON".to_string(),
+        BodyView::Tree => "Tree".to_string(),
+        BodyView::Preview => "Preview".to_string(),
+        BodyView::Events => format!("Events ({})", event_count),
+        BodyView::Diff => "Diff".to_string(),
+        BodyView::Raw => "Raw".to_string(),
     }
 }
 
@@ -1115,6 +1228,146 @@ fn render_event_row(ui: &mut egui::Ui, idx: usize, ev: &crate::sse::SseEvent, to
         });
 }
 
+fn render_response_summary(
+    ui: &mut egui::Ui,
+    status: &str,
+    headers: &[(String, String)],
+    body: &str,
+    is_json: bool,
+    view: BodyView,
+) {
+    if body.is_empty() {
+        return;
+    }
+
+    let Some(summary) = classify_response_summary(status, headers, body, is_json, view) else {
+        return;
+    };
+
+    egui::Frame::none()
+        .fill(summary.tint.linear_multiply(0.12))
+        .stroke(egui::Stroke::new(1.0, summary.tint.linear_multiply(0.45)))
+        .rounding(egui::Rounding::same(7.0))
+        .inner_margin(egui::Margin::symmetric(10.0, 8.0))
+        .show(ui, |ui| {
+            ui.horizontal_top(|ui| {
+                ui.label(
+                    egui::RichText::new(if summary.is_error {
+                        egui_phosphor::regular::WARNING
+                    } else {
+                        egui_phosphor::regular::INFO
+                    })
+                    .size(15.0)
+                    .color(summary.tint),
+                );
+                ui.vertical(|ui| {
+                    ui.label(
+                        egui::RichText::new(summary.headline)
+                            .size(12.5)
+                            .strong()
+                            .color(text()),
+                    );
+                    ui.add_space(2.0);
+                    ui.label(
+                        egui::RichText::new(summary.detail)
+                            .size(11.5)
+                            .color(muted()),
+                    );
+                });
+            });
+        });
+    ui.add_space(8.0);
+}
+
+struct ResponseSummary {
+    headline: String,
+    detail: String,
+    tint: egui::Color32,
+    is_error: bool,
+}
+
+fn classify_response_summary(
+    status: &str,
+    headers: &[(String, String)],
+    body: &str,
+    is_json: bool,
+    view: BodyView,
+) -> Option<ResponseSummary> {
+    if body.is_empty() {
+        return None;
+    }
+
+    let status_code = status
+        .split_whitespace()
+        .next()
+        .and_then(|s| s.parse::<u16>().ok());
+    let is_error = status_code.map(|code| code >= 400).unwrap_or(false);
+    let is_html = crate::html_preview::is_html(headers, body);
+    let content_type = content_type(headers).unwrap_or("unknown");
+    let is_structured_view = matches!(view, BodyView::Json | BodyView::Tree);
+
+    if !is_error && !is_html && is_json {
+        return None;
+    }
+
+    let lower_body = body.to_ascii_lowercase();
+    let looks_like_cloudflare = lower_body.contains("cloudflare")
+        || lower_body.contains("challenge-platform")
+        || lower_body.contains("just a moment");
+    let tint = if is_error {
+        status_color(status)
+    } else if is_html {
+        C_ORANGE
+    } else {
+        muted()
+    };
+    let headline = if looks_like_cloudflare {
+        "Cloudflare challenge returned instead of API data"
+    } else if is_error && is_html {
+        "Request returned an HTML error page"
+    } else if is_error {
+        "Request completed with an error status"
+    } else if is_html {
+        "HTML response detected"
+    } else if is_structured_view {
+        "Response is not valid JSON"
+    } else {
+        "Non-JSON response"
+    };
+    let detail = if looks_like_cloudflare {
+        format!(
+            "Status: {}. Prefer official API auth, service tokens, or allowlisting; browser session cookies are sensitive.",
+            status
+        )
+    } else if is_html {
+        format!(
+            "Content-Type: {}. Raw keeps the original body.",
+            content_type
+        )
+    } else if !is_json {
+        format!(
+            "Content-Type: {}. JSON and Tree views are unavailable; Raw shows the original body.",
+            content_type
+        )
+    } else {
+        "Inspect the response body and headers for details.".to_string()
+    };
+
+    Some(ResponseSummary {
+        headline: headline.to_string(),
+        detail,
+        tint,
+        is_error,
+    })
+}
+
+fn content_type(headers: &[(String, String)]) -> Option<&str> {
+    headers
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("content-type"))
+        .map(|(_, v)| v.as_str())
+}
+
 /// Collapsing-header label for an SSE event row: `#12 event-type ·
 /// HH:MM:SS.mmm`. The event type is accent-colored so streams with
 /// mixed events (e.g. `message` vs `error`) are scannable at a glance.
@@ -1292,5 +1545,127 @@ mod tests {
     fn fold_pairs_empty_text() {
         let pairs = compute_json_fold_pairs("");
         assert!(pairs.is_empty());
+    }
+
+    #[test]
+    fn effective_body_view_preserves_json_preference_for_json_body() {
+        assert!(matches!(
+            effective_body_view(BodyView::Json, true, false, false, false),
+            BodyView::Json
+        ));
+        assert!(matches!(
+            effective_body_view(BodyView::Tree, true, false, false, false),
+            BodyView::Tree
+        ));
+    }
+
+    #[test]
+    fn effective_body_view_falls_back_to_raw_for_html_when_json_selected() {
+        assert!(matches!(
+            effective_body_view(BodyView::Json, false, true, false, false),
+            BodyView::Raw
+        ));
+        assert!(matches!(
+            effective_body_view(BodyView::Tree, false, true, false, false),
+            BodyView::Raw
+        ));
+    }
+
+    #[test]
+    fn effective_body_view_falls_back_to_raw_for_unavailable_optional_views() {
+        assert!(matches!(
+            effective_body_view(BodyView::Preview, false, false, false, false),
+            BodyView::Raw
+        ));
+        assert!(matches!(
+            effective_body_view(BodyView::Events, false, false, false, false),
+            BodyView::Raw
+        ));
+        assert!(matches!(
+            effective_body_view(BodyView::Diff, true, false, false, false),
+            BodyView::Raw
+        ));
+    }
+
+    #[test]
+    fn effective_body_view_falls_back_to_raw_for_sse_when_json_selected() {
+        assert!(matches!(
+            effective_body_view(BodyView::Json, true, false, true, false),
+            BodyView::Raw
+        ));
+        assert!(matches!(
+            effective_body_view(BodyView::Tree, true, false, true, false),
+            BodyView::Raw
+        ));
+    }
+
+    #[test]
+    fn effective_body_view_keeps_requested_diff_when_snapshot_exists() {
+        assert!(matches!(
+            effective_body_view(BodyView::Diff, true, false, false, true),
+            BodyView::Diff
+        ));
+    }
+
+    #[test]
+    fn response_summary_is_quiet_for_json_success() {
+        let summary = classify_response_summary(
+            "200 OK",
+            &[("content-type".to_string(), "application/json".to_string())],
+            "{\"ok\":true}",
+            true,
+            BodyView::Json,
+        );
+        assert!(summary.is_none());
+    }
+
+    #[test]
+    fn response_summary_calls_out_cloudflare_challenge() {
+        let summary = classify_response_summary(
+            "403 Forbidden",
+            &[("content-type".to_string(), "text/html".to_string())],
+            "<!doctype html><title>Just a moment...</title><script src=\"/cdn-cgi/challenge-platform/h/b/orchestrate/jsch/v1\"></script>Cloudflare",
+            false,
+            BodyView::Json,
+        )
+        .unwrap();
+        assert_eq!(
+            summary.headline,
+            "Cloudflare challenge returned instead of API data"
+        );
+        assert!(summary.detail.contains("official API auth"));
+        assert!(summary.detail.contains("session cookies are sensitive"));
+        assert!(summary.is_error);
+    }
+
+    #[test]
+    fn response_summary_reports_invalid_json_view() {
+        let summary = classify_response_summary(
+            "200 OK",
+            &[("content-type".to_string(), "text/plain".to_string())],
+            "ok",
+            false,
+            BodyView::Json,
+        )
+        .unwrap();
+        assert_eq!(summary.headline, "Response is not valid JSON");
+        assert!(summary
+            .detail
+            .contains("JSON and Tree views are unavailable"));
+        assert!(!summary.is_error);
+    }
+
+    #[test]
+    fn response_summary_explains_plain_text_after_auto_switch() {
+        let summary = classify_response_summary(
+            "200 OK",
+            &[("content-type".to_string(), "text/plain".to_string())],
+            "ok",
+            false,
+            BodyView::Raw,
+        )
+        .unwrap();
+        assert_eq!(summary.headline, "Non-JSON response");
+        assert!(summary.detail.contains("Raw shows the original body"));
     }
 }

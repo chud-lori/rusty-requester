@@ -11,6 +11,7 @@ mod macos_menu;
 mod model;
 mod net;
 mod oauth;
+mod privacy;
 mod snippet;
 mod sse;
 mod theme;
@@ -526,24 +527,22 @@ impl Default for ApiClient {
         }
         // Restore active tab — if state has a saved `active_tab_id`,
         // activate that tab now. Otherwise fall back to the first open tab.
-        let active_tab: Option<OpenTab> = {
-            let id = this.state.active_tab_id.clone();
-            let by_id = id.and_then(|id| {
-                this.state
-                    .open_tabs
-                    .iter()
-                    .find(|t| t.request_id == id)
-                    .cloned()
-            });
-            by_id.or_else(|| this.state.open_tabs.first().cloned())
-        };
+        let active_tab =
+            restored_active_tab(&this.state.open_tabs, this.state.active_tab_id.as_deref());
         if let Some(tab) = active_tab {
             this.selected_folder_path = tab.folder_path;
-            this.selected_request_id = Some(tab.request_id);
+            this.selected_request_id = Some(tab.request_id.clone());
+            this.state.active_tab_id = Some(tab.request_id);
             this.load_request_for_editing();
         }
         this
     }
+}
+
+fn restored_active_tab(open_tabs: &[OpenTab], active_tab_id: Option<&str>) -> Option<OpenTab> {
+    let by_id =
+        active_tab_id.and_then(|id| open_tabs.iter().find(|tab| tab.request_id == id).cloned());
+    by_id.or_else(|| open_tabs.first().cloned())
 }
 
 /// Outcome of loading `data.json` at startup. `Fresh` means the file
@@ -1376,6 +1375,7 @@ impl ApiClient {
             self.selected_folder_path = folder_path;
             self.selected_request_id = Some(request_id);
         }
+        self.state.active_tab_id = self.selected_request_id.clone();
 
         // Re-clicking the already-active tab is a no-op — don't wipe
         // the live response by restoring from an empty cache. Only
@@ -2339,7 +2339,8 @@ impl eframe::App for ApiClient {
             }
         }
 
-        theme::apply_style(ctx, self.state.settings.theme);
+        let display_theme = self.effective_theme();
+        theme::apply_style(ctx, display_theme);
 
         // Paint the ENTIRE window background before any panels render.
         // egui leaves a ~50-60 logical-pixel "gutter" between
@@ -2351,7 +2352,7 @@ impl eframe::App for ApiClient {
         // mode doesn't get a black gutter strip.
         {
             let screen_rect = ctx.screen_rect();
-            let bg = theme::palette_for(self.state.settings.theme).bg;
+            let bg = theme::palette_for(display_theme).bg;
             ctx.layer_painter(egui::LayerId::background()).rect_filled(
                 screen_rect,
                 egui::Rounding::ZERO,
@@ -2383,6 +2384,14 @@ impl eframe::App for ApiClient {
 }
 
 impl ApiClient {
+    pub(crate) fn effective_theme(&self) -> Theme {
+        if self.show_settings_modal {
+            self.editing_settings.theme
+        } else {
+            self.state.settings.theme
+        }
+    }
+
     fn rename_folder(&mut self, folder_id: &str, new_name: String) {
         fn go(folders: &mut Vec<Folder>, id: &str, name: String) -> bool {
             for f in folders {
@@ -2821,4 +2830,62 @@ fn main() -> Result<(), eframe::Error> {
         options,
         Box::new(|_cc| Ok(Box::new(ApiClient::default()))),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tab(folder_path: Vec<&str>, request_id: &str, pinned: bool) -> OpenTab {
+        OpenTab {
+            folder_path: folder_path.into_iter().map(str::to_string).collect(),
+            request_id: request_id.to_string(),
+            pinned,
+        }
+    }
+
+    #[test]
+    fn restored_active_tab_prefers_persisted_active_id() {
+        let open_tabs = vec![
+            tab(vec!["collection-a"], "first", false),
+            tab(vec!["collection-b"], "second", true),
+        ];
+
+        let restored = restored_active_tab(&open_tabs, Some("second")).unwrap();
+
+        assert_eq!(restored.request_id, "second");
+        assert_eq!(restored.folder_path, vec!["collection-b".to_string()]);
+        assert!(restored.pinned);
+    }
+
+    #[test]
+    fn restored_active_tab_falls_back_to_first_open_tab_when_saved_id_is_stale() {
+        let open_tabs = vec![
+            tab(vec!["collection-a"], "first", false),
+            tab(vec!["collection-b"], "second", false),
+        ];
+
+        let restored = restored_active_tab(&open_tabs, Some("missing")).unwrap();
+
+        assert_eq!(restored.request_id, "first");
+        assert_eq!(restored.folder_path, vec!["collection-a".to_string()]);
+    }
+
+    #[test]
+    fn restored_active_tab_falls_back_to_first_open_tab_without_saved_id() {
+        let open_tabs = vec![
+            tab(vec![], "draft", false),
+            tab(vec!["collection-b"], "saved", false),
+        ];
+
+        let restored = restored_active_tab(&open_tabs, None).unwrap();
+
+        assert_eq!(restored.request_id, "draft");
+        assert!(restored.folder_path.is_empty());
+    }
+
+    #[test]
+    fn restored_active_tab_returns_none_for_empty_workspace() {
+        assert!(restored_active_tab(&[], Some("missing")).is_none());
+    }
 }

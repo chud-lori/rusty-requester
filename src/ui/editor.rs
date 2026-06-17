@@ -12,7 +12,7 @@ use eframe::egui;
 
 impl ApiClient {
     pub(crate) fn render_central(&mut self, ctx: &egui::Context) {
-        let theme_bg = crate::theme::palette_for(self.state.settings.theme).bg;
+        let theme_bg = crate::theme::palette_for(self.effective_theme()).bg;
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::none()
@@ -174,6 +174,10 @@ impl ApiClient {
                 let mut toggle_pin: Option<usize> = None;
                 let mut start_rename: Option<usize> = None;
                 let mut reorder: Option<(usize, usize)> = None;
+                let active_request_id = self
+                    .selected_request_id
+                    .clone()
+                    .or_else(|| self.state.active_tab_id.clone());
 
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 4.0;
@@ -228,7 +232,7 @@ impl ApiClient {
                                                 "(missing)".to_string(),
                                                 String::new(),
                                             ));
-                                            let is_active = self.selected_request_id.as_deref()
+                                            let is_active = active_request_id.as_deref()
                                                 == Some(tab.request_id.as_str());
                                             let is_renaming = self.renaming_request_id.as_deref()
                                                 == Some(tab.request_id.as_str());
