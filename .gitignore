@@ -1,5 +1,18 @@
 /target
 
+# Python/docs helper byproducts.
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+
+# Local environment overrides.
+.env
+.env.*
+
 # macOS Finder metadata — never tracked.
 .DS_Store
 **/.DS_Store
