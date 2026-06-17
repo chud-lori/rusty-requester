@@ -147,6 +147,11 @@ to grab it.
 - **Sidebar → 📥 Import → Import collection file…** — pick a `.json`, `.yaml`, or `.yml` file. Postman Collection v2.1 files are auto-detected (schema sniffed) and land as one new collection. IDs are regenerated on import so nothing collides with your existing data.
 - **Sidebar → 📤 Export → Export all as JSON / YAML…** — dumps every collection into a single file (good for backups).
 - **Right-click any collection / folder → Export as JSON / YAML…** — exports just that subtree (this is the "collection-level" export for sharing).
+- **Git workspace format** — core import/export code can write a deterministic
+  directory with `workspace.json` plus one readable JSON file per request. It
+  preserves IDs for Git round-trips and masks secrets by default. See
+  [`GIT_WORKSPACE_FORMAT.md`](./GIT_WORKSPACE_FORMAT.md) for layout and
+  merge-conflict expectations.
 
 ### Running collections with data rows
 
