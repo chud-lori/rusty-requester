@@ -1,4 +1,5 @@
 pub mod curl;
+pub mod git_workspace;
 
 use crate::model::{Auth, Folder, HttpMethod, KvRow, OpenApiSource, Request, RequestSource};
 use crate::privacy::is_sensitive_key;
