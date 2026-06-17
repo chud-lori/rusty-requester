@@ -223,160 +223,214 @@ impl ApiClient {
         let mut do_cancel = false;
         let mut create_folder: Option<(Vec<String>, String)> = None;
 
-        egui::Window::new(
-            egui::RichText::new("SAVE REQUEST")
-                .size(12.0)
-                .strong()
-                .color(muted()),
-        )
-        .open(&mut open)
-        .collapsible(false)
-        .resizable(false)
-        .default_width(560.0)
-        .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
-        .show(ctx, |ui| {
-            ui.set_min_width(540.0);
-
-            // Name
-            ui.label(
-                egui::RichText::new("Request name")
-                    .size(11.0)
-                    .color(muted()),
-            );
-            let name_resp = ui.add(
-                egui::TextEdit::singleline(&mut self.save_draft_name).desired_width(f32::INFINITY),
-            );
-            ui.add_space(10.0);
-
-            // Breadcrumb
-            let breadcrumb = self.save_draft_breadcrumb();
-            ui.label(
-                egui::RichText::new(format!("Save to  {}", breadcrumb))
-                    .size(12.0)
-                    .color(text()),
-            );
-            ui.add_space(6.0);
-
-            // Search
-            ui.add(
-                egui::TextEdit::singleline(&mut self.save_draft_search)
-                    .hint_text(hint("Search for collection or folder"))
-                    .desired_width(f32::INFINITY),
-            );
-            ui.add_space(6.0);
-
-            // Folder tree (scrollable)
-            egui::Frame::none()
-                .fill(panel_dark())
-                .stroke(egui::Stroke::new(1.0, border()))
-                .rounding(egui::Rounding::same(6.0))
-                .inner_margin(4.0)
-                .show(ui, |ui| {
-                    ui.set_width(ui.available_width());
-                    egui::ScrollArea::vertical()
-                        .id_salt("save_draft_tree")
-                        .max_height(260.0)
-                        .auto_shrink([false, false])
-                        .show(ui, |ui| {
-                            ui.set_width(ui.available_width());
-                            let folders = self.state.folders.clone();
-                            let query = self.save_draft_search.to_lowercase();
-                            for f in &folders {
-                                Self::render_save_tree_row(
-                                    ui,
-                                    f,
-                                    &mut vec![],
-                                    &mut self.save_draft_target_path,
-                                    &query,
+        egui::Window::new("save_request_modal")
+            .open(&mut open)
+            .title_bar(false)
+            .collapsible(false)
+            .resizable(true)
+            .default_width(720.0)
+            .default_height(640.0)
+            .min_width(660.0)
+            .min_height(520.0)
+            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .show(ctx, |ui| {
+                ui.set_min_width(640.0);
+                egui::Frame::none()
+                    .fill(elevated())
+                    .inner_margin(egui::Margin {
+                        left: 18.0,
+                        right: 12.0,
+                        top: 12.0,
+                        bottom: 12.0,
+                    })
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.vertical(|ui| {
+                                ui.label(
+                                    egui::RichText::new("Save request")
+                                        .size(16.0)
+                                        .strong()
+                                        .color(text()),
                                 );
-                            }
+                                ui.label(
+                                    egui::RichText::new("Choose a collection or folder")
+                                        .size(11.0)
+                                        .color(muted()),
+                                );
+                            });
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    if ui
+                                        .add(
+                                            egui::Button::new(
+                                                egui::RichText::new(egui_phosphor::regular::X)
+                                                    .size(15.0)
+                                                    .color(muted()),
+                                            )
+                                            .fill(egui::Color32::TRANSPARENT)
+                                            .stroke(egui::Stroke::NONE)
+                                            .min_size(egui::vec2(30.0, 30.0)),
+                                        )
+                                        .on_hover_text("Close")
+                                        .clicked()
+                                    {
+                                        do_cancel = true;
+                                    }
+                                },
+                            );
                         });
-                });
+                    });
+                ui.painter().line_segment(
+                    [
+                        egui::pos2(ui.min_rect().left(), ui.min_rect().top()),
+                        egui::pos2(ui.min_rect().right(), ui.min_rect().top()),
+                    ],
+                    egui::Stroke::new(1.0, border()),
+                );
+                ui.add_space(14.0);
 
-            ui.add_space(8.0);
+                // Name
+                ui.label(
+                    egui::RichText::new("Request name")
+                        .size(11.0)
+                        .color(muted()),
+                );
+                let name_resp = ui.add(
+                    egui::TextEdit::singleline(&mut self.save_draft_name)
+                        .desired_width(f32::INFINITY),
+                );
+                ui.add_space(10.0);
 
-            // New folder — either show the "+ New folder" button or,
-            // if the user clicked it, an inline input with Create/Cancel.
-            let mut cancel_new_folder = false;
-            if let Some(name) = self.save_draft_new_folder_name.as_mut() {
-                let target_path_snapshot = self.save_draft_target_path.clone();
-                ui.horizontal(|ui| {
-                    ui.add(
-                        egui::TextEdit::singleline(name)
-                            .hint_text(hint("New folder name"))
-                            .desired_width(260.0),
-                    );
-                    let enabled = !name.trim().is_empty();
-                    if ui
-                        .add_enabled(
-                            enabled,
-                            egui::Button::new(
-                                egui::RichText::new("Create").color(egui::Color32::WHITE),
+                // Breadcrumb
+                let breadcrumb = self.save_draft_breadcrumb();
+                ui.label(
+                    egui::RichText::new(format!("Save to  {}", breadcrumb))
+                        .size(12.0)
+                        .color(text()),
+                );
+                ui.add_space(6.0);
+
+                // Search
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.save_draft_search)
+                        .hint_text(hint("Search for collection or folder"))
+                        .desired_width(f32::INFINITY),
+                );
+                ui.add_space(6.0);
+
+                // Folder tree (scrollable)
+                egui::Frame::none()
+                    .fill(panel_dark())
+                    .stroke(egui::Stroke::new(1.0, border()))
+                    .rounding(egui::Rounding::same(6.0))
+                    .inner_margin(4.0)
+                    .show(ui, |ui| {
+                        ui.set_width(ui.available_width());
+                        egui::ScrollArea::vertical()
+                            .id_salt("save_draft_tree")
+                            .max_height(340.0)
+                            .auto_shrink([false, false])
+                            .show(ui, |ui| {
+                                ui.set_width(ui.available_width());
+                                let folders = self.state.folders.clone();
+                                let query = self.save_draft_search.to_lowercase();
+                                for f in &folders {
+                                    Self::render_save_tree_row(
+                                        ui,
+                                        f,
+                                        &mut vec![],
+                                        &mut self.save_draft_target_path,
+                                        &query,
+                                    );
+                                }
+                            });
+                    });
+
+                ui.add_space(8.0);
+
+                // New folder — either show the "+ New folder" button or,
+                // if the user clicked it, an inline input with Create/Cancel.
+                let mut cancel_new_folder = false;
+                if let Some(name) = self.save_draft_new_folder_name.as_mut() {
+                    let target_path_snapshot = self.save_draft_target_path.clone();
+                    ui.horizontal(|ui| {
+                        ui.add(
+                            egui::TextEdit::singleline(name)
+                                .hint_text(hint("New folder name"))
+                                .desired_width(260.0),
+                        );
+                        let enabled = !name.trim().is_empty();
+                        if ui
+                            .add_enabled(
+                                enabled,
+                                egui::Button::new(
+                                    egui::RichText::new("Create").color(egui::Color32::WHITE),
+                                )
+                                .fill(if enabled { accent() } else { elevated() })
+                                .min_size(egui::vec2(72.0, 26.0)),
                             )
-                            .fill(if enabled { accent() } else { elevated() })
-                            .min_size(egui::vec2(72.0, 26.0)),
+                            .clicked()
+                        {
+                            create_folder =
+                                Some((target_path_snapshot.clone(), name.trim().to_string()));
+                        }
+                        if ui.button("Cancel").clicked() {
+                            cancel_new_folder = true;
+                        }
+                    });
+                } else if ui
+                    .add(
+                        egui::Button::new(
+                            egui::RichText::new("+ New folder")
+                                .size(12.0)
+                                .color(accent()),
                         )
-                        .clicked()
-                    {
-                        create_folder =
-                            Some((target_path_snapshot.clone(), name.trim().to_string()));
-                    }
+                        .fill(egui::Color32::TRANSPARENT)
+                        .stroke(egui::Stroke::NONE),
+                    )
+                    .clicked()
+                {
+                    self.save_draft_new_folder_name = Some(String::new());
+                }
+                if cancel_new_folder {
+                    self.save_draft_new_folder_name = None;
+                }
+
+                ui.add_space(10.0);
+                ui.separator();
+                ui.add_space(8.0);
+
+                // Save / Cancel
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui.button("Cancel").clicked() {
-                        cancel_new_folder = true;
+                        do_cancel = true;
+                    }
+                    let can_save = !self.save_draft_target_path.is_empty()
+                        && !self.save_draft_name.trim().is_empty();
+                    let save_btn = egui::Button::new(
+                        egui::RichText::new("Save")
+                            .color(egui::Color32::WHITE)
+                            .strong(),
+                    )
+                    .fill(if can_save { accent() } else { elevated() })
+                    .min_size(egui::vec2(80.0, 28.0));
+                    if ui.add_enabled(can_save, save_btn).clicked() {
+                        do_save = true;
                     }
                 });
-            } else if ui
-                .add(
-                    egui::Button::new(
-                        egui::RichText::new("+ New folder")
-                            .size(12.0)
-                            .color(accent()),
-                    )
-                    .fill(egui::Color32::TRANSPARENT)
-                    .stroke(egui::Stroke::NONE),
-                )
-                .clicked()
-            {
-                self.save_draft_new_folder_name = Some(String::new());
-            }
-            if cancel_new_folder {
-                self.save_draft_new_folder_name = None;
-            }
 
-            ui.add_space(8.0);
-            ui.separator();
-            ui.add_space(6.0);
+                ui.input(|i| {
+                    if i.key_pressed(egui::Key::Escape) {
+                        do_cancel = true;
+                    }
+                });
 
-            // Save / Cancel
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button("Cancel").clicked() {
-                    do_cancel = true;
-                }
-                let can_save = !self.save_draft_target_path.is_empty()
-                    && !self.save_draft_name.trim().is_empty();
-                let save_btn = egui::Button::new(
-                    egui::RichText::new("Save")
-                        .color(egui::Color32::WHITE)
-                        .strong(),
-                )
-                .fill(if can_save { accent() } else { elevated() })
-                .min_size(egui::vec2(80.0, 28.0));
-                if ui.add_enabled(can_save, save_btn).clicked() {
-                    do_save = true;
+                if self.save_draft_name_focus_pending {
+                    name_resp.request_focus();
+                    self.save_draft_name_focus_pending = false;
                 }
             });
-
-            ui.input(|i| {
-                if i.key_pressed(egui::Key::Escape) {
-                    do_cancel = true;
-                }
-            });
-
-            if self.save_draft_name_focus_pending {
-                name_resp.request_focus();
-                self.save_draft_name_focus_pending = false;
-            }
-        });
         self.save_draft_open = open;
 
         // Create the new folder outside the UI closure to avoid borrow
@@ -493,20 +547,16 @@ impl ApiClient {
                 .rect_filled(rect, egui::Rounding::same(4.0), bg);
             let icon_x = rect.left() + indent;
             let text_y = rect.center().y;
-            // Folder icon — painter-drawn (two stacked rounded rects) so
-            // we don't depend on unicode glyphs egui's bundled font
-            // doesn't ship (e.g. `▸` rendered as a tofu square).
-            let icon_body =
-                egui::Rect::from_min_size(egui::pos2(icon_x, text_y - 4.0), egui::vec2(14.0, 10.0));
-            let icon_tab =
-                egui::Rect::from_min_size(egui::pos2(icon_x, text_y - 7.0), egui::vec2(6.0, 3.5));
             let icon_color = if is_selected { accent() } else { muted() };
-            ui.painter()
-                .rect_filled(icon_tab, egui::Rounding::same(1.5), icon_color);
-            ui.painter()
-                .rect_filled(icon_body, egui::Rounding::same(2.0), icon_color);
             ui.painter().text(
-                egui::pos2(icon_x + 20.0, text_y),
+                egui::pos2(icon_x + 7.0, text_y),
+                egui::Align2::CENTER_CENTER,
+                egui_phosphor::regular::FOLDER_SIMPLE,
+                egui::FontId::proportional(14.0),
+                icon_color,
+            );
+            ui.painter().text(
+                egui::pos2(icon_x + 22.0, text_y),
                 egui::Align2::LEFT_CENTER,
                 &folder.name,
                 egui::FontId::proportional(13.0),
@@ -2729,7 +2779,11 @@ impl ApiClient {
                     .rounding(10.0)
                     .inner_margin(10.0)
                     .show(ui, |ui| {
-                        ui.label(egui::RichText::new(msg).color(text()).size(13.0));
+                        ui.set_min_width(160.0);
+                        ui.add(
+                            egui::Label::new(egui::RichText::new(msg).color(text()).size(13.0))
+                                .extend(),
+                        );
                     });
             });
     }
