@@ -28,6 +28,12 @@ upgrades read old files cleanly.
   or folder scope, active environment selection, and explicit data-row text.
   Missing folder or environment references fall back gracefully when loaded.
 
+### Security
+- **Secret scanner for collection exports.** JSON/YAML exports now run
+  a local-only scan for common token/key patterns and sensitive key
+  names before opening the save dialog. When likely secrets are found,
+  users can cancel, export the original file, or export a redacted copy.
+
 ## [0.23.0] — 2026-06-17
 
 ### Added

@@ -16,6 +16,7 @@ mod oauth;
 mod privacy;
 mod runner;
 mod runner_detail;
+mod secret_scanner;
 mod snippet;
 mod sse;
 mod theme;
@@ -40,6 +41,18 @@ struct InFlightRequest {
 struct InFlightCollectionRun {
     handle: tokio::task::JoinHandle<()>,
     rx: std::sync::mpsc::Receiver<runner::CollectionRunEvent>,
+}
+
+#[derive(Clone)]
+pub(crate) struct ExportSecretWarning {
+    format: io::Format,
+    findings: Vec<secret_scanner::SecretFinding>,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct ExportDecision {
+    format: io::Format,
+    redacted: bool,
 }
 
 /// Result of a successful OAuth2 flow, ready to be copied into the
@@ -223,6 +236,8 @@ struct ApiClient {
     pending_import: bool,
     pending_export_json: bool,
     pending_export_yaml: bool,
+    export_secret_warning: Option<ExportSecretWarning>,
+    pending_export_decision: Option<ExportDecision>,
     /// Text to copy to the clipboard at the top of the next frame.
     /// Used by palette-dispatched actions (e.g. Copy as cURL) that
     /// don't have direct access to `egui::Context` for `ctx.copy_text`.
@@ -501,6 +516,8 @@ impl Default for ApiClient {
             pending_import: false,
             pending_export_json: false,
             pending_export_yaml: false,
+            export_secret_warning: None,
+            pending_export_decision: None,
             pending_clipboard: None,
             startup_warning: None,
             update_check_rx: None,
@@ -1937,18 +1954,41 @@ impl ApiClient {
         }
     }
 
-    fn do_export_all(&mut self, format: io::Format) {
+    fn request_export_all(&mut self, format: io::Format) {
+        let findings = secret_scanner::scan_folders(&self.state.folders);
+        if findings.is_empty() {
+            self.pending_export_decision = Some(ExportDecision {
+                format,
+                redacted: false,
+            });
+        } else {
+            self.export_secret_warning = Some(ExportSecretWarning { format, findings });
+        }
+    }
+
+    fn do_export_all(&mut self, format: io::Format, redacted: bool) {
         let (ext, label) = match format {
             io::Format::Json => ("json", "JSON"),
             io::Format::Yaml => ("yaml", "YAML"),
         };
+        let suggested = if redacted {
+            format!("rusty-requester.redacted.{}", ext)
+        } else {
+            format!("rusty-requester.{}", ext)
+        };
         let path = rfd::FileDialog::new()
             .add_filter(label, &[ext])
-            .set_file_name(format!("rusty-requester.{}", ext))
+            .set_file_name(suggested)
             .save_file();
         let Some(path) = path else { return };
-        match io::export_string(&self.state.folders, format) {
+        let export_result = if redacted {
+            io::export_string_redacted(&self.state.folders, format)
+        } else {
+            io::export_string(&self.state.folders, format)
+        };
+        match export_result {
             Ok(content) => match std::fs::write(&path, content) {
+                Ok(_) if redacted => self.show_toast(format!("Exported redacted {}", label)),
                 Ok(_) => self.show_toast(format!("Exported as {}", label)),
                 Err(e) => self.show_toast(format!("Write failed: {}", e)),
             },
@@ -1990,8 +2030,18 @@ impl ApiClient {
             .set_file_name(&suggested)
             .save_file();
         let Some(path) = path else { return };
-        match io::export_string(std::slice::from_ref(&folder), format) {
+        let findings = secret_scanner::scan_folders(std::slice::from_ref(&folder));
+        let redacted = !findings.is_empty();
+        let export_result = if redacted {
+            io::export_string_redacted(std::slice::from_ref(&folder), format)
+        } else {
+            io::export_string(std::slice::from_ref(&folder), format)
+        };
+        match export_result {
             Ok(content) => match std::fs::write(&path, content) {
+                Ok(_) if redacted => {
+                    self.show_toast(format!("Exported '{}' as redacted {}", folder.name, label))
+                }
                 Ok(_) => self.show_toast(format!("Exported '{}' as {}", folder.name, label)),
                 Err(e) => self.show_toast(format!("Write failed: {}", e)),
             },
@@ -2213,11 +2263,14 @@ impl eframe::App for ApiClient {
         }
         if self.pending_export_json {
             self.pending_export_json = false;
-            self.do_export_all(io::Format::Json);
+            self.request_export_all(io::Format::Json);
         }
         if self.pending_export_yaml {
             self.pending_export_yaml = false;
-            self.do_export_all(io::Format::Yaml);
+            self.request_export_all(io::Format::Yaml);
+        }
+        if let Some(decision) = self.pending_export_decision.take() {
+            self.do_export_all(decision.format, decision.redacted);
         }
         if let Some(text) = self.pending_clipboard.take() {
             ctx.copy_text(text);
@@ -2267,6 +2320,7 @@ impl eframe::App for ApiClient {
             && !self.show_runner_modal
             && !self.show_backup_modal
             && !self.show_about_modal
+            && self.export_secret_warning.is_none()
             && !self.save_draft_open
             && self.confirm_close_draft_idx.is_none()
             && self.renaming_request_id.is_none()
@@ -2515,6 +2569,7 @@ impl eframe::App for ApiClient {
         self.render_settings_modal(ctx);
         self.render_update_modal(ctx);
         self.render_updating_modal(ctx);
+        self.render_export_secret_warning_modal(ctx);
         self.render_post_update_banner(ctx);
         self.render_save_draft_modal(ctx);
         self.render_confirm_close_draft(ctx);
