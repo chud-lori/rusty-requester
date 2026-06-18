@@ -47,12 +47,8 @@ impl ApiClient {
         egui::Window::new("Collection settings")
             .title_bar(false)
             .collapsible(false)
-            .resizable(true)
-            .default_size(egui::vec2(820.0, 560.0))
-            .min_width(720.0)
-            .min_height(480.0)
-            .max_width(940.0)
-            .max_height(680.0)
+            .resizable(false)
+            .fixed_size(egui::vec2(780.0, 520.0))
             .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
             .open(&mut open)
             .show(ctx, |ui| {
@@ -73,36 +69,41 @@ impl ApiClient {
                         ui.add_space(12.0);
 
                         let content_height = (ui.available_height() - 48.0).max(300.0);
-                        ui.horizontal(|ui| {
-                            ui.set_min_height(content_height);
-                            ui.vertical(|ui| {
-                                ui.set_width(176.0);
-                                render_section_picker(
-                                    ui,
-                                    &mut self.collection_settings_section,
-                                    git_ready,
-                                    is_git_repo,
-                                    openapi_ready,
-                                );
-                            });
+                        ui.horizontal_top(|ui| {
+                            ui.allocate_ui_with_layout(
+                                egui::vec2(176.0, content_height),
+                                egui::Layout::top_down(egui::Align::Min),
+                                |ui| {
+                                    ui.set_width(176.0);
+                                    ui.set_min_height(content_height);
+                                    ui.set_clip_rect(ui.max_rect());
+                                    render_section_picker(
+                                        ui,
+                                        &mut self.collection_settings_section,
+                                        git_ready,
+                                        is_git_repo,
+                                        openapi_ready,
+                                    );
+                                },
+                            );
 
                             ui.add_space(10.0);
                             ui.separator();
                             ui.add_space(10.0);
 
-                            egui::Frame::none()
-                                .fill(panel_dark())
-                                .stroke(egui::Stroke::new(1.0, border()))
-                                .rounding(egui::Rounding::same(8.0))
-                                .inner_margin(egui::Margin::symmetric(16.0, 14.0))
-                                .show(ui, |ui| {
-                                    ui.set_min_width(480.0);
-                                    ui.set_min_height(content_height - 2.0);
+                            let detail_width = ui.available_width().clamp(480.0, 540.0);
+                            ui.allocate_ui_with_layout(
+                                egui::vec2(detail_width, content_height),
+                                egui::Layout::top_down(egui::Align::Min),
+                                |ui| {
+                                    ui.set_width(detail_width);
+                                    ui.set_min_height(content_height);
                                     egui::ScrollArea::vertical()
                                         .id_salt("collection_settings_detail")
                                         .auto_shrink([false, false])
-                                        .max_height(content_height - 4.0)
+                                        .max_height(content_height)
                                         .show(ui, |ui| {
+                                            ui.set_width(detail_width - 8.0);
                                             match self.collection_settings_section {
                                                 CollectionSettingsSection::Directory => {
                                                     directory_section(
@@ -146,7 +147,8 @@ impl ApiClient {
                                                 sync_status(ui, &sync.label);
                                             }
                                         });
-                                });
+                                },
+                            );
                         });
 
                         ui.add_space(10.0);
@@ -363,21 +365,14 @@ fn directory_section(
         "Export this collection as reviewable .rr files. Use a Git repository root if you want pull and push actions.",
     );
     ui.add_space(12.0);
-    field_row(ui, "Directory", |ui| {
-        let button_w = 92.0;
-        let response = ui.add(
-            egui::TextEdit::singleline(git_workspace_dir)
-                .hint_text(hint("/path/to/collection-repo"))
-                .desired_width((ui.available_width() - button_w - 10.0).max(260.0)),
-        );
-        *changed |= response.changed();
-        if ui
-            .add_sized([button_w, 30.0], egui::Button::new("Choose..."))
-            .clicked()
-        {
-            actions.choose_git_dir = true;
-        }
-    });
+    path_field_group(
+        ui,
+        "Directory",
+        git_workspace_dir,
+        "/path/to/collection-repo",
+        changed,
+        || actions.choose_git_dir = true,
+    );
     if git_ready && !is_git_repo {
         ui.add_space(8.0);
         status_note(
@@ -387,15 +382,21 @@ fn directory_section(
         );
     }
     ui.add_space(12.0);
-    ui.horizontal_wrapped(|ui| {
+    ui.horizontal(|ui| {
         if ui
-            .add_enabled(git_ready && !busy, egui::Button::new("Import from folder"))
+            .add_enabled(
+                git_ready && !busy,
+                egui::Button::new("Import from folder").min_size(egui::vec2(132.0, 30.0)),
+            )
             .clicked()
         {
             actions.import_workspace = true;
         }
         if ui
-            .add_enabled(git_ready && !busy, egui::Button::new("Export to folder"))
+            .add_enabled(
+                git_ready && !busy,
+                egui::Button::new("Export to folder").min_size(egui::vec2(132.0, 30.0)),
+            )
             .clicked()
         {
             actions.export_workspace = true;
@@ -427,23 +428,21 @@ fn secrets_section(ui: &mut egui::Ui, sync: &mut crate::model::SyncConfig, chang
         .color(muted()),
     );
     ui.add_space(14.0);
-    field_row(ui, "Always mask", |ui| {
-        let response = ui.add(
-            egui::TextEdit::singleline(&mut sync.mask_key_patterns)
-                .hint_text(hint("x-api-key, token, authorization"))
-                .desired_width(ui.available_width()),
-        );
-        *changed |= response.changed();
-    });
+    text_field_group(
+        ui,
+        "Always mask",
+        &mut sync.mask_key_patterns,
+        "x-api-key, token, authorization",
+        changed,
+    );
     ui.add_space(8.0);
-    field_row(ui, "Keep readable", |ui| {
-        let response = ui.add(
-            egui::TextEdit::singleline(&mut sync.allow_key_patterns)
-                .hint_text(hint("platform, env, app-version"))
-                .desired_width(ui.available_width()),
-        );
-        *changed |= response.changed();
-    });
+    text_field_group(
+        ui,
+        "Keep readable",
+        &mut sync.allow_key_patterns,
+        "platform, env, app-version",
+        changed,
+    );
 }
 
 fn git_section(
@@ -461,30 +460,38 @@ fn git_section(
         "Pull, review, commit, and push through your existing local Git credentials. Rusty Requester does not store provider tokens.",
     );
     ui.add_space(12.0);
-    field_row(ui, "Commit", |ui| {
-        let response = ui.add(
-            egui::TextEdit::singleline(git_commit_message)
-                .hint_text(hint("Sync Rusty Requester collection"))
-                .desired_width(ui.available_width()),
-        );
-        *changed |= response.changed();
-    });
+    text_field_group(
+        ui,
+        "Commit",
+        git_commit_message,
+        "Sync Rusty Requester collection",
+        changed,
+    );
     ui.add_space(14.0);
-    ui.horizontal_wrapped(|ui| {
+    ui.horizontal(|ui| {
         if ui
-            .add_enabled(is_git_repo && !busy, egui::Button::new("Refresh changes"))
+            .add_enabled(
+                is_git_repo && !busy,
+                egui::Button::new("Refresh changes").min_size(egui::vec2(130.0, 30.0)),
+            )
             .clicked()
         {
             actions.refresh_git_status = true;
         }
         if ui
-            .add_enabled(is_git_repo && !busy, egui::Button::new("Pull from remote"))
+            .add_enabled(
+                is_git_repo && !busy,
+                egui::Button::new("Pull from remote").min_size(egui::vec2(130.0, 30.0)),
+            )
             .clicked()
         {
             actions.pull_remote = true;
         }
         if ui
-            .add_enabled(is_git_repo && !busy, egui::Button::new("Commit and push"))
+            .add_enabled(
+                is_git_repo && !busy,
+                egui::Button::new("Commit and push").min_size(egui::vec2(130.0, 30.0)),
+            )
             .clicked()
         {
             actions.push_remote = true;
@@ -529,26 +536,19 @@ fn openapi_section(
         "Regenerate requests from a local OpenAPI JSON or YAML file without replacing your whole app workspace.",
     );
     ui.add_space(12.0);
-    field_row(ui, "Spec file", |ui| {
-        let button_w = 92.0;
-        let response = ui.add(
-            egui::TextEdit::singleline(openapi_spec_path)
-                .hint_text(hint("/path/to/openapi.yaml"))
-                .desired_width((ui.available_width() - button_w - 10.0).max(260.0)),
-        );
-        *changed |= response.changed();
-        if ui
-            .add_sized([button_w, 30.0], egui::Button::new("Choose..."))
-            .clicked()
-        {
-            actions.choose_openapi_file = true;
-        }
-    });
+    path_field_group(
+        ui,
+        "Spec file",
+        openapi_spec_path,
+        "/path/to/openapi.yaml",
+        changed,
+        || actions.choose_openapi_file = true,
+    );
     ui.add_space(14.0);
     if ui
         .add_enabled(
             openapi_ready && !busy,
-            egui::Button::new("Refresh collection from OpenAPI"),
+            egui::Button::new("Refresh collection from OpenAPI").min_size(egui::vec2(224.0, 30.0)),
         )
         .clicked()
     {
@@ -562,15 +562,47 @@ fn section_header(ui: &mut egui::Ui, title: &str, description: &str) {
     ui.label(egui::RichText::new(description).size(11.0).color(muted()));
 }
 
-fn field_row(ui: &mut egui::Ui, label: &str, add_field: impl FnOnce(&mut egui::Ui)) {
+fn path_field_group(
+    ui: &mut egui::Ui,
+    label: &str,
+    value: &mut String,
+    placeholder: &str,
+    changed: &mut bool,
+    mut choose: impl FnMut(),
+) {
+    ui.label(egui::RichText::new(label).size(11.0).color(muted()));
+    ui.add_space(3.0);
     ui.horizontal(|ui| {
-        ui.set_min_height(32.0);
-        ui.add_sized(
-            egui::vec2(84.0, 24.0),
-            egui::Label::new(egui::RichText::new(label).size(11.0).color(muted())),
+        let button_w = 96.0;
+        let input_w = (ui.available_width() - button_w - 8.0).max(300.0);
+        let response = ui.add_sized(
+            [input_w, 30.0],
+            egui::TextEdit::singleline(value).hint_text(hint(placeholder)),
         );
-        add_field(ui);
+        *changed |= response.changed();
+        if ui
+            .add_sized([button_w, 30.0], egui::Button::new("Choose..."))
+            .clicked()
+        {
+            choose();
+        }
     });
+}
+
+fn text_field_group(
+    ui: &mut egui::Ui,
+    label: &str,
+    value: &mut String,
+    placeholder: &str,
+    changed: &mut bool,
+) {
+    ui.label(egui::RichText::new(label).size(11.0).color(muted()));
+    ui.add_space(3.0);
+    let response = ui.add_sized(
+        [ui.available_width().max(360.0), 30.0],
+        egui::TextEdit::singleline(value).hint_text(hint(placeholder)),
+    );
+    *changed |= response.changed();
 }
 
 fn sync_status(ui: &mut egui::Ui, label: &str) {
