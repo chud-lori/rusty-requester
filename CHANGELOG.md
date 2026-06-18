@@ -11,6 +11,14 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Fixed
+- **Collection Settings layout.** The collection settings modal now uses a
+  wider two-column layout with a left status rail and grouped right-side
+  controls, making Git, masking, folder export, and OpenAPI options easier to
+  scan.
+
 ## [0.27.0] — 2026-06-18
 
 ### Added
