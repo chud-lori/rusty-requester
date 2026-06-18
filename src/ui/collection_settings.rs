@@ -48,10 +48,11 @@ impl ApiClient {
             .title_bar(false)
             .collapsible(false)
             .resizable(true)
-            .default_width(920.0)
-            .default_height(620.0)
-            .min_width(760.0)
-            .min_height(520.0)
+            .default_size(egui::vec2(900.0, 620.0))
+            .min_width(660.0)
+            .min_height(500.0)
+            .max_width(1040.0)
+            .max_height(760.0)
             .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
             .open(&mut open)
             .show(ctx, |ui| {
@@ -71,71 +72,94 @@ impl ApiClient {
                         ui.separator();
                         ui.add_space(12.0);
 
-                        let content_height = (ui.available_height() - 48.0).max(360.0);
-                        ui.horizontal(|ui| {
-                            ui.set_min_height(content_height);
-                            render_section_picker(
-                                ui,
-                                &mut self.collection_settings_section,
-                                git_ready,
-                                is_git_repo,
-                                openapi_ready,
-                            );
+                        let footer_height = 46.0;
+                        let content_height = (ui.available_height() - footer_height).max(320.0);
+                        let content_width = ui.available_width().max(1.0);
+                        let (content_rect, _) = ui.allocate_exact_size(
+                            egui::vec2(content_width, content_height),
+                            egui::Sense::hover(),
+                        );
+                        let nav_width = 210.0_f32.min((content_rect.width() * 0.34).max(180.0));
+                        let gap = 16.0;
+                        let nav_rect = egui::Rect::from_min_max(
+                            content_rect.min,
+                            egui::pos2(content_rect.left() + nav_width, content_rect.bottom()),
+                        );
+                        let detail_rect = egui::Rect::from_min_max(
+                            egui::pos2(content_rect.left() + nav_width + gap, content_rect.top()),
+                            content_rect.max,
+                        );
+                        let divider_x = content_rect.left() + nav_width + gap * 0.5;
+                        ui.painter().line_segment(
+                            [
+                                egui::pos2(divider_x, content_rect.top()),
+                                egui::pos2(divider_x, content_rect.bottom()),
+                            ],
+                            egui::Stroke::new(1.0, border()),
+                        );
 
-                            ui.add_space(10.0);
-                            ui.separator();
-                            ui.add_space(12.0);
+                        let mut nav_ui = ui.new_child(egui::UiBuilder::new().max_rect(nav_rect));
+                        nav_ui.set_clip_rect(nav_rect);
+                        render_section_picker(
+                            &mut nav_ui,
+                            &mut self.collection_settings_section,
+                            git_ready,
+                            is_git_repo,
+                            openapi_ready,
+                        );
 
-                            egui::ScrollArea::vertical()
-                                .id_salt("collection_settings_detail")
-                                .auto_shrink([false, false])
-                                .max_height(content_height)
-                                .show(ui, |ui| {
-                                    ui.set_min_width((ui.available_width() - 8.0).max(520.0));
-                                    match self.collection_settings_section {
-                                        CollectionSettingsSection::Directory => {
-                                            directory_section(
-                                                ui,
-                                                &mut sync.git_workspace_dir,
-                                                git_ready,
-                                                is_git_repo,
-                                                busy,
-                                                &mut changed,
-                                                &mut actions,
-                                            );
-                                        }
-                                        CollectionSettingsSection::Secrets => {
-                                            secrets_section(ui, &mut sync, &mut changed);
-                                        }
-                                        CollectionSettingsSection::Git => {
-                                            git_section(
-                                                ui,
-                                                &mut sync.git_commit_message,
-                                                is_git_repo,
-                                                busy,
-                                                &self.collection_git_status,
-                                                &mut changed,
-                                                &mut actions,
-                                            );
-                                        }
-                                        CollectionSettingsSection::OpenApi => {
-                                            openapi_section(
-                                                ui,
-                                                &mut sync.openapi_spec_path,
-                                                openapi_ready,
-                                                busy,
-                                                &mut changed,
-                                                &mut actions,
-                                            );
-                                        }
+                        let mut detail_ui =
+                            ui.new_child(egui::UiBuilder::new().max_rect(detail_rect));
+                        detail_ui.set_clip_rect(detail_rect);
+                        egui::ScrollArea::vertical()
+                            .id_salt("collection_settings_detail")
+                            .auto_shrink([false, false])
+                            .max_height(content_height)
+                            .show(&mut detail_ui, |ui| {
+                                ui.set_width(ui.available_width().max(360.0));
+                                match self.collection_settings_section {
+                                    CollectionSettingsSection::Directory => {
+                                        directory_section(
+                                            ui,
+                                            &mut sync.git_workspace_dir,
+                                            git_ready,
+                                            is_git_repo,
+                                            busy,
+                                            &mut changed,
+                                            &mut actions,
+                                        );
                                     }
-
-                                    if let Some(sync) = &self.sync_in_flight {
-                                        ui.add_space(12.0);
-                                        sync_status(ui, &sync.label);
+                                    CollectionSettingsSection::Secrets => {
+                                        secrets_section(ui, &mut sync, &mut changed);
                                     }
-                                });
-                        });
+                                    CollectionSettingsSection::Git => {
+                                        git_section(
+                                            ui,
+                                            &mut sync.git_commit_message,
+                                            is_git_repo,
+                                            busy,
+                                            &self.collection_git_status,
+                                            &mut changed,
+                                            &mut actions,
+                                        );
+                                    }
+                                    CollectionSettingsSection::OpenApi => {
+                                        openapi_section(
+                                            ui,
+                                            &mut sync.openapi_spec_path,
+                                            openapi_ready,
+                                            busy,
+                                            &mut changed,
+                                            &mut actions,
+                                        );
+                                    }
+                                }
+
+                                if let Some(sync) = &self.sync_in_flight {
+                                    ui.add_space(12.0);
+                                    sync_status(ui, &sync.label);
+                                }
+                            });
 
                         ui.add_space(10.0);
                         ui.separator();

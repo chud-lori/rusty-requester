@@ -460,12 +460,7 @@ impl ApiClient {
             );
             let mut view = requested_view;
             ui.horizontal(|ui| {
-                ui.label(
-                    egui::RichText::new("View")
-                        .size(11.0)
-                        .color(muted())
-                        .strong(),
-                );
+                ui.spacing_mut().item_spacing.x = 10.0;
                 render_body_view_selector(
                     ui,
                     &mut view,
