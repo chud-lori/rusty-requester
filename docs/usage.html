@@ -143,6 +143,52 @@ th { color: var(--dim); font-size: 0.78rem; letter-spacing: 0.06em; text-transfo
   padding: 14px 18px;
 }
 .topbar .brand { margin: 0; }
+.mobile-nav {
+  margin-top: 12px;
+}
+.mobile-nav summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 38px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  list-style: none;
+  font-weight: 650;
+}
+.mobile-nav summary::-webkit-details-marker { display: none; }
+.mobile-nav summary::after {
+  content: "⌄";
+  color: var(--muted);
+}
+.mobile-nav[open] summary::after {
+  content: "⌃";
+}
+.mobile-nav .mobile-nav-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.mobile-nav a {
+  padding: 7px 8px;
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+.mobile-nav a:hover {
+  background: var(--surface-2);
+  color: var(--text);
+  text-decoration: none;
+}
 .content {
   max-width: 1060px;
   width: 100%;
@@ -274,11 +320,38 @@ th { color: var(--dim); font-size: 0.78rem; letter-spacing: 0.06em; text-transfo
   .grid, .grid-3 { grid-template-columns: 1fr; }
   h2 { margin-top: 44px; }
 }
+@media (max-width: 560px) {
+  .mobile-nav .mobile-nav-grid { grid-template-columns: 1fr; }
+}
 </style>
 </head>
 <body>
 <div class="topbar">
   <a class="brand" href="./index.html"><img src="./icon.svg" alt="" />Rusty Requester Docs</a>
+  <details class="mobile-nav">
+    <summary>Sections</summary>
+    <nav class="mobile-nav-grid">
+      <a href="#overview">Overview</a>
+      <a href="#install">Install and update</a>
+      <a href="#first-request">First request</a>
+      <a href="#workspace">Workspace model</a>
+      <a href="#request-builder">Request builder</a>
+      <a href="#auth">Authentication</a>
+      <a href="#environments">Environments</a>
+      <a href="#responses">Responses</a>
+      <a href="#collections">Collections</a>
+      <a href="#runner">Collection Runner</a>
+      <a href="#curl">cURL and snippets</a>
+      <a href="#openapi">OpenAPI and Postman</a>
+      <a href="#git-workspace">Git workspace export</a>
+      <a href="#safe-sharing">Safe sharing</a>
+      <a href="#backups">Backups</a>
+      <a href="#shortcuts">Shortcuts</a>
+      <a href="#settings">Settings</a>
+      <a href="#troubleshooting">Troubleshooting</a>
+      <a href="#links">More links</a>
+    </nav>
+  </details>
 </div>
 
 <div class="layout">
@@ -604,12 +677,16 @@ requests/
   001-my-api-collection-id/
     001-login-request-id.rr
     001-users-folder-id/
-      001-list-users-request-id.rr</code></pre>
+      001-list-users-request-id.rr
+environments/
+  001-local-env-local.rrenv</code></pre>
       <ul>
-        <li>One readable <code>.rr</code> file per request, containing pretty JSON.</li>
+        <li>One readable native <code>.rr</code> file per request.</li>
+        <li>One readable <code>.rrenv</code> file per environment.</li>
         <li>Stable IDs for round trips.</li>
         <li>Deterministic ordering for cleaner diffs.</li>
         <li>Secret masking by default for safer commits.</li>
+        <li>Collection-level mask/allow key patterns for shared headers and env keys.</li>
         <li>Free Git UI: status/diff summary, pull, export, commit, and push.</li>
       </ul>
       <p>The older <strong>Workspace Sync...</strong> modal is still available for whole-workspace import/export, but collection settings are the recommended path for team Git review.</p>

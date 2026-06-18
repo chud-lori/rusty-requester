@@ -11,6 +11,26 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Added
+- **Native reviewable workspace files.** Git workspace exports now write `.rr`
+  request files in Rusty Requester's own compact text format instead of plain
+  JSON, keep legacy `.json` request imports working, and include
+  `environments/*.rrenv` plus a Git-safe `.gitignore` for local secret overlays.
+- **Collection export mask rules.** Collection Settings now lets users choose
+  comma-separated key/header/env patterns that should always be masked, plus
+  patterns that are safe to keep readable in Git exports.
+- **Cleaner update progress foundation.** In-app update progress is being
+  reshaped around compact status and animation primitives instead of log-first
+  modal chrome.
+
+### Fixed
+- **Manual update check accuracy.** Settings no longer reports "latest" when
+  the GitHub latest-release check failed; failures now show an explicit message.
+- **Mobile docs navigation.** The GitHub Pages usage docs now keep navigation
+  available on mobile through a native expandable section menu.
+
 ## [0.26.0] — 2026-06-17
 
 ### Added

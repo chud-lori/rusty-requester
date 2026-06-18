@@ -152,14 +152,17 @@ the original values.
 - Before collection export, Rusty Requester runs a local-only secret scan for common API keys, bearer/JWT-style tokens, OAuth/basic auth secrets, cookies, and sensitive key names such as `Authorization`, `token`, `password`, `client_secret`, and `api_key`. If likely secrets are found, you can cancel, continue with the original export, or export a redacted copy with likely secret values replaced by `[REDACTED]`. This scanner never uploads export content. It is heuristic: unusual secret formats may be missed, and placeholder or example values may still produce false positives.
 - **Git workspace format** — core import/export code can write a deterministic
   directory with `workspace.json` plus one readable `.rr` request file per
-  request. `.rr` files contain pretty JSON, preserve IDs for Git round-trips,
-  and mask secrets by default. See
+  request and one `.rrenv` file per environment. `.rr` is Rusty Requester's
+  compact text format, preserves IDs for Git round-trips, keeps legacy JSON
+  request imports working, and masks secrets by default. See
   [`GIT_WORKSPACE_FORMAT.md`](./GIT_WORKSPACE_FORMAT.md) for layout and
   merge-conflict expectations.
 - **Collection-level Git UI** — each top-level collection can point at its own
   local Git repository from **Collection settings...**. The free Git panel can
   show status/diff summary, pull from remote, export the collection, commit,
-  and push through your existing local Git credentials.
+  and push through your existing local Git credentials. Collection settings also
+  include custom mask/allow key patterns so shared headers like `platform` can
+  stay readable while `x-api-key` or similar values are forced masked.
 - **Workspace Sync** — optional, off by default in Settings. When enabled,
   **Workspace Sync…** lets you pull from a Git workspace directory, push a
   masked Git workspace snapshot, pull/push a Git remote through your local Git

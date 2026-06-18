@@ -80,6 +80,13 @@ pub(crate) enum UpdateCheckOutcome {
     Idle,
     Checking,
     NoUpdate,
+    Failed(String),
+}
+
+pub(crate) enum UpdateCheckMessage {
+    Available(String),
+    Current,
+    Failed(String),
 }
 
 /// In-memory snapshot of a request's last response so switching tabs
@@ -255,8 +262,7 @@ struct ApiClient {
     startup_warning: Option<String>,
     /// Background update-check receiver. Set on startup via
     /// `spawn_update_check`; drained on each `update()` frame.
-    /// `Some(version)` when a newer GitHub release is available.
-    update_check_rx: Option<std::sync::mpsc::Receiver<String>>,
+    update_check_rx: Option<std::sync::mpsc::Receiver<UpdateCheckMessage>>,
     /// Latest version string found by the update check, cached so the
     /// banner stays visible across frames. `None` = no update / not
     /// checked yet / current version is latest.
@@ -2238,25 +2244,31 @@ impl eframe::App for ApiClient {
         // user having to close the modal.
         if let Some(rx) = &self.update_check_rx {
             match rx.try_recv() {
-                Ok(new_version) => {
-                    self.update_available = Some(new_version);
-                    // Manual check now reflected via `update_available`;
-                    // reset the inline marker so we don't show "Checking"
-                    // alongside the available pill.
-                    if matches!(self.manual_update_check, UpdateCheckOutcome::Checking) {
-                        self.manual_update_check = UpdateCheckOutcome::Idle;
+                Ok(message) => {
+                    match message {
+                        UpdateCheckMessage::Available(new_version) => {
+                            self.update_available = Some(new_version);
+                            if matches!(self.manual_update_check, UpdateCheckOutcome::Checking) {
+                                self.manual_update_check = UpdateCheckOutcome::Idle;
+                            }
+                        }
+                        UpdateCheckMessage::Current => {
+                            if matches!(self.manual_update_check, UpdateCheckOutcome::Checking) {
+                                self.manual_update_check = UpdateCheckOutcome::NoUpdate;
+                            }
+                        }
+                        UpdateCheckMessage::Failed(reason) => {
+                            if matches!(self.manual_update_check, UpdateCheckOutcome::Checking) {
+                                self.manual_update_check = UpdateCheckOutcome::Failed(reason);
+                            }
+                        }
                     }
-                    // No auto-open: a modal on launch blocks users from
-                    // getting to work. The persistent sidebar pill is
-                    // unmissable but non-blocking — click it when ready.
                     self.update_check_rx = None;
                 }
                 Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                    // No message + sender dropped = no newer version
-                    // (`spawn_update_check` also swallows network errors
-                    // silently — treat as "no update found").
                     if matches!(self.manual_update_check, UpdateCheckOutcome::Checking) {
-                        self.manual_update_check = UpdateCheckOutcome::NoUpdate;
+                        self.manual_update_check =
+                            UpdateCheckOutcome::Failed("Update check stopped".to_string());
                     }
                     self.update_check_rx = None;
                 }
@@ -2773,7 +2785,7 @@ fn collect_flat_requests(
 /// no check at all).
 pub(crate) fn spawn_update_check(
     rt: &tokio::runtime::Runtime,
-) -> std::sync::mpsc::Receiver<String> {
+) -> std::sync::mpsc::Receiver<UpdateCheckMessage> {
     let (tx, rx) = std::sync::mpsc::channel();
     let current = env!("CARGO_PKG_VERSION").to_string();
     rt.spawn(async move {
@@ -2784,27 +2796,49 @@ pub(crate) fn spawn_update_check(
             .timeout(std::time::Duration::from_secs(5))
             .user_agent(format!("rusty-requester/{}", current))
             .build();
-        let Ok(client) = client else { return };
+        let Ok(client) = client else {
+            let _ = tx.send(UpdateCheckMessage::Failed(
+                "Could not create update client".to_string(),
+            ));
+            return;
+        };
         let resp = client
             .get("https://api.github.com/repos/chud-lori/rusty-requester/releases/latest")
             .header("Accept", "application/vnd.github+json")
             .send()
             .await;
-        let Ok(resp) = resp else { return };
+        let Ok(resp) = resp else {
+            let _ = tx.send(UpdateCheckMessage::Failed(
+                "Could not reach GitHub releases".to_string(),
+            ));
+            return;
+        };
         if !resp.status().is_success() {
+            let _ = tx.send(UpdateCheckMessage::Failed(format!(
+                "GitHub returned {}",
+                resp.status()
+            )));
             return;
         }
         let Ok(json) = resp.json::<serde_json::Value>().await else {
+            let _ = tx.send(UpdateCheckMessage::Failed(
+                "Could not parse GitHub release response".to_string(),
+            ));
             return;
         };
         let Some(tag) = json.get("tag_name").and_then(|v| v.as_str()) else {
+            let _ = tx.send(UpdateCheckMessage::Failed(
+                "GitHub response did not include a release tag".to_string(),
+            ));
             return;
         };
         // `tag_name` is `v0.13.0`; strip the `v` to compare with
         // `CARGO_PKG_VERSION`.
         let latest = tag.trim_start_matches('v');
         if is_newer_semver(latest, &current) {
-            let _ = tx.send(tag.to_string());
+            let _ = tx.send(UpdateCheckMessage::Available(tag.to_string()));
+        } else {
+            let _ = tx.send(UpdateCheckMessage::Current);
         }
     });
     rx

@@ -1,4 +1,4 @@
-use crate::model::{Auth, BodyExt, Folder, KvRow, OAuth2State, Request};
+use crate::model::{Auth, BodyExt, Environment, Folder, KvRow, OAuth2State, Request};
 use crate::privacy::{is_sensitive_key, mask_secret_value, redact_url_query_and_fragment};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -12,7 +12,9 @@ const FORMAT_NAME: &str = "rusty-requester-git-workspace";
 const FORMAT_VERSION: u32 = 1;
 const MANIFEST_FILE: &str = "workspace.json";
 const REQUESTS_DIR: &str = "requests";
+const ENVIRONMENTS_DIR: &str = "environments";
 const REQUEST_FILE_EXTENSION: &str = "rr";
+const ENV_FILE_EXTENSION: &str = "rrenv";
 const MAX_REQUEST_FILES: usize = 5_000;
 const MAX_FOLDER_DEPTH: usize = 32;
 const MAX_IMPORT_BYTES: u64 = 50 * 1024 * 1024;
@@ -27,23 +29,32 @@ pub enum SecretPolicy {
     Include,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ExportOptions {
     pub secret_policy: SecretPolicy,
+    pub mask_rules: MaskRules,
 }
 
 impl Default for ExportOptions {
     fn default() -> Self {
         Self {
             secret_policy: SecretPolicy::Mask,
+            mask_rules: MaskRules::default(),
         }
     }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct MaskRules {
+    pub mask_patterns: Vec<String>,
+    pub allow_patterns: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ExportSummary {
     pub manifest_path: PathBuf,
     pub request_files: usize,
+    pub environment_files: usize,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -51,6 +62,8 @@ struct Manifest {
     format: String,
     version: u32,
     secrets: ManifestSecretPolicy,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    environments: Vec<ManifestEnvironment>,
     folders: Vec<ManifestFolder>,
 }
 
@@ -79,29 +92,41 @@ struct ManifestRequest {
     path: String,
 }
 
+#[derive(Serialize, Deserialize)]
+struct ManifestEnvironment {
+    id: String,
+    path: String,
+}
+
+#[allow(dead_code)]
 pub fn export_workspace_to_dir(
     folders: &[Folder],
+    root: &Path,
+    options: ExportOptions,
+) -> Result<ExportSummary, String> {
+    export_workspace_with_environments_to_dir(folders, &[], root, options)
+}
+
+pub fn export_workspace_with_environments_to_dir(
+    folders: &[Folder],
+    environments: &[Environment],
     root: &Path,
     options: ExportOptions,
 ) -> Result<ExportSummary, String> {
     fs::create_dir_all(root).map_err(|e| format!("Create export directory: {}", e))?;
 
     let requests_root = root.join(REQUESTS_DIR);
-    if requests_root.exists() {
-        let meta = fs::symlink_metadata(&requests_root)
-            .map_err(|e| format!("Inspect request directory: {}", e))?;
-        if meta.file_type().is_symlink() {
-            return Err("Refusing to replace symlinked requests directory".to_string());
-        }
-        if !meta.is_dir() {
-            return Err("Refusing to replace non-directory requests path".to_string());
-        }
-        fs::remove_dir_all(&requests_root).map_err(|e| format!("Clean request files: {}", e))?;
-    }
+    replace_managed_dir(&requests_root, "requests")?;
     fs::create_dir_all(&requests_root).map_err(|e| format!("Create request directory: {}", e))?;
 
+    let environments_root = root.join(ENVIRONMENTS_DIR);
+    replace_managed_dir(&environments_root, "environments")?;
+    fs::create_dir_all(&environments_root)
+        .map_err(|e| format!("Create environments directory: {}", e))?;
+    write_workspace_gitignore(root)?;
+
     let mut request_files = Vec::new();
-    let folders = manifest_folders(folders, options, &mut request_files)?;
+    let folders = manifest_folders(folders, options.clone(), &mut request_files)?;
     request_files.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
 
     let mut seen_paths = BTreeSet::new();
@@ -116,8 +141,30 @@ pub fn export_workspace_to_dir(
         if let Some(parent) = full_path.parent() {
             fs::create_dir_all(parent).map_err(|e| format!("Create request directory: {}", e))?;
         }
-        write_json_file(&full_path, &request_file.request)
+        write_text_file(&full_path, &request_to_rr(&request_file.request)?)
             .map_err(|e| format!("Write {}: {}", full_path.display(), e))?;
+    }
+
+    let mut environment_files = manifest_environments(environments, options.clone());
+    environment_files.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
+    let mut seen_env_paths = BTreeSet::new();
+    for environment_file in &environment_files {
+        if !seen_env_paths.insert(environment_file.relative_path.clone()) {
+            return Err(format!(
+                "Duplicate environment export path generated: {}",
+                environment_file.relative_path.display()
+            ));
+        }
+        let full_path = root.join(&environment_file.relative_path);
+        if let Some(parent) = full_path.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|e| format!("Create environment directory: {}", e))?;
+        }
+        write_text_file(
+            &full_path,
+            &environment_to_rrenv(&environment_file.environment)?,
+        )
+        .map_err(|e| format!("Write {}: {}", full_path.display(), e))?;
     }
 
     let manifest = Manifest {
@@ -127,6 +174,15 @@ pub fn export_workspace_to_dir(
             SecretPolicy::Mask => ManifestSecretPolicy::Masked,
             SecretPolicy::Include => ManifestSecretPolicy::Included,
         },
+        environments: environment_files
+            .iter()
+            .map(|env| {
+                Ok(ManifestEnvironment {
+                    id: env.environment.id.clone(),
+                    path: path_to_manifest_string(&env.relative_path)?,
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?,
         folders,
     };
     let manifest_path = root.join(MANIFEST_FILE);
@@ -136,10 +192,22 @@ pub fn export_workspace_to_dir(
     Ok(ExportSummary {
         manifest_path,
         request_files: request_files.len(),
+        environment_files: environment_files.len(),
     })
 }
 
+#[allow(dead_code)]
 pub fn import_workspace_from_dir(root: &Path) -> Result<Vec<Folder>, String> {
+    import_workspace_bundle_from_dir(root).map(|bundle| bundle.folders)
+}
+
+#[derive(Clone, Debug)]
+pub struct WorkspaceBundle {
+    pub folders: Vec<Folder>,
+    pub environments: Vec<Environment>,
+}
+
+pub fn import_workspace_bundle_from_dir(root: &Path) -> Result<WorkspaceBundle, String> {
     let manifest_path = root.join(MANIFEST_FILE);
     let mut budget = ImportBudget::default();
     let manifest_content = read_bounded_file(&manifest_path, &mut budget)?;
@@ -159,12 +227,35 @@ pub fn import_workspace_from_dir(root: &Path) -> Result<Vec<Folder>, String> {
         ));
     }
 
-    import_manifest_folders(root, &manifest.folders, &mut budget, 0)
+    Ok(WorkspaceBundle {
+        folders: import_manifest_folders(root, &manifest.folders, &mut budget, 0)?,
+        environments: import_manifest_environments(root, &manifest.environments, &mut budget)?,
+    })
 }
 
 struct RequestFile {
     relative_path: PathBuf,
     request: Request,
+}
+
+struct EnvironmentFile {
+    relative_path: PathBuf,
+    environment: Environment,
+}
+
+fn replace_managed_dir(path: &Path, label: &str) -> Result<(), String> {
+    if !path.exists() {
+        return Ok(());
+    }
+    let meta =
+        fs::symlink_metadata(path).map_err(|e| format!("Inspect {} directory: {}", label, e))?;
+    if meta.file_type().is_symlink() {
+        return Err(format!("Refusing to replace symlinked {} directory", label));
+    }
+    if !meta.is_dir() {
+        return Err(format!("Refusing to replace non-directory {} path", label));
+    }
+    fs::remove_dir_all(path).map_err(|e| format!("Clean {} files: {}", label, e))
 }
 
 fn manifest_folders(
@@ -176,7 +267,7 @@ fn manifest_folders(
     for (index, folder) in folders.iter().enumerate() {
         out.push(manifest_folder(
             folder,
-            options,
+            options.clone(),
             request_files,
             Vec::new(),
             index,
@@ -213,7 +304,7 @@ fn manifest_folder(
         });
         request_files.push(RequestFile {
             relative_path: request_path,
-            request: export_request(request, options.secret_policy),
+            request: export_request(request, &options),
         });
     }
 
@@ -221,7 +312,7 @@ fn manifest_folder(
     for (sub_index, subfolder) in folder.subfolders.iter().enumerate() {
         subfolders.push(manifest_folder(
             subfolder,
-            options,
+            options.clone(),
             request_files,
             parent_components.clone(),
             sub_index,
@@ -263,10 +354,14 @@ fn import_manifest_folders(
             }
 
             let relative = validate_manifest_path(&request_ref.path)?;
-            let path = root.join(relative);
+            let path = root.join(&relative);
             let content = read_bounded_file(&path, budget)?;
-            let request: Request = serde_json::from_str(&content)
-                .map_err(|e| format!("Parse {}: {}", path.display(), e))?;
+            let request = if relative.extension() == Some(OsStr::new("json")) {
+                serde_json::from_str(&content)
+                    .map_err(|e| format!("Parse {}: {}", path.display(), e))?
+            } else {
+                rr_to_request(&content).map_err(|e| format!("Parse {}: {}", path.display(), e))?
+            };
             if request.id != request_ref.id {
                 return Err(format!(
                     "Request ID mismatch for {}: manifest has {}, file has {}",
@@ -288,10 +383,91 @@ fn import_manifest_folders(
     Ok(out)
 }
 
+fn manifest_environments(
+    environments: &[Environment],
+    options: ExportOptions,
+) -> Vec<EnvironmentFile> {
+    environments
+        .iter()
+        .enumerate()
+        .map(|(index, environment)| {
+            let mut path = PathBuf::from(ENVIRONMENTS_DIR);
+            path.push(format!(
+                "{}.{}",
+                path_component(index, &environment.name, &environment.id, "environment"),
+                ENV_FILE_EXTENSION
+            ));
+            EnvironmentFile {
+                relative_path: path,
+                environment: export_environment(environment, &options),
+            }
+        })
+        .collect()
+}
+
+fn import_manifest_environments(
+    root: &Path,
+    environments: &[ManifestEnvironment],
+    budget: &mut ImportBudget,
+) -> Result<Vec<Environment>, String> {
+    let mut out = Vec::with_capacity(environments.len());
+    for environment_ref in environments {
+        let relative = validate_environment_path(&environment_ref.path)?;
+        let path = root.join(relative);
+        let content = read_bounded_file(&path, budget)?;
+        let environment = rrenv_to_environment(&content)
+            .map_err(|e| format!("Parse {}: {}", path.display(), e))?;
+        if environment.id != environment_ref.id {
+            return Err(format!(
+                "Environment ID mismatch for {}: manifest has {}, file has {}",
+                environment_ref.path, environment_ref.id, environment.id
+            ));
+        }
+        out.push(environment);
+    }
+    Ok(out)
+}
+
 #[derive(Default)]
 struct ImportBudget {
     total_bytes: u64,
     request_files: usize,
+}
+
+fn validate_environment_path(path: &str) -> Result<PathBuf, String> {
+    let relative = PathBuf::from(path);
+    if relative.is_absolute() {
+        return Err(format!(
+            "Workspace environment path must be relative: {}",
+            path
+        ));
+    }
+    if relative.extension() != Some(OsStr::new(ENV_FILE_EXTENSION)) {
+        return Err(format!(
+            "Workspace environment path must be a .{} file: {}",
+            ENV_FILE_EXTENSION, path
+        ));
+    }
+
+    let mut components = relative.components();
+    match components.next() {
+        Some(Component::Normal(part)) if part == OsStr::new(ENVIRONMENTS_DIR) => {}
+        _ => {
+            return Err(format!(
+                "Workspace environment path must live under {}: {}",
+                ENVIRONMENTS_DIR, path
+            ));
+        }
+    }
+
+    for component in components {
+        match component {
+            Component::Normal(_) => {}
+            _ => return Err(format!("Workspace environment path escapes root: {}", path)),
+        }
+    }
+
+    Ok(relative)
 }
 
 fn read_bounded_file(path: &Path, budget: &mut ImportBudget) -> Result<String, String> {
@@ -357,47 +533,463 @@ fn validate_manifest_path(path: &str) -> Result<PathBuf, String> {
     Ok(relative)
 }
 
-fn export_request(request: &Request, secret_policy: SecretPolicy) -> Request {
-    match secret_policy {
+fn export_request(request: &Request, options: &ExportOptions) -> Request {
+    match options.secret_policy {
         SecretPolicy::Include => request.clone(),
-        SecretPolicy::Mask => mask_request(request),
+        SecretPolicy::Mask => mask_request(request, &options.mask_rules),
     }
 }
 
-fn mask_request(request: &Request) -> Request {
+fn export_environment(environment: &Environment, options: &ExportOptions) -> Environment {
+    match options.secret_policy {
+        SecretPolicy::Include => environment.clone(),
+        SecretPolicy::Mask => {
+            let mut environment = environment.clone();
+            environment.variables = mask_rows(&environment.variables, &options.mask_rules);
+            environment.cookies = environment
+                .cookies
+                .into_iter()
+                .map(|mut cookie| {
+                    cookie.value = mask_secret_value(&cookie.value);
+                    cookie
+                })
+                .collect();
+            environment
+        }
+    }
+}
+
+fn request_to_rr(request: &Request) -> Result<String, String> {
+    let mut out = String::new();
+    out.push_str("rr 1\n");
+    push_field(&mut out, "id", &request.id)?;
+    push_field(&mut out, "name", &request.name)?;
+    push_field(&mut out, "description", &request.description)?;
+    push_field(&mut out, "method", &request.method.to_string())?;
+    push_field(&mut out, "url", &request.url)?;
+    push_rows(&mut out, "query", &request.query_params)?;
+    push_rows(&mut out, "path", &request.path_params)?;
+    push_rows(&mut out, "headers", &request.headers)?;
+    push_rows(&mut out, "cookies", &request.cookies)?;
+    push_text_block(&mut out, "body", &request.body)?;
+    push_json_block(&mut out, "body_ext", &request.body_ext)?;
+    push_json_block(&mut out, "auth", &request.auth)?;
+    push_json_block(&mut out, "extractors", &request.extractors)?;
+    push_json_block(&mut out, "assertions", &request.assertions)?;
+    push_json_block(&mut out, "source", &request.source)?;
+    Ok(out)
+}
+
+fn rr_to_request(content: &str) -> Result<Request, String> {
+    let mut doc = RrDocument::parse(content, "rr 1")?;
+    let id = doc.take_required_field("id")?;
+    let name = doc.take_required_field("name")?;
+    let description = doc.take_field("description")?.unwrap_or_default();
+    let method = doc.take_required_field("method")?;
+    let method = serde_json::from_value(serde_json::Value::String(method))
+        .map_err(|e| format!("Invalid method: {}", e))?;
+    let url = doc.take_required_field("url")?;
+    let query_params = doc.take_rows("query")?;
+    let path_params = doc.take_rows("path")?;
+    let headers = doc.take_rows("headers")?;
+    let cookies = doc.take_rows("cookies")?;
+    let body = doc.take_text_block("body")?.unwrap_or_default();
+    let body_ext = doc
+        .take_json_block("body_ext")?
+        .map(|value| serde_json::from_value(value).map_err(|e| format!("Invalid body_ext: {}", e)))
+        .transpose()?
+        .unwrap_or(None);
+    let auth = doc
+        .take_json_block("auth")?
+        .map(|value| serde_json::from_value(value).map_err(|e| format!("Invalid auth: {}", e)))
+        .transpose()?
+        .unwrap_or_default();
+    let extractors = doc
+        .take_json_block("extractors")?
+        .map(|value| {
+            serde_json::from_value(value).map_err(|e| format!("Invalid extractors: {}", e))
+        })
+        .transpose()?
+        .unwrap_or_default();
+    let assertions = doc
+        .take_json_block("assertions")?
+        .map(|value| {
+            serde_json::from_value(value).map_err(|e| format!("Invalid assertions: {}", e))
+        })
+        .transpose()?
+        .unwrap_or_default();
+    let source = doc
+        .take_json_block("source")?
+        .map(|value| serde_json::from_value(value).map_err(|e| format!("Invalid source: {}", e)))
+        .transpose()?
+        .unwrap_or(None);
+    doc.reject_unknown()?;
+
+    Ok(Request {
+        id,
+        name,
+        description,
+        method,
+        url,
+        query_params,
+        path_params,
+        headers,
+        cookies,
+        body,
+        body_ext,
+        auth,
+        extractors,
+        assertions,
+        source,
+    })
+}
+
+fn environment_to_rrenv(environment: &Environment) -> Result<String, String> {
+    let mut out = String::new();
+    out.push_str("rrenv 1\n");
+    push_field(&mut out, "id", &environment.id)?;
+    push_field(&mut out, "name", &environment.name)?;
+    push_rows(&mut out, "variables", &environment.variables)?;
+    push_json_block(&mut out, "cookies", &environment.cookies)?;
+    Ok(out)
+}
+
+fn rrenv_to_environment(content: &str) -> Result<Environment, String> {
+    let mut doc = RrDocument::parse(content, "rrenv 1")?;
+    let id = doc.take_required_field("id")?;
+    let name = doc.take_required_field("name")?;
+    let variables = doc.take_rows("variables")?;
+    let cookies = doc
+        .take_json_block("cookies")?
+        .map(|value| serde_json::from_value(value).map_err(|e| format!("Invalid cookies: {}", e)))
+        .transpose()?
+        .unwrap_or_default();
+    doc.reject_unknown()?;
+
+    Ok(Environment {
+        id,
+        name,
+        variables,
+        cookies,
+    })
+}
+
+fn push_field(out: &mut String, key: &str, value: &str) -> Result<(), String> {
+    out.push_str(key);
+    out.push_str(": ");
+    out.push_str(&json_string(value)?);
+    out.push('\n');
+    Ok(())
+}
+
+fn push_rows(out: &mut String, section: &str, rows: &[KvRow]) -> Result<(), String> {
+    if rows.is_empty() {
+        return Ok(());
+    }
+    out.push('\n');
+    out.push('[');
+    out.push_str(section);
+    out.push_str("]\n");
+    for row in rows {
+        out.push(if row.enabled { '+' } else { '~' });
+        out.push(' ');
+        out.push_str(&json_string(&row.key)?);
+        out.push('\t');
+        out.push_str(&json_string(&row.value)?);
+        out.push('\t');
+        out.push_str(&json_string(&row.description)?);
+        out.push('\n');
+    }
+    Ok(())
+}
+
+fn push_text_block(out: &mut String, section: &str, value: &str) -> Result<(), String> {
+    if value.is_empty() {
+        return Ok(());
+    }
+    push_block(out, section, "text", value)
+}
+
+fn push_json_block<T: Serialize>(out: &mut String, section: &str, value: &T) -> Result<(), String> {
+    let value = serde_json::to_value(value).map_err(|e| e.to_string())?;
+    if value.is_null()
+        || value == serde_json::json!([])
+        || value == serde_json::json!({})
+        || value == serde_json::json!({"type": "None"})
+    {
+        return Ok(());
+    }
+    let text = serde_json::to_string_pretty(&value).map_err(|e| e.to_string())?;
+    push_block(out, section, "json", &text)
+}
+
+fn push_block(out: &mut String, section: &str, kind: &str, value: &str) -> Result<(), String> {
+    let delimiter = block_delimiter(value);
+    out.push('\n');
+    out.push('[');
+    out.push_str(section);
+    out.push_str("]\n");
+    out.push_str(kind);
+    out.push_str(" <<");
+    out.push_str(&delimiter);
+    out.push('\n');
+    out.push_str(value);
+    if !value.ends_with('\n') {
+        out.push('\n');
+    }
+    out.push_str(&delimiter);
+    out.push('\n');
+    Ok(())
+}
+
+fn block_delimiter(value: &str) -> String {
+    let mut suffix = 0;
+    loop {
+        let candidate = if suffix == 0 {
+            "RR_BLOCK".to_string()
+        } else {
+            format!("RR_BLOCK_{}", suffix)
+        };
+        if !value.lines().any(|line| line == candidate) {
+            return candidate;
+        }
+        suffix += 1;
+    }
+}
+
+fn json_string(value: &str) -> Result<String, String> {
+    serde_json::to_string(value).map_err(|e| e.to_string())
+}
+
+#[derive(Default)]
+struct RrDocument {
+    fields: std::collections::BTreeMap<String, String>,
+    sections: std::collections::BTreeMap<String, RrSection>,
+}
+
+#[derive(Default)]
+struct RrSection {
+    rows: Vec<KvRow>,
+    block: Option<RrBlock>,
+}
+
+struct RrBlock {
+    kind: String,
+    value: String,
+}
+
+impl RrDocument {
+    fn parse(content: &str, header: &str) -> Result<Self, String> {
+        let lines: Vec<&str> = content.lines().collect();
+        if lines.first().map(|line| line.trim()) != Some(header) {
+            return Err(format!("Expected {} header", header));
+        }
+
+        let mut doc = RrDocument::default();
+        let mut section: Option<String> = None;
+        let mut index = 1;
+        while index < lines.len() {
+            let line = lines[index];
+            let trimmed = line.trim();
+            index += 1;
+            if trimmed.is_empty() || trimmed.starts_with('#') {
+                continue;
+            }
+            if let Some(name) = trimmed.strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
+                section = Some(name.to_string());
+                doc.sections.entry(name.to_string()).or_default();
+                continue;
+            }
+
+            if let Some(section_name) = &section {
+                if let Some((kind, rest)) = trimmed.split_once(" <<") {
+                    let marker = rest.trim();
+                    if marker.is_empty() {
+                        return Err("Missing block marker".to_string());
+                    }
+                    let mut value = String::new();
+                    let mut closed = false;
+                    while index < lines.len() {
+                        let block_line = lines[index];
+                        index += 1;
+                        if block_line == marker {
+                            closed = true;
+                            break;
+                        }
+                        value.push_str(block_line);
+                        value.push('\n');
+                    }
+                    if !closed {
+                        return Err(format!("Unclosed block in [{}]", section_name));
+                    }
+                    if value.ends_with('\n') {
+                        value.pop();
+                    }
+                    doc.sections.entry(section_name.clone()).or_default().block = Some(RrBlock {
+                        kind: kind.trim().to_string(),
+                        value,
+                    });
+                    continue;
+                }
+                let row = parse_rr_row(trimmed)?;
+                doc.sections
+                    .entry(section_name.clone())
+                    .or_default()
+                    .rows
+                    .push(row);
+                continue;
+            }
+
+            let (key, value) = trimmed
+                .split_once(':')
+                .ok_or_else(|| format!("Expected field, got: {}", trimmed))?;
+            let value: String = serde_json::from_str(value.trim())
+                .map_err(|e| format!("Invalid field {}: {}", key.trim(), e))?;
+            doc.fields.insert(key.trim().to_string(), value);
+        }
+        Ok(doc)
+    }
+
+    fn take_required_field(&mut self, key: &str) -> Result<String, String> {
+        self.take_field(key)?
+            .ok_or_else(|| format!("Missing required field: {}", key))
+    }
+
+    fn take_field(&mut self, key: &str) -> Result<Option<String>, String> {
+        Ok(self.fields.remove(key))
+    }
+
+    fn take_rows(&mut self, section: &str) -> Result<Vec<KvRow>, String> {
+        Ok(self
+            .sections
+            .remove(section)
+            .map(|section| section.rows)
+            .unwrap_or_default())
+    }
+
+    fn take_text_block(&mut self, section: &str) -> Result<Option<String>, String> {
+        let section_name = section;
+        let Some(section) = self.sections.remove(section_name) else {
+            return Ok(None);
+        };
+        let Some(block) = section.block else {
+            return Ok(None);
+        };
+        if block.kind != "text" {
+            return Err(format!("Expected text block, got {}", block.kind));
+        }
+        Ok(Some(block.value))
+    }
+
+    fn take_json_block(&mut self, section: &str) -> Result<Option<serde_json::Value>, String> {
+        let section_name = section;
+        let Some(section) = self.sections.remove(section_name) else {
+            return Ok(None);
+        };
+        let Some(block) = section.block else {
+            return Ok(None);
+        };
+        if block.kind != "json" {
+            return Err(format!("Expected json block, got {}", block.kind));
+        }
+        serde_json::from_str(&block.value)
+            .map(Some)
+            .map_err(|e| format!("Invalid JSON block [{}]: {}", section_name, e))
+    }
+
+    fn reject_unknown(self) -> Result<(), String> {
+        if let Some(key) = self.fields.keys().next() {
+            return Err(format!("Unknown field: {}", key));
+        }
+        if let Some(key) = self.sections.keys().next() {
+            return Err(format!("Unknown section: {}", key));
+        }
+        Ok(())
+    }
+}
+
+fn parse_rr_row(line: &str) -> Result<KvRow, String> {
+    let (enabled, rest) = match line.chars().next() {
+        Some('+') => (true, &line[1..]),
+        Some('~') => (false, &line[1..]),
+        _ => return Err(format!("Expected row prefix + or ~, got: {}", line)),
+    };
+    let parts: Vec<&str> = rest.trim_start().splitn(3, '\t').collect();
+    if parts.len() != 3 {
+        return Err(format!("Expected tab-separated row: {}", line));
+    }
+    Ok(KvRow {
+        enabled,
+        key: serde_json::from_str(parts[0]).map_err(|e| format!("Invalid row key: {}", e))?,
+        value: serde_json::from_str(parts[1]).map_err(|e| format!("Invalid row value: {}", e))?,
+        description: serde_json::from_str(parts[2])
+            .map_err(|e| format!("Invalid row description: {}", e))?,
+    })
+}
+
+fn mask_request(request: &Request, rules: &MaskRules) -> Request {
     let mut request = request.clone();
     request.url = redact_url_query_and_fragment(&request.url);
-    request.query_params = mask_rows(&request.query_params);
-    request.path_params = mask_rows(&request.path_params);
-    request.headers = mask_rows(&request.headers);
-    request.cookies = mask_rows(&request.cookies);
-    request.body_ext = request.body_ext.map(mask_body_ext);
+    request.query_params = mask_rows(&request.query_params, rules);
+    request.path_params = mask_rows(&request.path_params, rules);
+    request.headers = mask_rows(&request.headers, rules);
+    request.cookies = mask_rows(&request.cookies, rules);
+    request.body_ext = request
+        .body_ext
+        .map(|body_ext| mask_body_ext(body_ext, rules));
     request.auth = mask_auth(&request.auth);
     request
 }
 
-fn mask_body_ext(body_ext: BodyExt) -> BodyExt {
+fn mask_body_ext(body_ext: BodyExt, rules: &MaskRules) -> BodyExt {
     match body_ext {
         BodyExt::FormUrlEncoded { fields } => BodyExt::FormUrlEncoded {
-            fields: mask_rows(&fields),
+            fields: mask_rows(&fields, rules),
         },
         BodyExt::MultipartForm { fields } => BodyExt::MultipartForm {
-            fields: mask_rows(&fields),
+            fields: mask_rows(&fields, rules),
         },
         BodyExt::GraphQL { variables } => BodyExt::GraphQL { variables },
     }
 }
 
-fn mask_rows(rows: &[KvRow]) -> Vec<KvRow> {
+fn mask_rows(rows: &[KvRow], rules: &MaskRules) -> Vec<KvRow> {
     rows.iter()
         .map(|row| {
             let mut row = row.clone();
-            if is_sensitive_key(&row.key) {
+            if should_mask_key(&row.key, rules) {
                 row.value = mask_secret_value(&row.value);
             }
             row
         })
         .collect()
+}
+
+fn should_mask_key(key: &str, rules: &MaskRules) -> bool {
+    let key = key.trim().to_ascii_lowercase();
+    if key.is_empty() {
+        return false;
+    }
+    if rules
+        .allow_patterns
+        .iter()
+        .any(|pattern| key_matches_pattern(&key, pattern))
+    {
+        return false;
+    }
+    is_sensitive_key(&key)
+        || rules
+            .mask_patterns
+            .iter()
+            .any(|pattern| key_matches_pattern(&key, pattern))
+}
+
+fn key_matches_pattern(normalized_key: &str, pattern: &str) -> bool {
+    let pattern = pattern.trim().to_ascii_lowercase();
+    if pattern.is_empty() {
+        return false;
+    }
+    normalized_key == pattern || normalized_key.contains(&pattern)
 }
 
 fn mask_auth(auth: &Auth) -> Auth {
@@ -428,6 +1020,34 @@ fn write_json_file<T: Serialize>(path: &Path, value: &T) -> io::Result<()> {
         .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
     file.write_all(b"\n")?;
     file.sync_all()
+}
+
+fn write_text_file(path: &Path, value: &str) -> io::Result<()> {
+    let mut file = fs::File::create(path)?;
+    file.write_all(value.as_bytes())?;
+    if !value.ends_with('\n') {
+        file.write_all(b"\n")?;
+    }
+    file.sync_all()
+}
+
+fn write_workspace_gitignore(root: &Path) -> Result<(), String> {
+    let path = root.join(".gitignore");
+    if path.exists() {
+        let meta = fs::symlink_metadata(&path)
+            .map_err(|e| format!("Inspect workspace .gitignore: {}", e))?;
+        if meta.file_type().is_symlink() {
+            return Err("Refusing to replace symlinked workspace .gitignore".to_string());
+        }
+        if !meta.is_file() {
+            return Err("Refusing to replace non-file workspace .gitignore".to_string());
+        }
+    }
+    write_text_file(
+        &path,
+        "# Rusty Requester local secret overlays\nsecrets/\n*.rrsecret\n",
+    )
+    .map_err(|e| format!("Write {}: {}", path.display(), e))
 }
 
 fn path_to_manifest_string(path: &Path) -> Result<String, String> {
@@ -504,6 +1124,7 @@ mod tests {
                 path_params: vec![KvRow::new("account_id", "acct_123")],
                 headers: vec![
                     KvRow::new("Content-Type", "application/json"),
+                    KvRow::new("platform", "android"),
                     KvRow::new("Authorization", "Bearer header-secret"),
                 ],
                 cookies: vec![KvRow::new("session_id", "cookie-secret")],
@@ -636,6 +1257,31 @@ mod tests {
     }
 
     #[test]
+    fn mask_rules_can_force_or_allow_keys() {
+        let root = temp_workspace("mask-rules");
+        export_workspace_to_dir(
+            &fixture_folders(),
+            &root,
+            ExportOptions {
+                secret_policy: SecretPolicy::Mask,
+                mask_rules: MaskRules {
+                    mask_patterns: vec!["platform".to_string()],
+                    allow_patterns: vec!["authorization".to_string()],
+                },
+            },
+        )
+        .unwrap();
+
+        let first_request =
+            read(root.join("requests/001-fixture-api-collection-1/001-create-widget-request-1.rr"));
+
+        assert!(first_request.contains("Bearer header-secret"));
+        assert!(!first_request.contains("\"android\""));
+        assert!(first_request.contains("\"*******\""));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn include_secrets_round_trips_without_data_loss_and_preserves_ids() {
         let root = temp_workspace("round-trip");
         let folders = fixture_folders();
@@ -645,6 +1291,7 @@ mod tests {
             &root,
             ExportOptions {
                 secret_policy: SecretPolicy::Include,
+                ..ExportOptions::default()
             },
         )
         .unwrap();
@@ -665,6 +1312,7 @@ mod tests {
             &root,
             ExportOptions {
                 secret_policy: SecretPolicy::Include,
+                ..ExportOptions::default()
             },
         )
         .unwrap();
@@ -673,7 +1321,9 @@ mod tests {
             root.join("requests/001-fixture-api-collection-1/001-create-widget-request-1.rr");
         let json_path =
             root.join("requests/001-fixture-api-collection-1/001-create-widget-request-1.json");
+        let request = rr_to_request(&read(&rr_path)).unwrap();
         fs::rename(&rr_path, &json_path).unwrap();
+        write_json_file(&json_path, &request).unwrap();
 
         let manifest_path = root.join(MANIFEST_FILE);
         let mut manifest: serde_json::Value = serde_json::from_str(&read(&manifest_path)).unwrap();
@@ -714,15 +1364,16 @@ mod tests {
             &root,
             ExportOptions {
                 secret_policy: SecretPolicy::Include,
+                ..ExportOptions::default()
             },
         )
         .unwrap();
 
         let path =
             root.join("requests/001-fixture-api-collection-1/001-create-widget-request-1.rr");
-        let mut request: Request = serde_json::from_str(&read(&path)).unwrap();
+        let mut request = rr_to_request(&read(&path)).unwrap();
         request.id = "different".into();
-        write_json_file(&path, &request).unwrap();
+        write_text_file(&path, &request_to_rr(&request).unwrap()).unwrap();
 
         let err = import_workspace_from_dir(&root).unwrap_err();
         assert!(err.contains("Request ID mismatch"), "{err}");
@@ -741,6 +1392,33 @@ mod tests {
 
         let err = import_workspace_from_dir(&root).unwrap_err();
         assert!(err.contains("must live under requests"), "{err}");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn native_rr_round_trips_body_with_default_block_delimiter() {
+        let mut folders = fixture_folders();
+        folders[0].requests[0].body = "line one\nRR_BLOCK\nline two".to_string();
+        let root = temp_workspace("delimiter");
+
+        export_workspace_to_dir(
+            &folders,
+            &root,
+            ExportOptions {
+                secret_policy: SecretPolicy::Include,
+                ..ExportOptions::default()
+            },
+        )
+        .unwrap();
+        let request_file =
+            root.join("requests/001-fixture-api-collection-1/001-create-widget-request-1.rr");
+        let exported = read(&request_file);
+
+        assert!(exported.contains("text <<RR_BLOCK_1"));
+        assert_eq!(
+            import_workspace_from_dir(&root).unwrap()[0].requests[0].body,
+            "line one\nRR_BLOCK\nline two"
+        );
         let _ = fs::remove_dir_all(root);
     }
 }
