@@ -11,6 +11,14 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Fixed
+- **Collection Settings redesign.** The modal now uses a compact custom header,
+  clickable section picker, and focused detail pane instead of a non-clickable
+  status rail plus stacked settings that could still feel broken on wide
+  windows.
+
 ## [0.27.3] — 2026-06-18
 
 ### Fixed

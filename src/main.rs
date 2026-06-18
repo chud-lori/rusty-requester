@@ -185,6 +185,7 @@ struct ApiClient {
     show_sync_modal: bool,
     show_collection_settings_modal: bool,
     collection_settings_folder_id: Option<String>,
+    collection_settings_section: ui::collection_settings::CollectionSettingsSection,
     collection_git_status: String,
     confirm_restore_backup_path: Option<PathBuf>,
     runner_scope_folder_id: Option<String>,
@@ -499,6 +500,8 @@ impl Default for ApiClient {
             show_sync_modal: false,
             show_collection_settings_modal: false,
             collection_settings_folder_id: None,
+            collection_settings_section:
+                ui::collection_settings::CollectionSettingsSection::default(),
             collection_git_status: String::new(),
             confirm_restore_backup_path: None,
             runner_scope_folder_id: None,
@@ -1895,6 +1898,8 @@ impl ApiClient {
             return;
         }
         self.collection_settings_folder_id = Some(folder_id.to_string());
+        self.collection_settings_section =
+            ui::collection_settings::CollectionSettingsSection::Directory;
         self.collection_git_status.clear();
         self.show_collection_settings_modal = true;
     }
