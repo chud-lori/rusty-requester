@@ -11,6 +11,13 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Fixed
+- **Collection Settings layout density.** The modal now uses compact section
+  rows and a framed detail pane instead of oversized card-like navigation and
+  sparse controls that looked broken on wide windows.
+
 ## [0.27.5] — 2026-06-18
 
 ### Fixed
