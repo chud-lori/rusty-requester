@@ -11,7 +11,7 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
-## Unreleased
+## [0.27.4] — 2026-06-18
 
 ### Fixed
 - **Collection Settings redesign.** The modal now uses a compact custom header,
