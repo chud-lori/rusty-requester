@@ -48,11 +48,11 @@ impl ApiClient {
             .title_bar(false)
             .collapsible(false)
             .resizable(true)
-            .default_size(egui::vec2(900.0, 620.0))
-            .min_width(660.0)
-            .min_height(500.0)
-            .max_width(1040.0)
-            .max_height(760.0)
+            .default_size(egui::vec2(820.0, 560.0))
+            .min_width(720.0)
+            .min_height(480.0)
+            .max_width(940.0)
+            .max_height(680.0)
             .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
             .open(&mut open)
             .show(ctx, |ui| {
@@ -72,94 +72,82 @@ impl ApiClient {
                         ui.separator();
                         ui.add_space(12.0);
 
-                        let footer_height = 46.0;
-                        let content_height = (ui.available_height() - footer_height).max(320.0);
-                        let content_width = ui.available_width().max(1.0);
-                        let (content_rect, _) = ui.allocate_exact_size(
-                            egui::vec2(content_width, content_height),
-                            egui::Sense::hover(),
-                        );
-                        let nav_width = 210.0_f32.min((content_rect.width() * 0.34).max(180.0));
-                        let gap = 16.0;
-                        let nav_rect = egui::Rect::from_min_max(
-                            content_rect.min,
-                            egui::pos2(content_rect.left() + nav_width, content_rect.bottom()),
-                        );
-                        let detail_rect = egui::Rect::from_min_max(
-                            egui::pos2(content_rect.left() + nav_width + gap, content_rect.top()),
-                            content_rect.max,
-                        );
-                        let divider_x = content_rect.left() + nav_width + gap * 0.5;
-                        ui.painter().line_segment(
-                            [
-                                egui::pos2(divider_x, content_rect.top()),
-                                egui::pos2(divider_x, content_rect.bottom()),
-                            ],
-                            egui::Stroke::new(1.0, border()),
-                        );
-
-                        let mut nav_ui = ui.new_child(egui::UiBuilder::new().max_rect(nav_rect));
-                        nav_ui.set_clip_rect(nav_rect);
-                        render_section_picker(
-                            &mut nav_ui,
-                            &mut self.collection_settings_section,
-                            git_ready,
-                            is_git_repo,
-                            openapi_ready,
-                        );
-
-                        let mut detail_ui =
-                            ui.new_child(egui::UiBuilder::new().max_rect(detail_rect));
-                        detail_ui.set_clip_rect(detail_rect);
-                        egui::ScrollArea::vertical()
-                            .id_salt("collection_settings_detail")
-                            .auto_shrink([false, false])
-                            .max_height(content_height)
-                            .show(&mut detail_ui, |ui| {
-                                ui.set_width(ui.available_width().max(360.0));
-                                match self.collection_settings_section {
-                                    CollectionSettingsSection::Directory => {
-                                        directory_section(
-                                            ui,
-                                            &mut sync.git_workspace_dir,
-                                            git_ready,
-                                            is_git_repo,
-                                            busy,
-                                            &mut changed,
-                                            &mut actions,
-                                        );
-                                    }
-                                    CollectionSettingsSection::Secrets => {
-                                        secrets_section(ui, &mut sync, &mut changed);
-                                    }
-                                    CollectionSettingsSection::Git => {
-                                        git_section(
-                                            ui,
-                                            &mut sync.git_commit_message,
-                                            is_git_repo,
-                                            busy,
-                                            &self.collection_git_status,
-                                            &mut changed,
-                                            &mut actions,
-                                        );
-                                    }
-                                    CollectionSettingsSection::OpenApi => {
-                                        openapi_section(
-                                            ui,
-                                            &mut sync.openapi_spec_path,
-                                            openapi_ready,
-                                            busy,
-                                            &mut changed,
-                                            &mut actions,
-                                        );
-                                    }
-                                }
-
-                                if let Some(sync) = &self.sync_in_flight {
-                                    ui.add_space(12.0);
-                                    sync_status(ui, &sync.label);
-                                }
+                        let content_height = (ui.available_height() - 48.0).max(300.0);
+                        ui.horizontal(|ui| {
+                            ui.set_min_height(content_height);
+                            ui.vertical(|ui| {
+                                ui.set_width(176.0);
+                                render_section_picker(
+                                    ui,
+                                    &mut self.collection_settings_section,
+                                    git_ready,
+                                    is_git_repo,
+                                    openapi_ready,
+                                );
                             });
+
+                            ui.add_space(10.0);
+                            ui.separator();
+                            ui.add_space(10.0);
+
+                            egui::Frame::none()
+                                .fill(panel_dark())
+                                .stroke(egui::Stroke::new(1.0, border()))
+                                .rounding(egui::Rounding::same(8.0))
+                                .inner_margin(egui::Margin::symmetric(16.0, 14.0))
+                                .show(ui, |ui| {
+                                    ui.set_min_width(480.0);
+                                    ui.set_min_height(content_height - 2.0);
+                                    egui::ScrollArea::vertical()
+                                        .id_salt("collection_settings_detail")
+                                        .auto_shrink([false, false])
+                                        .max_height(content_height - 4.0)
+                                        .show(ui, |ui| {
+                                            match self.collection_settings_section {
+                                                CollectionSettingsSection::Directory => {
+                                                    directory_section(
+                                                        ui,
+                                                        &mut sync.git_workspace_dir,
+                                                        git_ready,
+                                                        is_git_repo,
+                                                        busy,
+                                                        &mut changed,
+                                                        &mut actions,
+                                                    );
+                                                }
+                                                CollectionSettingsSection::Secrets => {
+                                                    secrets_section(ui, &mut sync, &mut changed);
+                                                }
+                                                CollectionSettingsSection::Git => {
+                                                    git_section(
+                                                        ui,
+                                                        &mut sync.git_commit_message,
+                                                        is_git_repo,
+                                                        busy,
+                                                        &self.collection_git_status,
+                                                        &mut changed,
+                                                        &mut actions,
+                                                    );
+                                                }
+                                                CollectionSettingsSection::OpenApi => {
+                                                    openapi_section(
+                                                        ui,
+                                                        &mut sync.openapi_spec_path,
+                                                        openapi_ready,
+                                                        busy,
+                                                        &mut changed,
+                                                        &mut actions,
+                                                    );
+                                                }
+                                            }
+
+                                            if let Some(sync) = &self.sync_in_flight {
+                                                ui.add_space(12.0);
+                                                sync_status(ui, &sync.label);
+                                            }
+                                        });
+                                });
+                        });
 
                         ui.add_space(10.0);
                         ui.separator();
@@ -249,7 +237,9 @@ fn render_section_picker(
     openapi_ready: bool,
 ) {
     ui.vertical(|ui| {
-        ui.set_width(200.0);
+        ui.set_width(176.0);
+        ui.label(egui::RichText::new("Sections").size(10.5).color(muted()));
+        ui.add_space(6.0);
         section_button(
             ui,
             selected,
@@ -298,7 +288,7 @@ fn render_section_picker(
         ui.add_space(12.0);
         info_note(
             ui,
-            "Git providers are not stored here. Private remotes use your local Git credentials.",
+            "Private remotes use your local Git credentials. No provider tokens are stored.",
         );
     });
 }
@@ -312,46 +302,50 @@ fn section_button(
     ready: bool,
 ) {
     let active = *selected == section;
-    let desired = egui::vec2(ui.available_width(), 54.0);
+    let desired = egui::vec2(ui.available_width(), 42.0);
     let (rect, response) = ui.allocate_exact_size(desired, egui::Sense::click());
     if response.clicked() {
         *selected = section;
     }
     response.on_hover_cursor(egui::CursorIcon::PointingHand);
 
-    let fill = if active { elevated() } else { panel_dark() };
-    let stroke = if active {
-        egui::Stroke::new(1.0, accent())
+    let fill = if active {
+        with_alpha(accent(), 22)
     } else {
-        egui::Stroke::new(1.0, border())
+        egui::Color32::TRANSPARENT
+    };
+    let stroke = if active {
+        egui::Stroke::new(1.0, with_alpha(accent(), 110))
+    } else {
+        egui::Stroke::new(1.0, egui::Color32::TRANSPARENT)
     };
     ui.painter()
-        .rect(rect, egui::Rounding::same(7.0), fill, stroke);
+        .rect(rect, egui::Rounding::same(6.0), fill, stroke);
     if active {
         ui.painter().line_segment(
             [
-                egui::pos2(rect.left() + 1.0, rect.top() + 8.0),
-                egui::pos2(rect.left() + 1.0, rect.bottom() - 8.0),
+                egui::pos2(rect.left() + 1.0, rect.top() + 7.0),
+                egui::pos2(rect.left() + 1.0, rect.bottom() - 7.0),
             ],
             egui::Stroke::new(3.0, accent()),
         );
     }
     let status_color = if ready { C_GREEN } else { muted() };
     ui.painter().text(
-        egui::pos2(rect.left() + 14.0, rect.top() + 11.0),
+        egui::pos2(rect.left() + 12.0, rect.top() + 7.0),
         egui::Align2::LEFT_TOP,
         title,
-        egui::FontId::proportional(12.0),
+        egui::FontId::proportional(11.5),
         text(),
     );
     ui.painter().text(
-        egui::pos2(rect.left() + 14.0, rect.top() + 31.0),
+        egui::pos2(rect.left() + 12.0, rect.top() + 25.0),
         egui::Align2::LEFT_TOP,
         status,
-        egui::FontId::proportional(10.5),
+        egui::FontId::proportional(10.0),
         status_color,
     );
-    ui.add_space(8.0);
+    ui.add_space(4.0);
 }
 
 fn directory_section(
@@ -370,13 +364,17 @@ fn directory_section(
     );
     ui.add_space(12.0);
     field_row(ui, "Directory", |ui| {
+        let button_w = 92.0;
         let response = ui.add(
             egui::TextEdit::singleline(git_workspace_dir)
                 .hint_text(hint("/path/to/collection-repo"))
-                .desired_width((ui.available_width() - 112.0).max(220.0)),
+                .desired_width((ui.available_width() - button_w - 10.0).max(260.0)),
         );
         *changed |= response.changed();
-        if ui.button("Choose...").clicked() {
+        if ui
+            .add_sized([button_w, 30.0], egui::Button::new("Choose..."))
+            .clicked()
+        {
             actions.choose_git_dir = true;
         }
     });
@@ -388,7 +386,7 @@ fn directory_section(
             C_ORANGE,
         );
     }
-    ui.add_space(14.0);
+    ui.add_space(12.0);
     ui.horizontal_wrapped(|ui| {
         if ui
             .add_enabled(git_ready && !busy, egui::Button::new("Import from folder"))
@@ -532,13 +530,17 @@ fn openapi_section(
     );
     ui.add_space(12.0);
     field_row(ui, "Spec file", |ui| {
+        let button_w = 92.0;
         let response = ui.add(
             egui::TextEdit::singleline(openapi_spec_path)
                 .hint_text(hint("/path/to/openapi.yaml"))
-                .desired_width((ui.available_width() - 112.0).max(220.0)),
+                .desired_width((ui.available_width() - button_w - 10.0).max(260.0)),
         );
         *changed |= response.changed();
-        if ui.button("Choose...").clicked() {
+        if ui
+            .add_sized([button_w, 30.0], egui::Button::new("Choose..."))
+            .clicked()
+        {
             actions.choose_openapi_file = true;
         }
     });
@@ -555,16 +557,16 @@ fn openapi_section(
 }
 
 fn section_header(ui: &mut egui::Ui, title: &str, description: &str) {
-    ui.label(egui::RichText::new(title).size(16.0).strong().color(text()));
+    ui.label(egui::RichText::new(title).size(15.0).strong().color(text()));
     ui.add_space(4.0);
     ui.label(egui::RichText::new(description).size(11.0).color(muted()));
 }
 
 fn field_row(ui: &mut egui::Ui, label: &str, add_field: impl FnOnce(&mut egui::Ui)) {
     ui.horizontal(|ui| {
-        ui.set_min_height(30.0);
+        ui.set_min_height(32.0);
         ui.add_sized(
-            egui::vec2(92.0, 24.0),
+            egui::vec2(84.0, 24.0),
             egui::Label::new(egui::RichText::new(label).size(11.0).color(muted())),
         );
         add_field(ui);
@@ -587,12 +589,12 @@ fn sync_status(ui: &mut egui::Ui, label: &str) {
 
 fn info_note(ui: &mut egui::Ui, text_value: &str) {
     egui::Frame::none()
-        .fill(with_alpha(accent(), 16))
-        .stroke(egui::Stroke::new(1.0, with_alpha(accent(), 60)))
-        .rounding(egui::Rounding::same(7.0))
-        .inner_margin(egui::Margin::symmetric(10.0, 8.0))
+        .fill(elevated())
+        .stroke(egui::Stroke::new(1.0, border()))
+        .rounding(egui::Rounding::same(6.0))
+        .inner_margin(egui::Margin::symmetric(9.0, 7.0))
         .show(ui, |ui| {
-            ui.label(egui::RichText::new(text_value).size(10.5).color(text()));
+            ui.label(egui::RichText::new(text_value).size(10.0).color(muted()));
         });
 }
 
