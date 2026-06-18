@@ -44,16 +44,22 @@ impl ApiClient {
         let root = PathBuf::from(root);
         let options = collection_export_options(&folder.sync);
         let include_secrets = folder.sync.include_secrets_in_git_workspace;
+        let environments = self.state.environments.clone();
         self.spawn_sync_job("Exporting collection workspace", move || {
-            let summary = io::git_workspace::export_workspace_to_dir(&[folder], &root, options)?;
+            let summary = io::git_workspace::export_workspace_with_environments_to_dir(
+                &[folder],
+                &environments,
+                &root,
+                options,
+            )?;
             let mode = if include_secrets {
                 "with secrets"
             } else {
                 "masked"
             };
             Ok(SyncApply::Toast(format!(
-                "Exported collection workspace {} ({} request file(s))",
-                mode, summary.request_files
+                "Exported collection workspace {} ({} request file(s), {} environment file(s))",
+                mode, summary.request_files, summary.environment_files
             )))
         });
     }
@@ -71,13 +77,14 @@ impl ApiClient {
         let root = PathBuf::from(root);
         let folder_id = folder_id.to_string();
         self.spawn_sync_job("Importing collection workspace", move || {
-            let mut folders = io::git_workspace::import_workspace_from_dir(&root)?;
-            if folders.len() != 1 {
+            let mut bundle = io::git_workspace::import_workspace_bundle_from_dir(&root)?;
+            if bundle.folders.len() != 1 {
                 return Err("Collection workspace must contain exactly one collection".to_string());
             }
             Ok(SyncApply::ReplaceCollection {
                 folder_id,
-                folder: folders.remove(0),
+                folder: Box::new(bundle.folders.remove(0)),
+                environments: bundle.environments,
                 message: "Imported collection workspace".to_string(),
             })
         });
@@ -89,13 +96,14 @@ impl ApiClient {
         };
         self.spawn_sync_job("Pulling collection remote", move || {
             git::run(&root, &["pull", "--ff-only"]).map_err(|e| e.to_string())?;
-            let mut folders = io::git_workspace::import_workspace_from_dir(&root)?;
-            if folders.len() != 1 {
+            let mut bundle = io::git_workspace::import_workspace_bundle_from_dir(&root)?;
+            if bundle.folders.len() != 1 {
                 return Err("Collection workspace must contain exactly one collection".to_string());
             }
             Ok(SyncApply::ReplaceCollection {
                 folder_id,
-                folder: folders.remove(0),
+                folder: Box::new(bundle.folders.remove(0)),
+                environments: bundle.environments,
                 message: "Pulled collection from Git remote".to_string(),
             })
         });
@@ -109,6 +117,7 @@ impl ApiClient {
             self.show_toast("Collection not found");
             return;
         };
+        let environments = self.state.environments.clone();
         let options = collection_export_options(&folder.sync);
         let message = folder.sync.git_commit_message.trim();
         let message = if message.is_empty() {
@@ -118,8 +127,17 @@ impl ApiClient {
         }
         .to_string();
         self.spawn_sync_job("Pushing collection remote", move || {
-            io::git_workspace::export_workspace_to_dir(&[folder], &root, options)?;
-            git::run(&root, &["add", "workspace.json", "requests"]).map_err(|e| e.to_string())?;
+            io::git_workspace::export_workspace_with_environments_to_dir(
+                &[folder],
+                &environments,
+                &root,
+                options,
+            )?;
+            git::run(
+                &root,
+                &["add", "workspace.json", "requests", "environments"],
+            )
+            .map_err(|e| e.to_string())?;
             match git::run(&root, &["commit", "-m", &message]) {
                 Ok(_) | Err(git::GitError::NothingToCommit) => {}
                 Err(e) => return Err(e.to_string()),
@@ -193,7 +211,8 @@ impl ApiClient {
             } else {
                 Ok(SyncApply::ReplaceCollection {
                     folder_id,
-                    folder: folders.remove(0),
+                    folder: Box::new(folders.remove(0)),
+                    environments: Vec::new(),
                     message: format!("Refreshed {} collection OpenAPI request(s)", updated),
                 })
             }
@@ -238,11 +257,16 @@ impl ApiClient {
         }
         let root = PathBuf::from(root);
         self.spawn_sync_job("Importing Git workspace", move || {
-            let folders = io::git_workspace::import_workspace_from_dir(&root)?;
-            let n = folders.len();
-            Ok(SyncApply::ReplaceFolders {
-                folders,
-                message: format!("Imported Git workspace ({} collection(s))", n),
+            let bundle = io::git_workspace::import_workspace_bundle_from_dir(&root)?;
+            let n = bundle.folders.len();
+            let envs = bundle.environments.len();
+            Ok(SyncApply::ReplaceWorkspace {
+                folders: bundle.folders,
+                environments: bundle.environments,
+                message: format!(
+                    "Imported Git workspace ({} collection(s), {} environment(s))",
+                    n, envs
+                ),
             })
         });
     }
@@ -260,17 +284,23 @@ impl ApiClient {
         let root = PathBuf::from(root);
         let options = self.git_workspace_export_options();
         let folders = self.state.folders.clone();
+        let environments = self.state.environments.clone();
         let include_secrets = self.state.sync.include_secrets_in_git_workspace;
         self.spawn_sync_job("Exporting Git workspace", move || {
-            let summary = io::git_workspace::export_workspace_to_dir(&folders, &root, options)?;
+            let summary = io::git_workspace::export_workspace_with_environments_to_dir(
+                &folders,
+                &environments,
+                &root,
+                options,
+            )?;
             let mode = if include_secrets {
                 "with secrets"
             } else {
                 "masked"
             };
             Ok(SyncApply::Toast(format!(
-                "Exported Git workspace {} ({} request file(s))",
-                mode, summary.request_files
+                "Exported Git workspace {} ({} request file(s), {} environment file(s))",
+                mode, summary.request_files, summary.environment_files
             )))
         });
     }
@@ -331,11 +361,16 @@ impl ApiClient {
         };
         self.spawn_sync_job("Pulling GitHub workspace", move || {
             git::run(&root, &["pull", "--ff-only"]).map_err(|e| e.to_string())?;
-            let folders = io::git_workspace::import_workspace_from_dir(&root)?;
-            let n = folders.len();
-            Ok(SyncApply::ReplaceFolders {
-                folders,
-                message: format!("Pulled Git workspace ({} collection(s))", n),
+            let bundle = io::git_workspace::import_workspace_bundle_from_dir(&root)?;
+            let n = bundle.folders.len();
+            let envs = bundle.environments.len();
+            Ok(SyncApply::ReplaceWorkspace {
+                folders: bundle.folders,
+                environments: bundle.environments,
+                message: format!(
+                    "Pulled Git workspace ({} collection(s), {} environment(s))",
+                    n, envs
+                ),
             })
         });
     }
@@ -349,6 +384,7 @@ impl ApiClient {
             return;
         };
         let folders = self.state.folders.clone();
+        let environments = self.state.environments.clone();
         let options = self.git_workspace_export_options();
         let message = self.state.sync.git_commit_message.trim();
         let message = if message.is_empty() {
@@ -358,8 +394,17 @@ impl ApiClient {
         }
         .to_string();
         self.spawn_sync_job("Pushing GitHub workspace", move || {
-            io::git_workspace::export_workspace_to_dir(&folders, &root, options)?;
-            git::run(&root, &["add", "workspace.json", "requests"]).map_err(|e| e.to_string())?;
+            io::git_workspace::export_workspace_with_environments_to_dir(
+                &folders,
+                &environments,
+                &root,
+                options,
+            )?;
+            git::run(
+                &root,
+                &["add", "workspace.json", "requests", "environments"],
+            )
+            .map_err(|e| e.to_string())?;
             match git::run(&root, &["commit", "-m", &message]) {
                 Ok(_) | Err(git::GitError::NothingToCommit) => {}
                 Err(e) => return Err(e.to_string()),
@@ -378,6 +423,7 @@ impl ApiClient {
             } else {
                 io::git_workspace::SecretPolicy::Mask
             },
+            mask_rules: mask_rules_from_sync(&self.state.sync),
         }
     }
 
@@ -432,5 +478,22 @@ fn collection_export_options(sync: &crate::model::SyncConfig) -> io::git_workspa
         } else {
             io::git_workspace::SecretPolicy::Mask
         },
+        mask_rules: mask_rules_from_sync(sync),
     }
+}
+
+fn mask_rules_from_sync(sync: &crate::model::SyncConfig) -> io::git_workspace::MaskRules {
+    io::git_workspace::MaskRules {
+        mask_patterns: split_key_patterns(&sync.mask_key_patterns),
+        allow_patterns: split_key_patterns(&sync.allow_key_patterns),
+    }
+}
+
+fn split_key_patterns(input: &str) -> Vec<String> {
+    input
+        .split(',')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .map(str::to_string)
+        .collect()
 }

@@ -439,6 +439,14 @@ pub struct SyncConfig {
     /// lossless local/private exports per operation.
     #[serde(default)]
     pub include_secrets_in_git_workspace: bool,
+    /// Case-insensitive key/name patterns that should be masked even when
+    /// Rusty Requester's built-in sensitive-key detector would not flag them.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub mask_key_patterns: String,
+    /// Case-insensitive key/name patterns that are safe to keep readable even
+    /// if their name matches a built-in sensitive-key heuristic.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub allow_key_patterns: String,
     /// Commit message used by the optional local Git push workflow.
     #[serde(default = "default_git_commit_message")]
     pub git_commit_message: String,
@@ -449,6 +457,8 @@ impl SyncConfig {
         self.git_workspace_dir.is_empty()
             && self.openapi_spec_path.is_empty()
             && !self.include_secrets_in_git_workspace
+            && self.mask_key_patterns.trim().is_empty()
+            && self.allow_key_patterns.trim().is_empty()
             && self.git_commit_message == default_git_commit_message()
     }
 }

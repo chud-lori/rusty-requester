@@ -25,12 +25,17 @@ impl ApiClient {
     fn apply_sync_result(&mut self, result: Result<SyncApply, String>) {
         match result {
             Ok(SyncApply::Toast(message)) => self.show_toast(message),
-            Ok(SyncApply::ReplaceFolders { folders, message }) => {
+            Ok(SyncApply::ReplaceWorkspace {
+                folders,
+                environments,
+                message,
+            }) => {
                 if let Err(e) = backup::create_backup(&self.storage_path) {
                     self.show_toast(format!("Sync aborted: backup failed: {}", e));
                     return;
                 }
                 self.state.folders = folders;
+                self.state.environments = environments;
                 self.prune_stale_tabs();
                 self.save_state();
                 self.show_toast(message);
@@ -38,6 +43,7 @@ impl ApiClient {
             Ok(SyncApply::ReplaceCollection {
                 folder_id,
                 mut folder,
+                environments,
                 message,
             }) => {
                 if let Err(e) = backup::create_backup(&self.storage_path) {
@@ -46,7 +52,10 @@ impl ApiClient {
                 }
                 if let Some(existing) = find_folder_by_id_mut(&mut self.state.folders, &folder_id) {
                     folder.sync = existing.sync.clone();
-                    *existing = folder;
+                    *existing = *folder;
+                    if !environments.is_empty() {
+                        self.state.environments = environments;
+                    }
                     self.prune_stale_tabs();
                     self.save_state();
                     self.show_toast(message);

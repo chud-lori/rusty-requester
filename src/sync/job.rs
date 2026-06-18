@@ -1,4 +1,4 @@
-use crate::model::Folder;
+use crate::model::{Environment, Folder};
 
 pub(crate) struct InFlightSync {
     pub(crate) label: String,
@@ -7,13 +7,15 @@ pub(crate) struct InFlightSync {
 
 pub(crate) enum SyncApply {
     Toast(String),
-    ReplaceFolders {
+    ReplaceWorkspace {
         folders: Vec<Folder>,
+        environments: Vec<Environment>,
         message: String,
     },
     ReplaceCollection {
         folder_id: String,
-        folder: Folder,
+        folder: Box<Folder>,
+        environments: Vec<Environment>,
         message: String,
     },
     CollectionGitStatus {

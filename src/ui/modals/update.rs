@@ -329,59 +329,60 @@ impl ApiClient {
         if !self.updating_in_progress {
             return;
         }
+        ctx.request_repaint_after(std::time::Duration::from_millis(33));
         let log_path = update_log_path();
         let tail = self.update_log_tail.clone();
+        let phase = infer_update_phase(&tail);
         let mut view_log = false;
 
         egui::Window::new("Updating rusty-requester…")
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-            .fixed_size([620.0, 360.0])
+            .fixed_size([500.0, 0.0])
             .show(ctx, |ui| {
-                ui.add_space(4.0);
+                ui.add_space(6.0);
+                render_update_progress_strip(ui, ctx.input(|i| i.time));
+                ui.add_space(14.0);
+                render_update_steps(ui, phase);
+                ui.add_space(12.0);
                 ui.label(
                     egui::RichText::new(
-                        "The installer is running in the background. The app will \
-                         quit and relaunch automatically when it finishes.",
+                        "The installer is running in the background. The app may close and \
+                         relaunch automatically while the binary is replaced.",
                     )
                     .color(muted())
                     .size(11.5),
                 );
                 ui.add_space(8.0);
-                ui.label(
-                    egui::RichText::new(format!("Log: {}", log_path.display()))
-                        .color(muted())
-                        .size(10.5)
-                        .monospace(),
-                );
-                ui.add_space(6.0);
                 egui::Frame::none()
                     .fill(panel_dark())
                     .stroke(egui::Stroke::new(1.0, border()))
                     .rounding(egui::Rounding::same(6.0))
-                    .inner_margin(egui::Margin::symmetric(10.0, 8.0))
+                    .inner_margin(egui::Margin::symmetric(10.0, 9.0))
                     .show(ui, |ui| {
-                        egui::ScrollArea::vertical()
-                            .stick_to_bottom(true)
-                            .max_height(240.0)
-                            .auto_shrink([false; 2])
-                            .show(ui, |ui| {
-                                if tail.is_empty() {
-                                    ui.label(
-                                        egui::RichText::new("Starting installer…")
-                                            .color(muted())
-                                            .size(11.0)
-                                            .italics(),
-                                    );
-                                } else {
-                                    ui.label(
-                                        egui::RichText::new(&tail)
-                                            .color(text())
-                                            .font(egui::FontId::monospace(10.5)),
-                                    );
-                                }
-                            });
+                        ui.set_width(ui.available_width());
+                        ui.label(
+                            egui::RichText::new(phase.label())
+                                .color(text())
+                                .size(12.0)
+                                .strong(),
+                        );
+                        ui.add_space(3.0);
+                        ui.label(
+                            egui::RichText::new(
+                                latest_log_line(&tail).unwrap_or("Starting installer..."),
+                            )
+                            .color(muted())
+                            .font(egui::FontId::monospace(10.5)),
+                        );
+                        ui.add_space(4.0);
+                        ui.label(
+                            egui::RichText::new(format!("Log: {}", log_path.display()))
+                                .color(muted())
+                                .size(10.0)
+                                .monospace(),
+                        );
                     });
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
@@ -516,4 +517,106 @@ impl ApiClient {
             self.post_update_notice = None;
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum UpdatePhase {
+    Download,
+    Install,
+    Relaunch,
+}
+
+impl UpdatePhase {
+    fn label(self) -> &'static str {
+        match self {
+            UpdatePhase::Download => "Downloading release",
+            UpdatePhase::Install => "Installing update",
+            UpdatePhase::Relaunch => "Preparing relaunch",
+        }
+    }
+}
+
+fn infer_update_phase(tail: &str) -> UpdatePhase {
+    let lower = tail.to_ascii_lowercase();
+    if lower.contains("relaunch")
+        || lower.contains("launch services")
+        || lower.contains("register")
+        || lower.contains("starting")
+    {
+        UpdatePhase::Relaunch
+    } else if lower.contains("copy")
+        || lower.contains("install")
+        || lower.contains("quarantine")
+        || lower.contains("chmod")
+    {
+        UpdatePhase::Install
+    } else {
+        UpdatePhase::Download
+    }
+}
+
+fn render_update_steps(ui: &mut egui::Ui, phase: UpdatePhase) {
+    ui.horizontal(|ui| {
+        for (index, (step, label)) in [
+            (UpdatePhase::Download, "Download"),
+            (UpdatePhase::Install, "Install"),
+            (UpdatePhase::Relaunch, "Relaunch"),
+        ]
+        .iter()
+        .enumerate()
+        {
+            let active = *step <= phase;
+            let color = if active { accent() } else { muted() };
+            ui.label(
+                egui::RichText::new(format!("{} {}", egui_phosphor::regular::CIRCLE, label))
+                    .color(color)
+                    .size(11.0),
+            );
+            if index < 2 {
+                let (rect, _) = ui.allocate_exact_size(egui::vec2(44.0, 1.0), egui::Sense::hover());
+                ui.painter().rect_filled(
+                    rect,
+                    egui::Rounding::same(1.0),
+                    if active {
+                        with_alpha(accent(), 140)
+                    } else {
+                        with_alpha(border(), 120)
+                    },
+                );
+            }
+        }
+    });
+}
+
+fn render_update_progress_strip(ui: &mut egui::Ui, time: f64) {
+    let width = ui.available_width().max(220.0);
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, 8.0), egui::Sense::hover());
+    ui.painter()
+        .rect_filled(rect, egui::Rounding::same(4.0), elevated());
+    ui.painter().rect_stroke(
+        rect,
+        egui::Rounding::same(4.0),
+        egui::Stroke::new(1.0, border()),
+    );
+
+    let segment_width = rect.width() * 0.32;
+    let travel = rect.width() + segment_width;
+    let x = rect.left() - segment_width + ((time * 150.0) as f32 % travel);
+    let segment = egui::Rect::from_min_size(
+        egui::pos2(x, rect.top()),
+        egui::vec2(segment_width, rect.height()),
+    )
+    .intersect(rect);
+    ui.painter().rect_filled(
+        segment,
+        egui::Rounding::same(4.0),
+        with_alpha(accent(), 210),
+    );
+}
+
+fn latest_log_line(tail: &str) -> Option<&str> {
+    tail.lines()
+        .rev()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
 }

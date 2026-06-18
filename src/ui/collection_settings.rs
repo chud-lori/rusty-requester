@@ -64,7 +64,7 @@ impl ApiClient {
                 ui.label(
                     egui::RichText::new(
                         "Exports this collection as reviewable workspace files. Requests are \
-                         saved as pretty JSON with the .rr extension for readable pull requests.",
+                         saved as compact .rr text files for readable pull requests.",
                     )
                     .size(10.5)
                     .color(muted()),
@@ -116,6 +116,45 @@ impl ApiClient {
                     .size(10.5)
                     .color(muted()),
                 );
+
+                ui.add_space(8.0);
+                ui.label(
+                    egui::RichText::new("Mask rules")
+                        .size(12.0)
+                        .strong()
+                        .color(text()),
+                );
+                ui.label(
+                    egui::RichText::new(
+                        "Comma-separated key/header/env-name patterns. Keep readable wins over \
+                         built-in and custom mask rules.",
+                    )
+                    .size(10.5)
+                    .color(muted()),
+                );
+                ui.add_space(5.0);
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new("Always mask").size(11.0).color(muted()));
+                    let response = ui.add(
+                        egui::TextEdit::singleline(&mut sync.mask_key_patterns)
+                            .hint_text(hint("x-api-key, token, authorization"))
+                            .desired_width(ui.available_width()),
+                    );
+                    changed |= response.changed();
+                });
+                ui.horizontal(|ui| {
+                    ui.label(
+                        egui::RichText::new("Keep readable")
+                            .size(11.0)
+                            .color(muted()),
+                    );
+                    let response = ui.add(
+                        egui::TextEdit::singleline(&mut sync.allow_key_patterns)
+                            .hint_text(hint("platform, env, app-version"))
+                            .desired_width(ui.available_width()),
+                    );
+                    changed |= response.changed();
+                });
 
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {

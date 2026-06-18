@@ -161,6 +161,8 @@ impl ApiClient {
                 "available"
             } else if matches!(self.manual_update_check, UpdateCheckOutcome::Checking) {
                 "checking"
+            } else if matches!(self.manual_update_check, UpdateCheckOutcome::Failed(_)) {
+                "failed"
             } else if matches!(self.manual_update_check, UpdateCheckOutcome::NoUpdate) {
                 "uptodate"
             } else {
@@ -188,6 +190,22 @@ impl ApiClient {
                         ))
                         .size(11.0)
                         .color(muted()),
+                    );
+                }
+                "failed" => {
+                    let reason = match &self.manual_update_check {
+                        UpdateCheckOutcome::Failed(reason) => reason.as_str(),
+                        _ => "Update check failed",
+                    };
+                    ui.add_space(8.0);
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "{}  Could not check for updates: {}",
+                            egui_phosphor::regular::WARNING,
+                            reason
+                        ))
+                        .size(11.0)
+                        .color(C_ORANGE),
                     );
                 }
                 "available" => {
