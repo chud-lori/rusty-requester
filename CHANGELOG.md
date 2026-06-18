@@ -11,6 +11,14 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Fixed
+- **Collection Settings and updater layout.** Collection Settings no longer
+  lets sidebar selections, note cards, fields, or action buttons overlap, and
+  the in-app updater now shows a bounded sanitized status instead of stretching
+  around raw terminal progress output.
+
 ## [0.27.7] — 2026-06-18
 
 ### Fixed

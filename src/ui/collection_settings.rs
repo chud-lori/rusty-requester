@@ -48,7 +48,7 @@ impl ApiClient {
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
-            .fixed_size(egui::vec2(780.0, 520.0))
+            .fixed_size(egui::vec2(820.0, 520.0))
             .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
             .open(&mut open)
             .show(ctx, |ui| {
@@ -68,13 +68,13 @@ impl ApiClient {
                         ui.separator();
                         ui.add_space(12.0);
 
-                        let content_height = (ui.available_height() - 48.0).max(300.0);
+                        let content_height = (ui.available_height() - 44.0).max(320.0);
                         ui.horizontal_top(|ui| {
                             ui.allocate_ui_with_layout(
-                                egui::vec2(176.0, content_height),
+                                egui::vec2(172.0, content_height),
                                 egui::Layout::top_down(egui::Align::Min),
                                 |ui| {
-                                    ui.set_width(176.0);
+                                    ui.set_width(172.0);
                                     ui.set_min_height(content_height);
                                     ui.set_clip_rect(ui.max_rect());
                                     render_section_picker(
@@ -91,7 +91,7 @@ impl ApiClient {
                             ui.separator();
                             ui.add_space(10.0);
 
-                            let detail_width = ui.available_width().clamp(480.0, 540.0);
+                            let detail_width = ui.available_width().min(600.0);
                             ui.allocate_ui_with_layout(
                                 egui::vec2(detail_width, content_height),
                                 egui::Layout::top_down(egui::Align::Min),
@@ -101,9 +101,9 @@ impl ApiClient {
                                     egui::ScrollArea::vertical()
                                         .id_salt("collection_settings_detail")
                                         .auto_shrink([false, false])
-                                        .max_height(content_height)
+                                        .max_height(content_height - 4.0)
                                         .show(ui, |ui| {
-                                            ui.set_width(detail_width - 8.0);
+                                            ui.set_width(detail_width - 14.0);
                                             match self.collection_settings_section {
                                                 CollectionSettingsSection::Directory => {
                                                     directory_section(
@@ -239,7 +239,7 @@ fn render_section_picker(
     openapi_ready: bool,
 ) {
     ui.vertical(|ui| {
-        ui.set_width(176.0);
+        ui.set_width(172.0);
         ui.label(egui::RichText::new("Sections").size(10.5).color(muted()));
         ui.add_space(6.0);
         section_button(
@@ -286,12 +286,6 @@ fn render_section_picker(
             },
             openapi_ready,
         );
-
-        ui.add_space(12.0);
-        info_note(
-            ui,
-            "Private remotes use your local Git credentials. No provider tokens are stored.",
-        );
     });
 }
 
@@ -304,8 +298,9 @@ fn section_button(
     ready: bool,
 ) {
     let active = *selected == section;
-    let desired = egui::vec2(ui.available_width(), 42.0);
-    let (rect, response) = ui.allocate_exact_size(desired, egui::Sense::click());
+    let desired = egui::vec2((ui.available_width() - 6.0).max(120.0), 42.0);
+    let (allocated_rect, response) = ui.allocate_exact_size(desired, egui::Sense::click());
+    let rect = allocated_rect.shrink2(egui::vec2(2.0, 1.0));
     if response.clicked() {
         *selected = section;
     }
@@ -382,23 +377,11 @@ fn directory_section(
         );
     }
     ui.add_space(12.0);
-    ui.horizontal(|ui| {
-        if ui
-            .add_enabled(
-                git_ready && !busy,
-                egui::Button::new("Import from folder").min_size(egui::vec2(132.0, 30.0)),
-            )
-            .clicked()
-        {
+    action_buttons(ui, |ui| {
+        if fixed_button(ui, git_ready && !busy, "Import from folder", 142.0).clicked() {
             actions.import_workspace = true;
         }
-        if ui
-            .add_enabled(
-                git_ready && !busy,
-                egui::Button::new("Export to folder").min_size(egui::vec2(132.0, 30.0)),
-            )
-            .clicked()
-        {
+        if fixed_button(ui, git_ready && !busy, "Export to folder", 132.0).clicked() {
             actions.export_workspace = true;
         }
     });
@@ -459,6 +442,11 @@ fn git_section(
         "Git remote",
         "Pull, review, commit, and push through your existing local Git credentials. Rusty Requester does not store provider tokens.",
     );
+    ui.add_space(8.0);
+    info_note(
+        ui,
+        "Private remotes use your local Git credentials. No provider tokens are stored.",
+    );
     ui.add_space(12.0);
     text_field_group(
         ui,
@@ -468,32 +456,14 @@ fn git_section(
         changed,
     );
     ui.add_space(14.0);
-    ui.horizontal(|ui| {
-        if ui
-            .add_enabled(
-                is_git_repo && !busy,
-                egui::Button::new("Refresh changes").min_size(egui::vec2(130.0, 30.0)),
-            )
-            .clicked()
-        {
+    action_buttons(ui, |ui| {
+        if fixed_button(ui, is_git_repo && !busy, "Refresh changes", 130.0).clicked() {
             actions.refresh_git_status = true;
         }
-        if ui
-            .add_enabled(
-                is_git_repo && !busy,
-                egui::Button::new("Pull from remote").min_size(egui::vec2(130.0, 30.0)),
-            )
-            .clicked()
-        {
+        if fixed_button(ui, is_git_repo && !busy, "Pull from remote", 130.0).clicked() {
             actions.pull_remote = true;
         }
-        if ui
-            .add_enabled(
-                is_git_repo && !busy,
-                egui::Button::new("Commit and push").min_size(egui::vec2(130.0, 30.0)),
-            )
-            .clicked()
-        {
+        if fixed_button(ui, is_git_repo && !busy, "Commit and push", 130.0).clicked() {
             actions.push_remote = true;
         }
     });
@@ -545,21 +515,24 @@ fn openapi_section(
         || actions.choose_openapi_file = true,
     );
     ui.add_space(14.0);
-    if ui
-        .add_enabled(
+    action_buttons(ui, |ui| {
+        if fixed_button(
+            ui,
             openapi_ready && !busy,
-            egui::Button::new("Refresh collection from OpenAPI").min_size(egui::vec2(224.0, 30.0)),
+            "Refresh collection from OpenAPI",
+            230.0,
         )
         .clicked()
-    {
-        actions.refresh_openapi = true;
-    }
+        {
+            actions.refresh_openapi = true;
+        }
+    });
 }
 
 fn section_header(ui: &mut egui::Ui, title: &str, description: &str) {
     ui.label(egui::RichText::new(title).size(15.0).strong().color(text()));
     ui.add_space(4.0);
-    ui.label(egui::RichText::new(description).size(11.0).color(muted()));
+    ui.add(egui::Label::new(egui::RichText::new(description).size(11.0).color(muted())).wrap());
 }
 
 fn path_field_group(
@@ -574,7 +547,7 @@ fn path_field_group(
     ui.add_space(3.0);
     ui.horizontal(|ui| {
         let button_w = 96.0;
-        let input_w = (ui.available_width() - button_w - 8.0).max(300.0);
+        let input_w = (ui.available_width() - button_w - 10.0).max(220.0);
         let response = ui.add_sized(
             [input_w, 30.0],
             egui::TextEdit::singleline(value).hint_text(hint(placeholder)),
@@ -599,10 +572,25 @@ fn text_field_group(
     ui.label(egui::RichText::new(label).size(11.0).color(muted()));
     ui.add_space(3.0);
     let response = ui.add_sized(
-        [ui.available_width().max(360.0), 30.0],
+        [ui.available_width(), 30.0],
         egui::TextEdit::singleline(value).hint_text(hint(placeholder)),
     );
     *changed |= response.changed();
+}
+
+fn action_buttons(ui: &mut egui::Ui, add_contents: impl FnOnce(&mut egui::Ui)) {
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 8.0;
+        ui.set_min_height(32.0);
+        add_contents(ui);
+    });
+}
+
+fn fixed_button(ui: &mut egui::Ui, enabled: bool, label: &str, width: f32) -> egui::Response {
+    ui.add_enabled_ui(enabled, |ui| {
+        ui.add_sized([width, 30.0], egui::Button::new(label))
+    })
+    .inner
 }
 
 fn sync_status(ui: &mut egui::Ui, label: &str) {
