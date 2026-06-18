@@ -11,6 +11,14 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Fixed
+- **Collection Settings modal collapse.** The modal now reserves fixed regions
+  for the sidebar, content pane, and footer so controls cannot be squeezed into
+  vertical text or disappear when the window is wide but the internal layout
+  recalculates badly.
+
 ## [0.27.2] — 2026-06-18
 
 ### Fixed

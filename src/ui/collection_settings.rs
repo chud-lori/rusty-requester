@@ -47,16 +47,48 @@ impl ApiClient {
                 let openapi_ready = !sync.openapi_spec_path.trim().is_empty();
 
                 ui.set_min_size(egui::vec2(780.0, 540.0));
-                ui.horizontal(|ui| {
+
+                let footer_height = 44.0;
+                let content_rect = ui.available_rect_before_wrap();
+                let body_rect = egui::Rect::from_min_max(
+                    content_rect.min,
+                    egui::pos2(content_rect.max.x, content_rect.max.y - footer_height),
+                );
+                let footer_rect = egui::Rect::from_min_max(
+                    egui::pos2(content_rect.min.x, body_rect.max.y),
+                    content_rect.max,
+                );
+
+                let nav_width = 220.0;
+                let gap = 16.0;
+                let nav_rect = egui::Rect::from_min_size(
+                    body_rect.min,
+                    egui::vec2(nav_width, body_rect.height()),
+                );
+                let divider_rect = egui::Rect::from_min_size(
+                    egui::pos2(nav_rect.max.x + gap * 0.5, body_rect.min.y),
+                    egui::vec2(1.0, body_rect.height()),
+                );
+                let detail_rect = egui::Rect::from_min_max(
+                    egui::pos2(nav_rect.max.x + gap, body_rect.min.y),
+                    body_rect.max,
+                );
+
+                ui.allocate_new_ui(egui::UiBuilder::new().max_rect(nav_rect), |ui| {
                     collection_settings_nav(ui, &folder.name, git_ready, is_git_repo, openapi_ready);
+                });
 
-                    ui.separator();
+                ui.painter().line_segment(
+                    [divider_rect.center_top(), divider_rect.center_bottom()],
+                    egui::Stroke::new(1.0, border()),
+                );
 
+                ui.allocate_new_ui(egui::UiBuilder::new().max_rect(detail_rect), |ui| {
                     egui::ScrollArea::vertical()
                         .id_salt("collection_settings_scroll")
                         .auto_shrink([false, false])
                         .show(ui, |ui| {
-                            ui.set_min_width(560.0);
+                            ui.set_min_width(detail_rect.width().max(520.0));
 
                             setting_card(ui, "Collection directory", "Reviewable files", |ui| {
                                 ui.label(
@@ -278,13 +310,15 @@ impl ApiClient {
                         });
                 });
 
-                ui.add_space(8.0);
-                ui.separator();
-                ui.add_space(4.0);
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button("Close").clicked() {
-                        self.show_collection_settings_modal = false;
-                    }
+                ui.allocate_new_ui(egui::UiBuilder::new().max_rect(footer_rect), |ui| {
+                    ui.add_space(8.0);
+                    ui.separator();
+                    ui.add_space(4.0);
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.button("Close").clicked() {
+                            self.show_collection_settings_modal = false;
+                        }
+                    });
                 });
             });
 
@@ -332,11 +366,14 @@ fn collection_settings_nav(
 ) {
     ui.vertical(|ui| {
         ui.set_width(190.0);
-        ui.label(
-            egui::RichText::new(collection_name)
-                .size(18.0)
-                .strong()
-                .color(text()),
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new(collection_name)
+                    .size(18.0)
+                    .strong()
+                    .color(text()),
+            )
+            .truncate(),
         );
         ui.label(
             egui::RichText::new("Collection settings")
