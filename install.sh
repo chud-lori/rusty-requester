@@ -30,8 +30,10 @@
 
 set -euo pipefail
 
-REPO="${RUSTY_REPO:-chud-lori/rusty-requester}"
+DEFAULT_REPO="chud-lori/rusty-requester"
+REPO="${RUSTY_REPO:-$DEFAULT_REPO}"
 TAG="${VERSION:-}"
+STATIC_LATEST_JSON_URL="${RUSTY_LATEST_JSON_URL:-https://chud-lori.github.io/rusty-requester/latest.json}"
 
 red()   { printf "\033[31m%s\033[0m\n" "$*"; }
 green() { printf "\033[32m%s\033[0m\n" "$*"; }
@@ -41,6 +43,18 @@ die()   { red "error: $*"; exit 1; }
 
 require() {
     command -v "$1" >/dev/null 2>&1 || die "'$1' is required but not installed"
+}
+
+parse_latest_tag() {
+    latest_json="$1"
+    tag="$(printf '%s' "$latest_json" | awk -F'"' '/"tag"[[:space:]]*:/ {print $4; exit}')"
+    if [ -z "$tag" ]; then
+        version="$(printf '%s' "$latest_json" | awk -F'"' '/"version"[[:space:]]*:/ {print $4; exit}')"
+        if [ -n "$version" ]; then
+            tag="v${version#v}"
+        fi
+    fi
+    printf '%s' "$tag"
 }
 
 # --- Detect platform -----------------------------------------------------
@@ -114,13 +128,26 @@ fi
 
 # --- Resolve release tag -------------------------------------------------
 if [ -z "${TAG}" ]; then
-    blue "→ Resolving latest release from github.com/${REPO}..."
-    # Capture the full response first — piping curl directly into `awk '... exit}'`
-    # triggers SIGPIPE (curl exit 23 "Failed writing body") under `set -o pipefail`
-    # on Linux, because awk closes the pipe before curl finishes writing.
-    RELEASE_JSON=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest") \
-        || die "couldn't reach GitHub API (rate-limited or offline?)"
-    TAG=$(printf '%s' "$RELEASE_JSON" | awk -F'"' '/"tag_name"/{print $4; exit}')
+    if [ "$REPO" = "$DEFAULT_REPO" ]; then
+        blue "→ Resolving latest release from static metadata..."
+        LATEST_JSON="$(curl -fsSL "$STATIC_LATEST_JSON_URL" 2>/dev/null || true)"
+        TAG="$(parse_latest_tag "$LATEST_JSON")"
+        if [ -n "$TAG" ]; then
+            dim "  metadata: $STATIC_LATEST_JSON_URL"
+        else
+            dim "  static metadata unavailable — falling back to GitHub Releases API"
+        fi
+    fi
+
+    if [ -z "${TAG}" ]; then
+        blue "→ Resolving latest release from github.com/${REPO}..."
+        # Capture the full response first — piping curl directly into `awk '... exit}'`
+        # triggers SIGPIPE (curl exit 23 "Failed writing body") under `set -o pipefail`
+        # on Linux, because awk closes the pipe before curl finishes writing.
+        RELEASE_JSON=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest") \
+            || die "couldn't reach release metadata or GitHub API (rate-limited or offline?)"
+        TAG=$(printf '%s' "$RELEASE_JSON" | awk -F'"' '/"tag_name"/{print $4; exit}')
+    fi
 fi
 if [ -z "${TAG}" ]; then
     die "couldn't resolve a release tag (rate-limited or repo has no releases yet?)"

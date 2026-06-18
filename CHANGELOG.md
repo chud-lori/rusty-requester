@@ -11,6 +11,17 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Fixed
+- **Installer update resolution.** `install.sh` now reads the public
+  `latest.json` metadata before falling back to the GitHub Releases API, so
+  in-app updates keep working when the unauthenticated API returns 403.
+- **Collection Settings and response view layout.** Collection Settings now uses
+  bounded left/right panes so controls cannot collapse into vertical text, and
+  the Response body view switch no longer shows a broken standalone "View"
+  label.
+
 ## [0.27.4] — 2026-06-18
 
 ### Fixed
