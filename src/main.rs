@@ -2777,12 +2777,14 @@ fn collect_flat_requests(
     path.pop();
 }
 
-/// Hit GitHub's latest-release API once at startup. Sends the new
-/// version string (e.g. `"v0.13.0"`) through the returned channel if
-/// it's newer than the running build; stays silent otherwise
-/// (including any network / parse / rate-limit failures — an update
-/// check that noisily fails on offline machines would be worse than
-/// no check at all).
+const STATIC_LATEST_URL: &str = "https://chud-lori.github.io/rusty-requester/latest.json";
+const GITHUB_LATEST_RELEASE_API: &str =
+    "https://api.github.com/repos/chud-lori/rusty-requester/releases/latest";
+
+/// Check the static GitHub Pages metadata first, then fall back to
+/// GitHub's latest-release API. The static file avoids GitHub REST API
+/// rate limits for normal update checks; the API fallback covers older
+/// Pages deployments or temporary CDN misses.
 pub(crate) fn spawn_update_check(
     rt: &tokio::runtime::Runtime,
 ) -> std::sync::mpsc::Receiver<UpdateCheckMessage> {
@@ -2802,35 +2804,18 @@ pub(crate) fn spawn_update_check(
             ));
             return;
         };
-        let resp = client
-            .get("https://api.github.com/repos/chud-lori/rusty-requester/releases/latest")
-            .header("Accept", "application/vnd.github+json")
-            .send()
-            .await;
-        let Ok(resp) = resp else {
-            let _ = tx.send(UpdateCheckMessage::Failed(
-                "Could not reach GitHub releases".to_string(),
-            ));
-            return;
-        };
-        if !resp.status().is_success() {
-            let _ = tx.send(UpdateCheckMessage::Failed(format!(
-                "GitHub returned {}",
-                resp.status()
-            )));
-            return;
-        }
-        let Ok(json) = resp.json::<serde_json::Value>().await else {
-            let _ = tx.send(UpdateCheckMessage::Failed(
-                "Could not parse GitHub release response".to_string(),
-            ));
-            return;
-        };
-        let Some(tag) = json.get("tag_name").and_then(|v| v.as_str()) else {
-            let _ = tx.send(UpdateCheckMessage::Failed(
-                "GitHub response did not include a release tag".to_string(),
-            ));
-            return;
+        let tag = match fetch_static_latest_tag(&client).await {
+            Ok(tag) => tag,
+            Err(static_reason) => match fetch_github_latest_tag(&client).await {
+                Ok(tag) => tag,
+                Err(api_reason) => {
+                    let _ = tx.send(UpdateCheckMessage::Failed(format!(
+                        "{}; fallback failed: {}",
+                        static_reason, api_reason
+                    )));
+                    return;
+                }
+            },
         };
         // `tag_name` is `v0.13.0`; strip the `v` to compare with
         // `CARGO_PKG_VERSION`.
@@ -2842,6 +2827,56 @@ pub(crate) fn spawn_update_check(
         }
     });
     rx
+}
+
+async fn fetch_static_latest_tag(client: &reqwest::Client) -> Result<String, String> {
+    let resp = client
+        .get(STATIC_LATEST_URL)
+        .header("Accept", "application/json")
+        .send()
+        .await
+        .map_err(|_| "Could not reach update metadata".to_string())?;
+    if !resp.status().is_success() {
+        return Err(format!("Update metadata returned {}", resp.status()));
+    }
+    let json = resp
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|_| "Could not parse update metadata".to_string())?;
+    latest_tag_from_json(&json, "Update metadata")
+}
+
+async fn fetch_github_latest_tag(client: &reqwest::Client) -> Result<String, String> {
+    let resp = client
+        .get(GITHUB_LATEST_RELEASE_API)
+        .header("Accept", "application/vnd.github+json")
+        .send()
+        .await
+        .map_err(|_| "Could not reach GitHub releases".to_string())?;
+    if !resp.status().is_success() {
+        if resp.status() == reqwest::StatusCode::FORBIDDEN {
+            return Err("GitHub API rate limit reached".to_string());
+        }
+        return Err(format!("GitHub returned {}", resp.status()));
+    }
+    let json = resp
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|_| "Could not parse GitHub release response".to_string())?;
+    latest_tag_from_json(&json, "GitHub response")
+}
+
+fn latest_tag_from_json(json: &serde_json::Value, source: &str) -> Result<String, String> {
+    if let Some(tag) = json.get("tag").and_then(|v| v.as_str()) {
+        return Ok(tag.to_string());
+    }
+    if let Some(tag) = json.get("tag_name").and_then(|v| v.as_str()) {
+        return Ok(tag.to_string());
+    }
+    if let Some(version) = json.get("version").and_then(|v| v.as_str()) {
+        return Ok(format!("v{}", version.trim_start_matches('v')));
+    }
+    Err(format!("{} did not include a release tag", source))
 }
 
 /// Compare two `X.Y.Z` version strings. Returns true when `a` is
@@ -3159,5 +3194,43 @@ mod tests {
     #[test]
     fn restored_active_tab_returns_none_for_empty_workspace() {
         assert!(restored_active_tab(&[], Some("missing")).is_none());
+    }
+
+    #[test]
+    fn latest_tag_from_json_accepts_static_metadata_shape() {
+        let json = serde_json::json!({
+            "version": "0.27.2",
+            "tag": "v0.27.2",
+            "release_url": "https://github.com/chud-lori/rusty-requester/releases/tag/v0.27.2"
+        });
+
+        assert_eq!(
+            latest_tag_from_json(&json, "Update metadata").unwrap(),
+            "v0.27.2"
+        );
+    }
+
+    #[test]
+    fn latest_tag_from_json_accepts_github_release_shape() {
+        let json = serde_json::json!({
+            "tag_name": "v0.27.2"
+        });
+
+        assert_eq!(
+            latest_tag_from_json(&json, "GitHub response").unwrap(),
+            "v0.27.2"
+        );
+    }
+
+    #[test]
+    fn latest_tag_from_json_prefixes_version_when_tag_missing() {
+        let json = serde_json::json!({
+            "version": "0.27.2"
+        });
+
+        assert_eq!(
+            latest_tag_from_json(&json, "Update metadata").unwrap(),
+            "v0.27.2"
+        );
     }
 }

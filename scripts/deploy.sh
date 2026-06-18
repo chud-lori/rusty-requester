@@ -8,7 +8,7 @@
 # Steps:
 #   1. Validate the tag format (vX.Y.Z) and preflight (clean tree, on
 #      main, tests pass, not already tagged).
-#   2. Bump the version in Cargo.toml and Makefile.
+#   2. Bump the version in Cargo.toml, Makefile, and docs/latest.json.
 #   3. Rebuild so Cargo.lock picks up the new version.
 #   4. Run the test suite.
 #   5. Show the diff and ask for confirmation unless -y/--yes is passed.
@@ -173,6 +173,20 @@ fi
 
 dim "  Cargo.toml + Makefile bumped"
 
+# Static update metadata served by GitHub Pages. The app checks this
+# file before falling back to the GitHub REST API so normal update
+# checks don't burn unauthenticated API quota.
+cat > docs/latest.json <<EOF
+{
+  "version": "$VERSION",
+  "tag": "$TAG",
+  "release_url": "https://github.com/chud-lori/rusty-requester/releases/tag/$TAG",
+  "release_notes_url": "https://github.com/chud-lori/rusty-requester/releases/tag/$TAG",
+  "install_url": "https://raw.githubusercontent.com/chud-lori/rusty-requester/main/install.sh"
+}
+EOF
+dim "  docs/latest.json updated"
+
 # --- Format check --------------------------------------------------------
 # Mirror what `ci.yml` enforces so we never tag a release that the CI
 # rustfmt job will reject. Cheap (~1 s); fail fast before pushing.
@@ -225,7 +239,7 @@ fi
 
 # --- Commit + tag + push -------------------------------------------------
 blue "→ Committing"
-git add Cargo.toml Cargo.lock Makefile CHANGELOG.md
+git add Cargo.toml Cargo.lock Makefile CHANGELOG.md docs/latest.json
 git commit -m "Release $TAG"
 
 blue "→ Tagging"

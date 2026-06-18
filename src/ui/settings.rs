@@ -132,9 +132,8 @@ impl ApiClient {
             );
             ui.label(
                 egui::RichText::new(
-                    "Silent GET to github.com/.../releases/latest once per \
-                         launch. No account, no telemetry — disable for \
-                         zero outbound traffic.",
+                    "Silent GET to the public latest.json metadata once per launch. \
+                         No account, no telemetry — disable for zero outbound traffic.",
                 )
                 .size(10.5)
                 .color(muted()),
