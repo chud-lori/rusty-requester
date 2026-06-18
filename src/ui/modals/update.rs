@@ -339,8 +339,9 @@ impl ApiClient {
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-            .fixed_size([500.0, 0.0])
+            .fixed_size([500.0, 280.0])
             .show(ctx, |ui| {
+                ui.set_width(464.0);
                 ui.add_space(6.0);
                 render_update_progress_strip(ui, ctx.input(|i| i.time));
                 ui.add_space(14.0);
@@ -369,20 +370,34 @@ impl ApiClient {
                                 .strong(),
                         );
                         ui.add_space(3.0);
-                        ui.label(
-                            egui::RichText::new(
-                                latest_log_line(&tail).unwrap_or("Starting installer..."),
+                        let status = latest_update_status(&tail)
+                            .unwrap_or_else(|| "Starting installer...".to_string());
+                        let status_text = truncate_middle(&status, 92);
+                        let status_rect = ui
+                            .allocate_ui_with_layout(
+                                egui::vec2(ui.available_width(), 18.0),
+                                egui::Layout::left_to_right(egui::Align::Center),
+                                |ui| {
+                                    ui.set_clip_rect(ui.max_rect());
+                                    ui.label(
+                                        egui::RichText::new(status_text)
+                                            .color(muted())
+                                            .font(egui::FontId::monospace(10.5)),
+                                    );
+                                },
                             )
-                            .color(muted())
-                            .font(egui::FontId::monospace(10.5)),
-                        );
+                            .response;
+                        status_rect.on_hover_text(status);
                         ui.add_space(4.0);
+                        let log_label =
+                            truncate_middle(&format!("Log: {}", log_path.display()), 78);
                         ui.label(
-                            egui::RichText::new(format!("Log: {}", log_path.display()))
+                            egui::RichText::new(log_label)
                                 .color(muted())
                                 .size(10.0)
                                 .monospace(),
-                        );
+                        )
+                        .on_hover_text(log_path.display().to_string());
                     });
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
@@ -614,9 +629,66 @@ fn render_update_progress_strip(ui: &mut egui::Ui, time: f64) {
     );
 }
 
-fn latest_log_line(tail: &str) -> Option<&str> {
-    tail.lines()
+fn latest_update_status(tail: &str) -> Option<String> {
+    tail.split(['\n', '\r'])
         .rev()
-        .map(str::trim)
-        .find(|line| !line.is_empty())
+        .map(strip_terminal_noise)
+        .map(|line| line.trim().to_string())
+        .find(|line| !line.is_empty() && !is_noisy_progress_line(line))
+}
+
+fn strip_terminal_noise(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut chars = line.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\u{1b}' {
+            if matches!(chars.peek(), Some('[')) {
+                chars.next();
+                for next in chars.by_ref() {
+                    if next.is_ascii_alphabetic() {
+                        break;
+                    }
+                }
+            }
+            continue;
+        }
+        if ch.is_control() && ch != '\t' {
+            continue;
+        }
+        out.push(ch);
+    }
+    out
+}
+
+fn is_noisy_progress_line(line: &str) -> bool {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return true;
+    }
+    if trimmed.starts_with("binary SHA256:") {
+        return true;
+    }
+    let progress_chars = trimmed
+        .chars()
+        .filter(|ch| matches!(ch, '#' | '=' | '-' | 'O' | ' ' | '.' | '%') || ch.is_ascii_digit())
+        .count();
+    progress_chars * 100 / trimmed.chars().count().max(1) > 80
+}
+
+fn truncate_middle(value: &str, max_chars: usize) -> String {
+    let count = value.chars().count();
+    if count <= max_chars {
+        return value.to_string();
+    }
+    let keep_each_side = max_chars.saturating_sub(1) / 2;
+    let start: String = value.chars().take(keep_each_side).collect();
+    let end: String = value
+        .chars()
+        .rev()
+        .take(keep_each_side)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
+    format!("{start}…{end}")
 }
