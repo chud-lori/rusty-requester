@@ -11,6 +11,13 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Fixed
+- **Collection Settings form layout.** The modal now uses a fixed-size,
+  top-aligned settings layout with vertical form groups and stable button widths
+  so fields and actions cannot collapse into vertical text.
+
 ## [0.27.6] — 2026-06-18
 
 ### Fixed
