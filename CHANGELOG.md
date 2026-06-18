@@ -11,6 +11,13 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Fixed
+- **Update checks avoid GitHub API rate limits.** Update checks now read
+  static release metadata from GitHub Pages first, then use GitHub's REST API
+  only as a fallback.
+
 ## [0.27.1] — 2026-06-18
 
 ### Fixed

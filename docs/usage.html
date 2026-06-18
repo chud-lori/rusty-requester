@@ -6,6 +6,15 @@
 <title>Rusty Requester Documentation</title>
 <meta name="description" content="Complete Rusty Requester documentation: install, requests, collections, environments, auth, runner, imports, exports, safe sharing, backups, shortcuts, and troubleshooting." />
 <link rel="icon" type="image/svg+xml" href="./icon.svg" />
+<meta property="og:title" content="Rusty Requester Documentation" />
+<meta property="og:description" content="Install, requests, collections, environments, auth, runner, imports, exports, safe sharing, backups, shortcuts, and troubleshooting." />
+<meta property="og:type" content="website" />
+<meta property="og:url" content="https://chud-lori.github.io/rusty-requester/usage.html" />
+<meta property="og:image" content="https://chud-lori.github.io/rusty-requester/social-card.png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:image" content="https://chud-lori.github.io/rusty-requester/social-card.png" />
 <style>
 :root {
   --bg: #0b0b0d;
@@ -442,6 +451,8 @@ th { color: var(--dim); font-size: 0.78rem; letter-spacing: 0.06em; text-transfo
       </div>
       <h3>Install a specific version</h3>
       <pre><code class="shell">curl -fsSL https://raw.githubusercontent.com/chud-lori/rusty-requester/main/install.sh | VERSION=v0.24.0 bash</code></pre>
+      <h3>Update checks</h3>
+      <p>The app reads the public <a href="./latest.json">latest.json</a> metadata file first, then falls back to GitHub Releases only if needed. This keeps normal update checks out of GitHub's unauthenticated REST API quota.</p>
       <h3>Uninstall</h3>
       <pre><code class="shell">curl -fsSL https://raw.githubusercontent.com/chud-lori/rusty-requester/main/install.sh | UNINSTALL=1 bash</code></pre>
       <p>Add <code>PURGE=1</code> to remove saved workspace data as well.</p>
@@ -760,7 +771,7 @@ environments/
         <div class="card"><h3>Proxy</h3><p>Route requests through a proxy URL when debugging or working inside corporate networks.</p></div>
         <div class="card"><h3>TLS verification</h3><p>Disable only for local/internal APIs with self-signed certs. Keep it enabled for public internet requests.</p></div>
         <div class="card"><h3>Theme</h3><p>Preview Dark, Light, or Postman theme immediately. Save commits the selection; Cancel reverts it.</p></div>
-        <div class="card"><h3>Update checks</h3><p>Optionally check GitHub releases once per app launch. No account or telemetry is involved.</p></div>
+        <div class="card"><h3>Update checks</h3><p>Optionally check static release metadata once per app launch. No account or telemetry is involved.</p></div>
       </div>
     </section>
 

@@ -524,10 +524,10 @@ pub struct AppSettings {
     /// — they're tuned to read on both backgrounds.
     #[serde(default)]
     pub theme: Theme,
-    /// When true (default), the app makes one silent GET to
-    /// `api.github.com/.../releases/latest` on launch and shows a
-    /// toast if a newer version exists. Disable for strict offline
-    /// operation — no outbound traffic from this app on startup.
+    /// When true (default), the app makes one silent GET to public
+    /// update metadata on launch and shows a toast if a newer version
+    /// exists. Disable for strict offline operation — no outbound
+    /// traffic from this app on startup.
     #[serde(default = "default_check_updates")]
     pub check_updates_on_launch: bool,
     /// Optional local workspace sync tools. Disabled by default so the

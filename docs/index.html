@@ -11,8 +11,11 @@
 <meta property="og:description" content="Postman alternative without the Electron tax. Native Rust + egui, offline collections, cURL import, response inspector, and data-driven runner reports." />
 <meta property="og:type" content="website" />
 <meta property="og:url" content="https://chud-lori.github.io/rusty-requester/" />
-<meta property="og:image" content="https://raw.githubusercontent.com/chud-lori/rusty-requester/main/assets/icon.png" />
-<meta name="twitter:card" content="summary" />
+<meta property="og:image" content="https://chud-lori.github.io/rusty-requester/social-card.png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:image" content="https://chud-lori.github.io/rusty-requester/social-card.png" />
 
 <style>
 :root {
@@ -396,6 +399,7 @@ footer a:hover { color: var(--accent); }
       <ul>
         <li><b>macOS</b> — universal (Apple Silicon + Intel) DMG. Installs into <code>/Applications</code>, strips Gatekeeper quarantine, registers with Launch Services.</li>
         <li><b>Linux</b> — x86_64 glibc 2.35+ (Ubuntu 22.04 / Debian 12 / Fedora 36+ / RHEL 9). Installs to <code>~/.local/bin</code>, drops a <code>.desktop</code> entry. No sudo.</li>
+        <li><b>Updates</b> — the app checks a static <a href="./latest.json">latest.json</a> file on GitHub Pages first, avoiding unauthenticated GitHub API rate limits.</li>
         <li><b>Manual install</b> — grab the DMG or tarball from the <a href="https://github.com/chud-lori/rusty-requester/releases/latest">Releases page</a>.</li>
         <li><b>Build from source</b> — <code>git clone</code> + <code>cargo build --release</code>. Requires Rust 1.73+.</li>
         <li><b>Uninstall</b> — same one-liner with <code>UNINSTALL=1</code> prepended. Add <code>PURGE=1</code> to wipe data too.</li>
