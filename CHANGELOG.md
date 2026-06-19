@@ -11,6 +11,13 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Fixed
+- **Response find row bounds.** The response-body find bar now renders on its
+  own bounded row with an explicit right gutter, preventing the close button
+  from being clipped by the response panel edge.
+
 ## [0.27.15] — 2026-06-19
 
 ### Fixed
