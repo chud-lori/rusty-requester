@@ -4,7 +4,7 @@
 //! empty state.
 
 use crate::model::*;
-use crate::snippet::build_json_layout_job_content_only_with_search;
+use crate::snippet::build_json_layout_job_content_only_with_search_active;
 use crate::theme::*;
 use crate::widgets::*;
 use crate::ApiClient;
@@ -527,17 +527,24 @@ impl ApiClient {
                                             .color(muted()),
                                         );
                                         let close_w = 22.0;
+                                        if self.body_search_query != self.body_search_last_query {
+                                            self.body_search_last_query =
+                                                self.body_search_query.clone();
+                                            self.body_search_active_match = 0;
+                                        }
                                         let match_count = count_case_insensitive_matches(
                                             &self.response_text,
                                             &self.body_search_query,
                                         );
-                                        let count_text = if self.body_search_query.is_empty() {
-                                            String::new()
-                                        } else {
-                                            format!("{} hit{}", match_count, plural(match_count))
-                                        };
-                                        let count_w =
-                                            if count_text.is_empty() { 0.0 } else { 58.0 };
+                                        if self.body_search_active_match >= match_count {
+                                            self.body_search_active_match = 0;
+                                        }
+                                        let count_text = response_find_count_text(
+                                            &self.body_search_query,
+                                            match_count,
+                                            self.body_search_active_match,
+                                        );
+                                        let count_w = response_find_count_width(&count_text);
                                         let gap_w = if count_text.is_empty() {
                                             ui.spacing().item_spacing.x
                                         } else {
@@ -559,11 +566,24 @@ impl ApiClient {
                                             self.body_search_focus_pending = false;
                                             search_resp.request_focus();
                                         }
-                                        if search_resp.has_focus()
-                                            && ui.input(|i| i.key_pressed(egui::Key::Escape))
-                                        {
-                                            self.body_search_visible = false;
-                                            self.body_search_query.clear();
+                                        if search_resp.has_focus() {
+                                            if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                                                self.body_search_visible = false;
+                                                self.body_search_query.clear();
+                                                self.body_search_last_query.clear();
+                                                self.body_search_active_match = 0;
+                                            }
+                                            if ui.input(|i| i.key_pressed(egui::Key::Enter))
+                                                && match_count > 0
+                                            {
+                                                let backward = ui.input(|i| i.modifiers.shift);
+                                                self.body_search_active_match =
+                                                    next_search_match_index(
+                                                        self.body_search_active_match,
+                                                        match_count,
+                                                        backward,
+                                                    );
+                                            }
                                         }
 
                                         if !count_text.is_empty() {
@@ -579,6 +599,8 @@ impl ApiClient {
                                         if close_x_button(ui, "Close search").clicked() {
                                             self.body_search_visible = false;
                                             self.body_search_query.clear();
+                                            self.body_search_last_query.clear();
+                                            self.body_search_active_match = 0;
                                         }
                                     },
                                 );
@@ -592,6 +614,8 @@ impl ApiClient {
             if self.body_search_visible {
                 self.body_search_visible = false;
                 self.body_search_query.clear();
+                self.body_search_last_query.clear();
+                self.body_search_active_match = 0;
             } else {
                 self.body_search_visible = true;
                 self.body_search_focus_pending = true;
@@ -864,11 +888,14 @@ impl ApiClient {
                                             .join("\n");
                                         let mut buf: &str = &displayed_text;
                                         let search = self.body_search_query.clone();
+                                        let active_match = self.body_search_active_match;
                                         let mut layouter =
                                             move |ui: &egui::Ui, s: &str, wrap_width: f32| {
                                                 let mut job =
-                                                    build_json_layout_job_content_only_with_search(
-                                                        s, &search,
+                                                    build_json_layout_job_content_only_with_search_active(
+                                                        s,
+                                                        &search,
+                                                        Some(active_match),
                                                     );
                                                 job.wrap.max_width = wrap_width;
                                                 ui.fonts(|f| f.layout_job(job))
@@ -1034,7 +1061,25 @@ fn render_response_metric(ui: &mut egui::Ui, value: &str) -> egui::Response {
 }
 
 fn response_find_width(available_width: f32) -> f32 {
-    available_width.clamp(0.0, 340.0)
+    available_width.clamp(0.0, 360.0)
+}
+
+fn response_find_count_text(query: &str, match_count: usize, active_match: usize) -> String {
+    if query.is_empty() {
+        String::new()
+    } else if match_count == 0 {
+        "0/0".to_string()
+    } else {
+        format!("{}/{}", active_match + 1, match_count)
+    }
+}
+
+fn response_find_count_width(count_text: &str) -> f32 {
+    if count_text.is_empty() {
+        0.0
+    } else {
+        (count_text.chars().count() as f32 * 7.0 + 14.0).clamp(42.0, 96.0)
+    }
 }
 
 fn response_find_input_width(
@@ -1056,11 +1101,13 @@ fn count_case_insensitive_matches(text: &str, query: &str) -> usize {
     text.match_indices(&query).count()
 }
 
-fn plural(count: usize) -> &'static str {
-    if count == 1 {
-        ""
+fn next_search_match_index(current: usize, match_count: usize, backward: bool) -> usize {
+    if match_count == 0 {
+        0
+    } else if backward {
+        current.checked_sub(1).unwrap_or(match_count - 1)
     } else {
-        "s"
+        (current + 1) % match_count
     }
 }
 
@@ -1768,13 +1815,30 @@ mod tests {
     fn response_find_width_is_bounded_for_narrow_and_wide_toolbars() {
         assert_eq!(response_find_width(120.0), 120.0);
         assert_eq!(response_find_width(240.0), 240.0);
-        assert_eq!(response_find_width(600.0), 340.0);
+        assert_eq!(response_find_width(600.0), 360.0);
     }
 
     #[test]
     fn response_find_input_width_reserves_count_and_close_controls() {
         assert_eq!(response_find_input_width(220.0, 0.0, 22.0, 6.0), 192.0);
-        assert_eq!(response_find_input_width(220.0, 58.0, 22.0, 12.0), 128.0);
-        assert_eq!(response_find_input_width(90.0, 58.0, 22.0, 12.0), 72.0);
+        assert_eq!(response_find_input_width(220.0, 42.0, 22.0, 12.0), 144.0);
+        assert_eq!(response_find_input_width(90.0, 42.0, 22.0, 12.0), 72.0);
+    }
+
+    #[test]
+    fn response_find_count_text_shows_active_and_total() {
+        assert_eq!(response_find_count_text("", 0, 0), "");
+        assert_eq!(response_find_count_text("ok", 0, 0), "0/0");
+        assert_eq!(response_find_count_text("ok", 3, 0), "1/3");
+        assert_eq!(response_find_count_text("ok", 3, 2), "3/3");
+    }
+
+    #[test]
+    fn response_find_enter_navigation_wraps() {
+        assert_eq!(next_search_match_index(0, 0, false), 0);
+        assert_eq!(next_search_match_index(0, 3, false), 1);
+        assert_eq!(next_search_match_index(2, 3, false), 0);
+        assert_eq!(next_search_match_index(0, 3, true), 2);
+        assert_eq!(next_search_match_index(2, 3, true), 1);
     }
 }

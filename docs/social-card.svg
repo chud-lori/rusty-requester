@@ -1,69 +1,62 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
   <title id="title">Rusty Requester social preview</title>
-  <desc id="desc">A native offline low RAM API client built with Rust and egui.</desc>
+  <desc id="desc">Rusty Requester, a native offline API client built with Rust and egui.</desc>
   <defs>
     <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
-      <stop offset="0" stop-color="#0b0c10"/>
-      <stop offset="0.55" stop-color="#11131a"/>
-      <stop offset="1" stop-color="#171015"/>
+      <stop offset="0" stop-color="#0b0d12"/>
+      <stop offset="0.58" stop-color="#11151d"/>
+      <stop offset="1" stop-color="#1c1110"/>
     </linearGradient>
-    <linearGradient id="accent" x1="0" x2="1" y1="0" y2="1">
+    <linearGradient id="iconBg" x1="0" x2="1" y1="0" y2="1">
       <stop offset="0" stop-color="#ef6a45"/>
-      <stop offset="1" stop-color="#b7410e"/>
+      <stop offset="1" stop-color="#b8341f"/>
     </linearGradient>
-    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="20" stdDeviation="22" flood-color="#000000" flood-opacity="0.35"/>
+    <linearGradient id="iconSheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f4e8d4" stop-opacity="0.14"/>
+      <stop offset="0.5" stop-color="#f4e8d4" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="warmGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#ef6a45" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#ef6a45" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="28" stdDeviation="28" flood-color="#000000" flood-opacity="0.42"/>
     </filter>
+    <symbol id="phosphor-hammer" viewBox="0 0 256 256">
+      <path d="M251.34,112,183.88,44.08a96.1,96.1,0,0,0-135.77,0l-.09.09L34.25,58.4A8,8,0,0,0,45.74,69.53L59.47,55.35a79.92,79.92,0,0,1,18.71-13.9L124.68,88l-96,96a16,16,0,0,0,0,22.63l20.69,20.69a16,16,0,0,0,22.63,0l96-96,14.34,14.34h0L200,163.3a16,16,0,0,0,22.63,0l28.69-28.69A16,16,0,0,0,251.34,112ZM60.68,216,40,195.31l68-68L128.68,148ZM162.34,114.32,140,136.67,119.31,116l22.35-22.35a8,8,0,0,0,0-11.32L94.32,35a80,80,0,0,0,78.23,20.41l44.22,44.51L188,128.66l-14.34-14.34A8,8,0,0,0,162.34,114.32Zm49,37.66-12-12L228,111.25l12,12Z"/>
+    </symbol>
   </defs>
 
   <rect width="1200" height="630" fill="url(#bg)"/>
-  <circle cx="1085" cy="92" r="220" fill="#e25c3e" opacity="0.08"/>
-  <circle cx="80" cy="590" r="260" fill="#86ac71" opacity="0.06"/>
+  <rect x="0" y="0" width="1200" height="630" fill="#05070a" opacity="0.2"/>
+  <circle cx="600" cy="240" r="330" fill="url(#warmGlow)"/>
 
-  <g opacity="0.28" stroke="#303744" stroke-width="1">
-    <path d="M0 132H1200"/>
-    <path d="M0 498H1200"/>
-    <path d="M310 0V630"/>
+  <g opacity="0.18" stroke="#3a4352" stroke-width="1">
+    <path d="M120 118H1080"/>
+    <path d="M120 512H1080"/>
+    <path d="M190 0V630"/>
     <path d="M1010 0V630"/>
   </g>
 
   <g filter="url(#shadow)">
-    <rect x="62" y="70" width="1076" height="490" rx="34" fill="#151820" stroke="#394151" stroke-width="2"/>
-    <rect x="62" y="70" width="1076" height="54" rx="34" fill="#1b1e27"/>
-    <circle cx="96" cy="97" r="9" fill="#ff6b57"/>
-    <circle cx="124" cy="97" r="9" fill="#f3bf4f"/>
-    <circle cx="152" cy="97" r="9" fill="#70bd75"/>
-
-    <rect x="92" y="154" width="254" height="376" fill="#1b1f29"/>
-    <rect x="384" y="154" width="704" height="66" rx="16" fill="#10131a" stroke="#3a4252"/>
-    <rect x="406" y="171" width="96" height="32" rx="10" fill="#263f2d" stroke="#4f7f52"/>
-    <text x="454" y="192" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" font-weight="700" fill="#86ac71">GET</text>
-    <text x="530" y="194" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="22" fill="#e9edf4">https://api.example.com/v1/users</text>
-    <rect x="962" y="169" width="92" height="36" rx="12" fill="#e25c3e"/>
-    <text x="1008" y="193" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#ffffff">Send</text>
-
-    <rect x="384" y="246" width="704" height="122" rx="16" fill="#10131a" stroke="#303744"/>
-    <text x="418" y="288" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="18" fill="#a4acb9">Params</text>
-    <rect x="418" y="312" width="634" height="1" fill="#303744"/>
-    <text x="442" y="344" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" fill="#86ac71">platform</text>
-    <text x="702" y="344" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" fill="#e9edf4">linux</text>
-
-    <rect x="384" y="396" width="704" height="112" rx="16" fill="#10131a" stroke="#303744"/>
-    <text x="418" y="436" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="18" fill="#a4acb9">Response</text>
-    <rect x="522" y="415" width="96" height="34" rx="10" fill="#263f2d"/>
-    <text x="570" y="438" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" font-weight="700" fill="#86ac71">200 OK</text>
-    <text x="650" y="438" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" fill="#a4acb9">122 ms  ·  1.2 KB</text>
-
-    <rect x="122" y="184" width="80" height="80" rx="18" fill="url(#accent)"/>
-    <path d="M145 231l31-31m-20-4 24 24m-34 11 9 9 31-31-9-9-31 31z" fill="none" stroke="#fff2e8" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
-    <text x="122" y="304" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="22" font-weight="700" fill="#f4f7fb">Rusty Requester</text>
-    <text x="122" y="336" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="15" fill="#a4acb9">Native API client</text>
-    <text x="122" y="390" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" fill="#86ac71">GET</text>
-    <text x="172" y="390" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="16" fill="#e9edf4">Health check</text>
-    <text x="122" y="428" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" fill="#f59e0b">POST</text>
-    <text x="172" y="428" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="16" fill="#e9edf4">Create user</text>
+    <rect x="490" y="90" width="220" height="220" rx="48" fill="url(#iconBg)"/>
+    <rect x="490" y="90" width="220" height="220" rx="48" fill="url(#iconSheen)"/>
+    <g transform="translate(547 120) scale(0.82)" fill="#8c2a18" opacity="0.42">
+      <use href="#phosphor-hammer" width="256" height="256"/>
+    </g>
+    <g transform="translate(540 112) scale(0.82)" fill="#fff4e8">
+      <use href="#phosphor-hammer" width="256" height="256"/>
+    </g>
+    <g fill="#fff4e8" opacity="0.72">
+      <rect x="572" y="254" width="18" height="5" rx="2.5" transform="rotate(-20 581 256.5)"/>
+      <rect x="610" y="254" width="18" height="5" rx="2.5" transform="rotate(20 619 256.5)"/>
+      <rect x="594" y="251" width="14" height="5" rx="2.5"/>
+    </g>
+    <rect x="525" y="270" width="150" height="22" rx="4" fill="#fff4e8"/>
+    <rect x="532" y="288" width="136" height="3" rx="1.5" fill="#1a1210" opacity="0.22"/>
   </g>
 
-  <text x="80" y="604" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="24" font-weight="700" fill="#f4f7fb">Rusty Requester</text>
-  <text x="282" y="604" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="22" fill="#a4acb9">Native, offline, low-RAM API client built with Rust + egui</text>
+  <text x="600" y="405" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Inter, sans-serif" font-size="72" font-weight="800" fill="#f4f7fb">Rusty Requester</text>
+  <text x="600" y="458" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Inter, sans-serif" font-size="28" font-weight="500" fill="#aeb7c6">Native, offline API client built with Rust + egui</text>
+  <text x="600" y="506" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="22" font-weight="700" fill="#ef6a45">low RAM  /  file-backed collections  /  OpenAPI import</text>
 </svg>

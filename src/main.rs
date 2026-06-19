@@ -360,6 +360,12 @@ struct ApiClient {
     /// Search query for the JSON body view — highlights matches inline
     /// rather than filtering out non-matches.
     body_search_query: String,
+    /// Zero-based active response-body search result. Enter / Shift+Enter
+    /// advances this index while the inline search field is focused.
+    body_search_active_match: usize,
+    /// Last query used to compute `body_search_active_match`. When the
+    /// query changes, the active result resets to the first match.
+    body_search_last_query: String,
     /// Whether the inline search input is visible (toggled by the 🔍
     /// icon button in the body toolbar, or Cmd/Ctrl+F).
     body_search_visible: bool,
@@ -568,6 +574,8 @@ impl Default for ApiClient {
             body_view: BodyView::Json,
             body_tree_filter: String::new(),
             body_search_query: String::new(),
+            body_search_active_match: 0,
+            body_search_last_query: String::new(),
             body_search_visible: false,
             body_search_focus_pending: false,
             folded_response_lines: HashSet::new(),

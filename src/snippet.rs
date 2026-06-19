@@ -248,7 +248,7 @@ pub fn build_json_layout_job_with_search(text: &str, search: &str) -> LayoutJob 
         highlight_json_line(&mut job, line, &font);
     }
     if let Some(q) = search_opt {
-        apply_search_highlight(&mut job, text, q);
+        apply_search_highlight(&mut job, text, q, None);
     }
     job
 }
@@ -257,6 +257,17 @@ pub fn build_json_layout_job_with_search(text: &str, search: &str) -> LayoutJob 
 /// line-number gutter. Pair with a separately-rendered gutter column
 /// so wrapped continuation rows don't collide with the line numbers.
 pub fn build_json_layout_job_content_only_with_search(text: &str, search: &str) -> LayoutJob {
+    build_json_layout_job_content_only_with_search_active(text, search, None)
+}
+
+/// Content-only JSON layout with a stronger background on the active
+/// zero-based search result. `active_match = None` highlights all matches
+/// with the regular search color.
+pub fn build_json_layout_job_content_only_with_search_active(
+    text: &str,
+    search: &str,
+    active_match: Option<usize>,
+) -> LayoutJob {
     let font = FontId::monospace(12.5);
     let mut job = LayoutJob::default();
     let search_lc = search.to_lowercase();
@@ -273,7 +284,7 @@ pub fn build_json_layout_job_content_only_with_search(text: &str, search: &str) 
         highlight_json_line(&mut job, line, &font);
     }
     if let Some(q) = search_opt {
-        apply_search_highlight(&mut job, text, q);
+        apply_search_highlight(&mut job, text, q, active_match);
     }
     job
 }
@@ -282,11 +293,18 @@ pub fn build_json_layout_job_content_only_with_search(text: &str, search: &str) 
 /// substring-matches `query` (case-insensitive). We walk the
 /// accumulated sections, find match ranges in the section's own text,
 /// and split sections so only matched chars get the highlight bg.
-fn apply_search_highlight(job: &mut LayoutJob, _full_text: &str, query: &str) {
+fn apply_search_highlight(
+    job: &mut LayoutJob,
+    _full_text: &str,
+    query: &str,
+    active_match: Option<usize>,
+) {
     let sections = std::mem::take(&mut job.sections);
     let text = job.text.clone();
     job.text.clear();
     let bg = Color32::from_rgba_unmultiplied(206, 66, 43, 120); // rust-orange highlight
+    let active_bg = Color32::from_rgba_unmultiplied(239, 106, 69, 210);
+    let mut seen = 0usize;
 
     for sec in sections {
         let slice = &text[sec.byte_range.clone()];
@@ -301,7 +319,18 @@ fn apply_search_highlight(job: &mut LayoutJob, _full_text: &str, query: &str) {
             if match_start > cursor {
                 append_section(job, &slice[cursor..match_start], &sec.format, None);
             }
-            append_section(job, &slice[match_start..match_end], &sec.format, Some(bg));
+            let match_bg = if active_match == Some(seen) {
+                active_bg
+            } else {
+                bg
+            };
+            append_section(
+                job,
+                &slice[match_start..match_end],
+                &sec.format,
+                Some(match_bg),
+            );
+            seen += 1;
             cursor = match_end;
             if cursor >= slice_lc.len() {
                 break;
