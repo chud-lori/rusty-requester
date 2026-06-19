@@ -418,6 +418,8 @@ struct ApiClient {
     /// default Services/Hide/Quit stub.
     #[cfg(target_os = "macos")]
     macos_menu_installed: bool,
+    #[cfg(target_os = "macos")]
+    main_window_maximized: bool,
 }
 
 impl Default for ApiClient {
@@ -586,6 +588,8 @@ impl Default for ApiClient {
             palette_focus_pending: false,
             #[cfg(target_os = "macos")]
             macos_menu_installed: false,
+            #[cfg(target_os = "macos")]
+            main_window_maximized: false,
         };
         // Attach the startup warning (if any). Consumed by the first
         // `update()` call via `show_toast`.
@@ -3114,6 +3118,7 @@ fn main() -> Result<(), eframe::Error> {
     let mut viewport = egui::ViewportBuilder::default()
         .with_inner_size([1280.0, 820.0])
         .with_min_inner_size([900.0, 600.0])
+        .with_resizable(true)
         .with_title("Rusty Requester")
         // Wayland app_id / X11 WM_CLASS. Must match the `.desktop`
         // file's `StartupWMClass=` so GNOME / KDE can associate the
