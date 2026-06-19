@@ -149,20 +149,26 @@ impl ApiClient {
         // chrome. Active tab fill alone signals "selected", no darker
         // horizontal seam between the tab strip and the content below.
         let bar_height = 38.0;
+        #[cfg(target_os = "macos")]
+        let titlebar_drag_height = 28.0;
         egui::Frame::none()
             .fill(crate::theme::bg())
             .inner_margin(egui::Margin {
                 left: 10.0,
                 right: 10.0,
-                // macOS: extra top padding so the tab strip clears the
-                // traffic-light window controls when the title bar is
-                // merged into the chrome.
-                top: if cfg!(target_os = "macos") { 28.0 } else { 4.0 },
+                top: if cfg!(target_os = "macos") { 0.0 } else { 4.0 },
                 bottom: 0.0,
             })
             .show(ui, |ui| {
-                ui.set_min_height(bar_height);
-                ui.set_max_height(bar_height);
+                #[cfg(target_os = "macos")]
+                let total_height = bar_height + titlebar_drag_height;
+                #[cfg(not(target_os = "macos"))]
+                let total_height = bar_height;
+                ui.set_min_height(total_height);
+                ui.set_max_height(total_height);
+
+                #[cfg(target_os = "macos")]
+                self.render_window_drag_strip(ui, titlebar_drag_height);
 
                 let mut activate: Option<usize> = None;
                 let mut close: Option<usize> = None;
@@ -454,6 +460,29 @@ impl ApiClient {
                     }
                 }
             });
+    }
+
+    #[cfg(target_os = "macos")]
+    fn render_window_drag_strip(&mut self, ui: &mut egui::Ui, height: f32) {
+        ui.horizontal(|ui| {
+            // Keep the invisible drag target away from the macOS traffic lights.
+            ui.add_space(74.0);
+            let width = ui.available_width().max(0.0);
+            let (_rect, response) =
+                ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::click_and_drag());
+
+            if response.double_clicked() {
+                let currently_maximized = ui
+                    .ctx()
+                    .input(|i| i.viewport().maximized.unwrap_or(self.main_window_maximized));
+                self.main_window_maximized = !currently_maximized;
+                ui.ctx().send_viewport_cmd(egui::ViewportCommand::Maximized(
+                    self.main_window_maximized,
+                ));
+            } else if response.drag_started() {
+                ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
+            }
+        });
     }
 
     /// Open the "Save to folder" modal for the draft at tab index `idx`.

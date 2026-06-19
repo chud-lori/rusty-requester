@@ -11,6 +11,13 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Fixed
+- **Window resize and zoom behavior.** The main app window is explicitly
+  resizable, and the macOS custom top chrome now supports window dragging and
+  double-click maximize/restore.
+
 ## [0.27.11] — 2026-06-19
 
 ### Added
