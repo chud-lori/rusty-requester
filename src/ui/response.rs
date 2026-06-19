@@ -499,13 +499,17 @@ impl ApiClient {
                             .desired_width(170.0),
                     );
                 }
+            });
 
-                if self.body_search_visible {
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.add_space(4.0);
-                        let horizontal_margin = 8.0;
-                        let find_w = response_find_width((ui.available_width() - 4.0).max(0.0));
-                        let content_w = response_find_inner_width(find_w, horizontal_margin);
+            if self.body_search_visible {
+                ui.add_space(4.0);
+                let horizontal_margin = 8.0;
+                let find_w = response_find_row_width(ui.available_width());
+                let content_w = response_find_inner_width(find_w, horizontal_margin);
+                ui.allocate_ui_with_layout(
+                    egui::vec2(find_w, 32.0),
+                    egui::Layout::left_to_right(egui::Align::Center),
+                    |ui| {
                         egui::Frame::none()
                             .fill(if is_light() {
                                 egui::Color32::from_rgb(245, 247, 250)
@@ -518,101 +522,92 @@ impl ApiClient {
                             .show(ui, |ui| {
                                 ui.set_min_width(content_w);
                                 ui.set_max_width(content_w);
-                                ui.with_layout(
-                                    egui::Layout::left_to_right(egui::Align::Center),
-                                    |ui| {
-                                        ui.spacing_mut().item_spacing.x = 6.0;
-                                        ui.label(
-                                            egui::RichText::new(
-                                                egui_phosphor::regular::MAGNIFYING_GLASS,
-                                            )
-                                            .size(13.0)
-                                            .color(muted()),
-                                        );
-                                        let close_w = 22.0;
-                                        if self.body_search_query != self.body_search_last_query {
-                                            self.body_search_last_query =
-                                                self.body_search_query.clone();
-                                            self.body_search_active_match = 0;
-                                        }
-                                        let match_count = count_case_insensitive_matches(
-                                            &self.response_text,
-                                            &self.body_search_query,
-                                        );
-                                        if self.body_search_active_match >= match_count {
-                                            self.body_search_active_match = 0;
-                                        }
-                                        let count_text = response_find_count_text(
-                                            &self.body_search_query,
-                                            match_count,
-                                            self.body_search_active_match,
-                                        );
-                                        let count_w = response_find_count_width(&count_text);
-                                        let gap_w = if count_text.is_empty() {
-                                            ui.spacing().item_spacing.x
-                                        } else {
-                                            ui.spacing().item_spacing.x * 2.0
-                                        };
-                                        let icon_w = 14.0;
-                                        let spacing_w = ui.spacing().item_spacing.x;
-                                        let input_w = response_find_input_width(
-                                            content_w - icon_w - spacing_w,
-                                            count_w,
-                                            close_w,
-                                            gap_w,
-                                        );
-                                        let search_resp = ui.add_sized(
-                                            [input_w, 22.0],
-                                            egui::TextEdit::singleline(&mut self.body_search_query)
-                                                .hint_text(hint("Find"))
-                                                .frame(false),
-                                        );
-                                        if self.body_search_focus_pending {
-                                            self.body_search_focus_pending = false;
-                                            search_resp.request_focus();
-                                        }
-                                        if search_resp.has_focus() {
-                                            if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-                                                self.body_search_visible = false;
-                                                self.body_search_query.clear();
-                                                self.body_search_last_query.clear();
-                                                self.body_search_active_match = 0;
-                                            }
-                                            if ui.input(|i| i.key_pressed(egui::Key::Enter))
-                                                && match_count > 0
-                                            {
-                                                let backward = ui.input(|i| i.modifiers.shift);
-                                                self.body_search_active_match =
-                                                    next_search_match_index(
-                                                        self.body_search_active_match,
-                                                        match_count,
-                                                        backward,
-                                                    );
-                                            }
-                                        }
-
-                                        if !count_text.is_empty() {
-                                            ui.add_sized(
-                                                [count_w, 20.0],
-                                                egui::Label::new(
-                                                    egui::RichText::new(count_text)
-                                                        .size(11.0)
-                                                        .color(muted()),
-                                                ),
-                                            );
-                                        }
-                                        if close_x_button(ui, "Close search").clicked() {
-                                            self.body_search_visible = false;
-                                            self.body_search_query.clear();
-                                            self.body_search_last_query.clear();
-                                            self.body_search_active_match = 0;
-                                        }
-                                    },
+                                ui.spacing_mut().item_spacing.x = 6.0;
+                                ui.label(
+                                    egui::RichText::new(egui_phosphor::regular::MAGNIFYING_GLASS)
+                                        .size(13.0)
+                                        .color(muted()),
                                 );
+                                let close_w = 22.0;
+                                if self.body_search_query != self.body_search_last_query {
+                                    self.body_search_last_query = self.body_search_query.clone();
+                                    self.body_search_active_match = 0;
+                                }
+                                let match_count = count_case_insensitive_matches(
+                                    &self.response_text,
+                                    &self.body_search_query,
+                                );
+                                if self.body_search_active_match >= match_count {
+                                    self.body_search_active_match = 0;
+                                }
+                                let count_text = response_find_count_text(
+                                    &self.body_search_query,
+                                    match_count,
+                                    self.body_search_active_match,
+                                );
+                                let count_w = response_find_count_width(&count_text);
+                                let gap_w = if count_text.is_empty() {
+                                    ui.spacing().item_spacing.x
+                                } else {
+                                    ui.spacing().item_spacing.x * 2.0
+                                };
+                                let icon_w = 14.0;
+                                let spacing_w = ui.spacing().item_spacing.x;
+                                let input_w = response_find_input_width(
+                                    content_w - icon_w - spacing_w,
+                                    count_w,
+                                    close_w,
+                                    gap_w,
+                                );
+                                let search_resp = ui.add_sized(
+                                    [input_w, 22.0],
+                                    egui::TextEdit::singleline(&mut self.body_search_query)
+                                        .hint_text(hint("Find"))
+                                        .frame(false),
+                                );
+                                if self.body_search_focus_pending {
+                                    self.body_search_focus_pending = false;
+                                    search_resp.request_focus();
+                                }
+                                if search_resp.has_focus() {
+                                    if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                                        self.body_search_visible = false;
+                                        self.body_search_query.clear();
+                                        self.body_search_last_query.clear();
+                                        self.body_search_active_match = 0;
+                                    }
+                                    if ui.input(|i| i.key_pressed(egui::Key::Enter))
+                                        && match_count > 0
+                                    {
+                                        let backward = ui.input(|i| i.modifiers.shift);
+                                        self.body_search_active_match = next_search_match_index(
+                                            self.body_search_active_match,
+                                            match_count,
+                                            backward,
+                                        );
+                                    }
+                                }
+
+                                if !count_text.is_empty() {
+                                    ui.add_sized(
+                                        [count_w, 20.0],
+                                        egui::Label::new(
+                                            egui::RichText::new(count_text)
+                                                .size(11.0)
+                                                .color(muted()),
+                                        ),
+                                    );
+                                }
+                                if close_x_button(ui, "Close search").clicked() {
+                                    self.body_search_visible = false;
+                                    self.body_search_query.clear();
+                                    self.body_search_last_query.clear();
+                                    self.body_search_active_match = 0;
+                                }
                             });
-                    });
-                }
-            });
+                    },
+                );
+            }
         }
 
         if toggle_search {
@@ -1069,6 +1064,10 @@ fn response_find_width(available_width: f32) -> f32 {
     available_width.clamp(0.0, 360.0)
 }
 
+fn response_find_row_width(available_width: f32) -> f32 {
+    response_find_width((available_width - 12.0).max(0.0))
+}
+
 fn response_find_inner_width(frame_width: f32, horizontal_margin: f32) -> f32 {
     (frame_width - horizontal_margin * 2.0).max(0.0)
 }
@@ -1097,8 +1096,7 @@ fn response_find_input_width(
     close_width: f32,
     gap_width: f32,
 ) -> f32 {
-    let max_width = available_width.max(72.0);
-    (available_width - count_width - close_width - gap_width).clamp(72.0, max_width)
+    (available_width - count_width - close_width - gap_width).max(0.0)
 }
 
 fn count_case_insensitive_matches(text: &str, query: &str) -> usize {
@@ -1828,6 +1826,14 @@ mod tests {
     }
 
     #[test]
+    fn response_find_row_width_leaves_right_gutter() {
+        assert_eq!(response_find_row_width(10.0), 0.0);
+        assert_eq!(response_find_row_width(240.0), 228.0);
+        assert_eq!(response_find_row_width(600.0), 360.0);
+        assert!(response_find_row_width(240.0) <= 240.0 - 12.0);
+    }
+
+    #[test]
     fn response_find_inner_width_subtracts_frame_padding() {
         assert_eq!(response_find_inner_width(360.0, 8.0), 344.0);
         assert_eq!(response_find_inner_width(12.0, 8.0), 0.0);
@@ -1844,7 +1850,8 @@ mod tests {
     fn response_find_input_width_reserves_count_and_close_controls() {
         assert_eq!(response_find_input_width(220.0, 0.0, 22.0, 6.0), 192.0);
         assert_eq!(response_find_input_width(220.0, 42.0, 22.0, 12.0), 144.0);
-        assert_eq!(response_find_input_width(90.0, 42.0, 22.0, 12.0), 72.0);
+        assert_eq!(response_find_input_width(90.0, 42.0, 22.0, 12.0), 14.0);
+        assert_eq!(response_find_input_width(40.0, 42.0, 22.0, 12.0), 0.0);
     }
 
     #[test]
