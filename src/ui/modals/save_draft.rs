@@ -501,6 +501,7 @@ impl ApiClient {
         });
         self.selected_folder_path = vec![];
         self.selected_request_id = Some(id);
+        self.scroll_active_tab_into_view = true;
         self.load_request_for_editing();
         self.response_text.clear();
         self.response_status.clear();

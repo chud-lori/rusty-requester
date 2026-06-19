@@ -251,6 +251,13 @@ impl ApiClient {
                                                 tab.pinned,
                                                 is_renaming,
                                             );
+                                            if is_active && self.scroll_active_tab_into_view {
+                                                ui.scroll_to_rect(
+                                                    tab_rect,
+                                                    Some(egui::Align::Center),
+                                                );
+                                                self.scroll_active_tab_into_view = false;
+                                            }
 
                                             // Inline rename TextEdit overlay — replaces
                                             // the tab name slot when this tab is the one
@@ -1739,12 +1746,21 @@ impl ApiClient {
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
                         // Title
-                        ui.label(
-                            egui::RichText::new(&folder_snapshot.name)
-                                .size(26.0)
-                                .strong()
-                                .color(text()),
-                        );
+                        ui.horizontal_top(|ui| {
+                            ui.vertical(|ui| {
+                                ui.label(
+                                    egui::RichText::new(&folder_snapshot.name)
+                                        .size(26.0)
+                                        .strong()
+                                        .color(text()),
+                                );
+                            });
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                                if close_x_button(ui, "Close collection overview").clicked() {
+                                    self.viewing_folder_id = None;
+                                }
+                            });
+                        });
                         ui.add_space(6.0);
 
                         // Stats line — "N requests · M subfolders"
@@ -1767,16 +1783,25 @@ impl ApiClient {
                                 .color(muted()),
                         );
                         ui.add_space(4.0);
-                        let desc_resp = ui.add(
-                            egui::TextEdit::multiline(&mut self.editing_folder_desc)
-                                .hint_text(
-                                    "Write a description for this collection. \
-                                     Explain what it's for, any auth quirks, \
-                                     env setup, etc.",
+                        let desc_resp = egui::Frame::none()
+                            .fill(elevated())
+                            .stroke(egui::Stroke::new(1.0, border()))
+                            .rounding(egui::Rounding::same(8.0))
+                            .inner_margin(egui::Margin::symmetric(10.0, 8.0))
+                            .show(ui, |ui| {
+                                ui.set_width(ui.available_width());
+                                ui.add_sized(
+                                    [ui.available_width(), 86.0],
+                                    egui::TextEdit::multiline(&mut self.editing_folder_desc)
+                                        .hint_text(
+                                            "Write a description for this collection. Explain what it's for, auth quirks, env setup, etc.",
+                                        )
+                                        .desired_rows(4)
+                                        .desired_width(f32::INFINITY)
+                                        .frame(false),
                                 )
-                                .desired_rows(4)
-                                .desired_width(f32::INFINITY),
-                        );
+                            })
+                            .inner;
                         if desc_resp.changed() {
                             let new_desc = self.editing_folder_desc.clone();
                             if let Some(folder) =
