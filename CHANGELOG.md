@@ -11,6 +11,13 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Added
+- **Response body search navigation.** Find-in-body now shows the active match
+  position and total matches, supports Enter / Shift+Enter navigation, and
+  highlights the active match more strongly.
+
 ## [0.27.12] — 2026-06-19
 
 ### Fixed
