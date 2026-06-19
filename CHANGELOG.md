@@ -11,6 +11,13 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Fixed
+- **Response find layout.** The inline response-body search box now uses a
+  fixed bounded width so the close button cannot overlap or clip at the toolbar
+  edge.
+
 ## [0.27.13] — 2026-06-19
 
 ### Added
