@@ -806,25 +806,25 @@ impl ApiClient {
                     // Same geometry as the name: method_left (10) + method_slot_w (46)
                     let name_start = rect.left() + 10.0 + 46.0;
                     let edit_rect = egui::Rect::from_min_max(
-                        egui::pos2(name_start - 2.0, rect.top() + 3.0),
-                        egui::pos2(rect.right() - 4.0, rect.bottom() - 3.0),
+                        egui::pos2(name_start - 4.0, rect.top() + 2.0),
+                        egui::pos2(rect.right() - 6.0, rect.bottom() - 2.0),
                     );
                     // Visible background + accent border so the input is obvious.
                     ui.painter()
-                        .rect_filled(edit_rect, egui::Rounding::same(4.0), panel_dark());
+                        .rect_filled(edit_rect, egui::Rounding::same(6.0), elevated());
                     ui.painter().rect_stroke(
                         edit_rect,
-                        egui::Rounding::same(4.0),
-                        egui::Stroke::new(1.5, accent()),
+                        egui::Rounding::same(6.0),
+                        egui::Stroke::new(1.0, accent()),
                     );
-                    let inner = edit_rect.shrink2(egui::vec2(6.0, 2.0));
+                    let inner = edit_rect.shrink2(egui::vec2(8.0, 1.0));
                     let edit_resp = ui.put(
                         inner,
                         egui::TextEdit::singleline(&mut self.rename_request_text)
                             .desired_width(inner.width())
                             .frame(false)
                             .text_color(text())
-                            .font(egui::FontId::new(13.0, egui::FontFamily::Proportional)),
+                            .font(egui::FontId::new(12.5, egui::FontFamily::Proportional)),
                     );
                     if self.request_rename_focus_pending {
                         self.request_rename_focus_pending = false;

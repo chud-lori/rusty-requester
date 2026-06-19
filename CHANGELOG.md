@@ -11,6 +11,15 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Fixed
+- **Request and collection navigation polish.** Response body search no longer
+  overlaps the toolbar edge, newly opened request tabs scroll into view, sidebar
+  request rename fields align with the row, Collection Settings can rename the
+  collection, and collection overview now has a close button plus a cleaner
+  description field.
+
 ## [0.27.9] — 2026-06-19
 
 ### Fixed

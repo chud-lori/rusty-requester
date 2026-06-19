@@ -41,7 +41,9 @@ impl ApiClient {
 
         let mut open = self.show_collection_settings_modal;
         let mut sync = folder.sync.clone();
+        let mut collection_name = folder.name.clone();
         let mut changed = false;
+        let mut name_changed = false;
         let mut actions = CollectionSettingsActions::default();
 
         egui::Window::new("Collection settings")
@@ -63,7 +65,12 @@ impl ApiClient {
                 egui::Frame::none()
                     .inner_margin(egui::Margin::symmetric(18.0, 14.0))
                     .show(ui, |ui| {
-                        render_header(ui, &folder.name, &mut self.show_collection_settings_modal);
+                        render_header(
+                            ui,
+                            &mut collection_name,
+                            &mut name_changed,
+                            &mut self.show_collection_settings_modal,
+                        );
                         ui.add_space(12.0);
                         ui.separator();
                         ui.add_space(12.0);
@@ -164,9 +171,17 @@ impl ApiClient {
 
         self.show_collection_settings_modal = open && self.show_collection_settings_modal;
 
-        if changed {
+        if changed || name_changed {
             if let Some(folder) = find_folder_by_id_mut(&mut self.state.folders, &folder_id) {
-                folder.sync = sync;
+                if changed {
+                    folder.sync = sync;
+                }
+                if name_changed {
+                    let trimmed = collection_name.trim();
+                    if !trimmed.is_empty() {
+                        folder.name = trimmed.to_string();
+                    }
+                }
                 self.save_state();
             }
         }
@@ -197,7 +212,12 @@ impl ApiClient {
     }
 }
 
-fn render_header(ui: &mut egui::Ui, collection_name: &str, modal_open: &mut bool) {
+fn render_header(
+    ui: &mut egui::Ui,
+    collection_name: &mut String,
+    name_changed: &mut bool,
+    modal_open: &mut bool,
+) {
     ui.horizontal(|ui| {
         ui.vertical(|ui| {
             ui.label(
@@ -206,11 +226,15 @@ fn render_header(ui: &mut egui::Ui, collection_name: &str, modal_open: &mut bool
                     .strong()
                     .color(text()),
             );
-            ui.label(
-                egui::RichText::new(collection_name)
-                    .size(11.0)
-                    .color(muted()),
+            ui.label(egui::RichText::new("Name").size(11.0).color(muted()));
+            ui.add_space(4.0);
+            let response = framed_text_field(
+                ui,
+                ui.available_width().min(420.0),
+                collection_name,
+                "Collection name",
             );
+            *name_changed |= response.changed();
         });
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if ui
@@ -375,13 +399,20 @@ fn directory_section(
             "Remote pull/push needs the repository root containing .git.",
             C_ORANGE,
         );
+    } else if git_ready {
+        ui.add_space(8.0);
+        status_note(
+            ui,
+            "Directory linked. Click Export now to write reviewable files.",
+            C_GREEN,
+        );
     }
     ui.add_space(12.0);
     action_buttons(ui, |ui| {
         if fixed_button(ui, git_ready && !busy, "Import from folder", 142.0).clicked() {
             actions.import_workspace = true;
         }
-        if fixed_button(ui, git_ready && !busy, "Export to folder", 132.0).clicked() {
+        if fixed_button(ui, git_ready && !busy, "Export now", 112.0).clicked() {
             actions.export_workspace = true;
         }
     });

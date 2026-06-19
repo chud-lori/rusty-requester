@@ -242,6 +242,7 @@ struct ApiClient {
     /// into view. Stores `(folder_path, request_id)` of the row to
     /// reveal; cleared by the sidebar once it's done scrolling.
     reveal_in_sidebar_pending: Option<(Vec<String>, String)>,
+    scroll_active_tab_into_view: bool,
 
     /// Pending file-dialog actions — executed at the top of the next
     /// `update()` frame rather than immediately inside the menu closure,
@@ -533,6 +534,7 @@ impl Default for ApiClient {
             request_rename_focus_pending: false,
             last_request_click: None,
             reveal_in_sidebar_pending: None,
+            scroll_active_tab_into_view: false,
             pending_import: false,
             pending_export_json: false,
             pending_export_yaml: false,
@@ -1454,6 +1456,7 @@ impl ApiClient {
             self.selected_request_id = Some(request_id);
         }
         self.state.active_tab_id = self.selected_request_id.clone();
+        self.scroll_active_tab_into_view = true;
 
         // Re-clicking the already-active tab is a no-op — don't wipe
         // the live response by restoring from an empty cache. Only
@@ -1745,6 +1748,7 @@ impl ApiClient {
         });
         self.selected_folder_path = vec![];
         self.selected_request_id = Some(new_id);
+        self.scroll_active_tab_into_view = true;
         self.load_request_for_editing();
         self.save_state();
         self.show_toast("Tab duplicated");

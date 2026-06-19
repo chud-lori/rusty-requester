@@ -502,7 +502,8 @@ impl ApiClient {
 
                 if self.body_search_visible {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        let find_w = ui.available_width().clamp(230.0, 340.0);
+                        ui.add_space(4.0);
+                        let find_w = response_find_width((ui.available_width() - 4.0).max(0.0));
                         egui::Frame::none()
                             .fill(if is_light() {
                                 egui::Color32::from_rgb(245, 247, 250)
@@ -514,66 +515,73 @@ impl ApiClient {
                             .inner_margin(egui::Margin::symmetric(8.0, 4.0))
                             .show(ui, |ui| {
                                 ui.set_width(find_w);
-                                ui.horizontal(|ui| {
-                                    ui.spacing_mut().item_spacing.x = 6.0;
-                                    ui.label(
-                                        egui::RichText::new(
-                                            egui_phosphor::regular::MAGNIFYING_GLASS,
-                                        )
-                                        .size(13.0)
-                                        .color(muted()),
-                                    );
-                                    let close_w = 22.0;
-                                    let match_count = count_case_insensitive_matches(
-                                        &self.response_text,
-                                        &self.body_search_query,
-                                    );
-                                    let count_text = if self.body_search_query.is_empty() {
-                                        String::new()
-                                    } else {
-                                        format!("{} hit{}", match_count, plural(match_count))
-                                    };
-                                    let count_w = if count_text.is_empty() { 0.0 } else { 58.0 };
-                                    let gap_w = if count_text.is_empty() {
-                                        ui.spacing().item_spacing.x
-                                    } else {
-                                        ui.spacing().item_spacing.x * 2.0
-                                    };
-                                    let input_w =
-                                        (ui.available_width() - count_w - close_w - gap_w)
-                                            .max(130.0);
-                                    let search_resp = ui.add_sized(
-                                        [input_w, 22.0],
-                                        egui::TextEdit::singleline(&mut self.body_search_query)
-                                            .hint_text(hint("Find"))
-                                            .frame(false),
-                                    );
-                                    if self.body_search_focus_pending {
-                                        self.body_search_focus_pending = false;
-                                        search_resp.request_focus();
-                                    }
-                                    if search_resp.has_focus()
-                                        && ui.input(|i| i.key_pressed(egui::Key::Escape))
-                                    {
-                                        self.body_search_visible = false;
-                                        self.body_search_query.clear();
-                                    }
-
-                                    if !count_text.is_empty() {
-                                        ui.add_sized(
-                                            [count_w, 20.0],
-                                            egui::Label::new(
-                                                egui::RichText::new(count_text)
-                                                    .size(11.0)
-                                                    .color(muted()),
-                                            ),
+                                ui.with_layout(
+                                    egui::Layout::left_to_right(egui::Align::Center),
+                                    |ui| {
+                                        ui.spacing_mut().item_spacing.x = 6.0;
+                                        ui.label(
+                                            egui::RichText::new(
+                                                egui_phosphor::regular::MAGNIFYING_GLASS,
+                                            )
+                                            .size(13.0)
+                                            .color(muted()),
                                         );
-                                    }
-                                    if close_x_button(ui, "Close search").clicked() {
-                                        self.body_search_visible = false;
-                                        self.body_search_query.clear();
-                                    }
-                                });
+                                        let close_w = 22.0;
+                                        let match_count = count_case_insensitive_matches(
+                                            &self.response_text,
+                                            &self.body_search_query,
+                                        );
+                                        let count_text = if self.body_search_query.is_empty() {
+                                            String::new()
+                                        } else {
+                                            format!("{} hit{}", match_count, plural(match_count))
+                                        };
+                                        let count_w =
+                                            if count_text.is_empty() { 0.0 } else { 58.0 };
+                                        let gap_w = if count_text.is_empty() {
+                                            ui.spacing().item_spacing.x
+                                        } else {
+                                            ui.spacing().item_spacing.x * 2.0
+                                        };
+                                        let input_w = response_find_input_width(
+                                            ui.available_width(),
+                                            count_w,
+                                            close_w,
+                                            gap_w,
+                                        );
+                                        let search_resp = ui.add_sized(
+                                            [input_w, 22.0],
+                                            egui::TextEdit::singleline(&mut self.body_search_query)
+                                                .hint_text(hint("Find"))
+                                                .frame(false),
+                                        );
+                                        if self.body_search_focus_pending {
+                                            self.body_search_focus_pending = false;
+                                            search_resp.request_focus();
+                                        }
+                                        if search_resp.has_focus()
+                                            && ui.input(|i| i.key_pressed(egui::Key::Escape))
+                                        {
+                                            self.body_search_visible = false;
+                                            self.body_search_query.clear();
+                                        }
+
+                                        if !count_text.is_empty() {
+                                            ui.add_sized(
+                                                [count_w, 20.0],
+                                                egui::Label::new(
+                                                    egui::RichText::new(count_text)
+                                                        .size(11.0)
+                                                        .color(muted()),
+                                                ),
+                                            );
+                                        }
+                                        if close_x_button(ui, "Close search").clicked() {
+                                            self.body_search_visible = false;
+                                            self.body_search_query.clear();
+                                        }
+                                    },
+                                );
                             });
                     });
                 }
@@ -1023,6 +1031,20 @@ fn render_response_metric(ui: &mut egui::Ui, value: &str) -> egui::Response {
         )
         .sense(egui::Sense::hover()),
     )
+}
+
+fn response_find_width(available_width: f32) -> f32 {
+    available_width.clamp(0.0, 340.0)
+}
+
+fn response_find_input_width(
+    available_width: f32,
+    count_width: f32,
+    close_width: f32,
+    gap_width: f32,
+) -> f32 {
+    let max_width = available_width.max(72.0);
+    (available_width - count_width - close_width - gap_width).clamp(72.0, max_width)
 }
 
 fn count_case_insensitive_matches(text: &str, query: &str) -> usize {
@@ -1740,5 +1762,19 @@ mod tests {
         .unwrap();
         assert_eq!(summary.headline, "Non-JSON response");
         assert!(summary.detail.contains("Raw shows the original body"));
+    }
+
+    #[test]
+    fn response_find_width_is_bounded_for_narrow_and_wide_toolbars() {
+        assert_eq!(response_find_width(120.0), 120.0);
+        assert_eq!(response_find_width(240.0), 240.0);
+        assert_eq!(response_find_width(600.0), 340.0);
+    }
+
+    #[test]
+    fn response_find_input_width_reserves_count_and_close_controls() {
+        assert_eq!(response_find_input_width(220.0, 0.0, 22.0, 6.0), 192.0);
+        assert_eq!(response_find_input_width(220.0, 58.0, 22.0, 12.0), 128.0);
+        assert_eq!(response_find_input_width(90.0, 58.0, 22.0, 12.0), 72.0);
     }
 }
