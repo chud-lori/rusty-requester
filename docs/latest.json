@@ -1,7 +1,7 @@
 {
-  "version": "0.27.15",
-  "tag": "v0.27.15",
-  "release_url": "https://github.com/chud-lori/rusty-requester/releases/tag/v0.27.15",
-  "release_notes_url": "https://github.com/chud-lori/rusty-requester/releases/tag/v0.27.15",
+  "version": "0.27.16",
+  "tag": "v0.27.16",
+  "release_url": "https://github.com/chud-lori/rusty-requester/releases/tag/v0.27.16",
+  "release_notes_url": "https://github.com/chud-lori/rusty-requester/releases/tag/v0.27.16",
   "install_url": "https://raw.githubusercontent.com/chud-lori/rusty-requester/main/install.sh"
 }

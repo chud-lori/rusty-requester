@@ -11,7 +11,7 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
-## Unreleased
+## [0.27.16] — 2026-06-19
 
 ### Fixed
 - **Response find row bounds.** The response-body find bar now renders on its
