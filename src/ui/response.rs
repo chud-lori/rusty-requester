@@ -532,6 +532,7 @@ impl ApiClient {
                                 if self.body_search_query != self.body_search_last_query {
                                     self.body_search_last_query = self.body_search_query.clone();
                                     self.body_search_active_match = 0;
+                                    self.body_search_scroll_pending = true;
                                 }
                                 let match_count = count_case_insensitive_matches(
                                     &self.response_text,
@@ -585,6 +586,7 @@ impl ApiClient {
                                             match_count,
                                             backward,
                                         );
+                                        self.body_search_scroll_pending = true;
                                     }
                                 }
 
@@ -603,6 +605,7 @@ impl ApiClient {
                                     self.body_search_query.clear();
                                     self.body_search_last_query.clear();
                                     self.body_search_active_match = 0;
+                                    self.body_search_scroll_pending = false;
                                 }
                             });
                     },
@@ -616,9 +619,11 @@ impl ApiClient {
                 self.body_search_query.clear();
                 self.body_search_last_query.clear();
                 self.body_search_active_match = 0;
+                self.body_search_scroll_pending = false;
             } else {
                 self.body_search_visible = true;
                 self.body_search_focus_pending = true;
+                self.body_search_scroll_pending = true;
             }
         }
         if copy_clicked {
@@ -900,13 +905,31 @@ impl ApiClient {
                                                 job.wrap.max_width = wrap_width;
                                                 ui.fonts(|f| f.layout_job(job))
                                             };
-                                        ui.add(
+                                        let text_resp = ui.add(
                                             egui::TextEdit::multiline(&mut buf)
                                                 .frame(false)
                                                 .desired_width(f32::INFINITY)
                                                 .font(egui::TextStyle::Monospace)
                                                 .layouter(&mut layouter),
                                         );
+                                        if self.body_search_scroll_pending {
+                                            if let Some(line_idx) = response_find_active_match_line(
+                                                &displayed_text,
+                                                &self.body_search_query,
+                                                self.body_search_active_match,
+                                            ) {
+                                                let y = text_resp.rect.top() + line_idx as f32 * row_h;
+                                                let target = egui::Rect::from_min_size(
+                                                    egui::pos2(text_resp.rect.left(), y),
+                                                    egui::vec2(1.0, row_h),
+                                                );
+                                                ui.scroll_to_rect(
+                                                    target,
+                                                    Some(egui::Align::Center),
+                                                );
+                                            }
+                                            self.body_search_scroll_pending = false;
+                                        }
                                     });
                                     if let Some(line_no) = toggle_fold {
                                         if !self.folded_response_lines.remove(&line_no) {
@@ -957,16 +980,47 @@ impl ApiClient {
                                     self.render_diff_view(ui);
                                 }
                                 BodyView::Raw => {
-                                    ui.add_sized(
+                                    let mut buf: &str = &self.response_text;
+                                    let search = self.body_search_query.clone();
+                                    let active_match = self.body_search_active_match;
+                                    let mut layouter =
+                                        move |ui: &egui::Ui, s: &str, wrap_width: f32| {
+                                            let mut job =
+                                                build_json_layout_job_content_only_with_search_active(
+                                                    s,
+                                                    &search,
+                                                    Some(active_match),
+                                                );
+                                            job.wrap.max_width = wrap_width;
+                                            ui.fonts(|f| f.layout_job(job))
+                                        };
+                                    let text_resp = ui.add_sized(
                                         egui::vec2(
                                             ui.available_width(),
                                             ui.available_height().max(120.0),
                                         ),
-                                        egui::TextEdit::multiline(&mut self.response_text.as_str())
+                                        egui::TextEdit::multiline(&mut buf)
                                             .frame(false)
                                             .desired_width(f32::INFINITY)
-                                            .font(egui::TextStyle::Monospace),
+                                            .font(egui::TextStyle::Monospace)
+                                            .layouter(&mut layouter),
                                     );
+                                    if self.body_search_scroll_pending {
+                                        if let Some(line_idx) = response_find_active_match_line(
+                                            &self.response_text,
+                                            &self.body_search_query,
+                                            self.body_search_active_match,
+                                        ) {
+                                            let row_h = 17.0;
+                                            let y = text_resp.rect.top() + line_idx as f32 * row_h;
+                                            let target = egui::Rect::from_min_size(
+                                                egui::pos2(text_resp.rect.left(), y),
+                                                egui::vec2(1.0, row_h),
+                                            );
+                                            ui.scroll_to_rect(target, Some(egui::Align::Center));
+                                        }
+                                        self.body_search_scroll_pending = false;
+                                    }
                                 }
                             }
                         }
@@ -1097,6 +1151,29 @@ fn response_find_input_width(
     gap_width: f32,
 ) -> f32 {
     (available_width - count_width - close_width - gap_width).max(0.0)
+}
+
+fn response_find_active_match_line(text: &str, query: &str, active_match: usize) -> Option<usize> {
+    if query.is_empty() {
+        return None;
+    }
+
+    let text_lc = text.to_lowercase();
+    let query_lc = query.to_lowercase();
+    let mut cursor = 0usize;
+    let mut seen = 0usize;
+
+    while cursor <= text_lc.len() {
+        let rel = text_lc[cursor..].find(&query_lc)?;
+        let start = cursor + rel;
+        if seen == active_match {
+            return Some(text_lc[..start].bytes().filter(|b| *b == b'\n').count());
+        }
+        seen += 1;
+        cursor = start + query_lc.len();
+    }
+
+    None
 }
 
 fn count_case_insensitive_matches(text: &str, query: &str) -> usize {
@@ -1860,6 +1937,16 @@ mod tests {
         assert_eq!(response_find_count_text("ok", 0, 0), "0/0");
         assert_eq!(response_find_count_text("ok", 3, 0), "1/3");
         assert_eq!(response_find_count_text("ok", 3, 2), "3/3");
+    }
+
+    #[test]
+    fn response_find_active_match_line_tracks_match_position() {
+        let text = "cost one\nother\nCOST two and cost three";
+        assert_eq!(response_find_active_match_line(text, "cost", 0), Some(0));
+        assert_eq!(response_find_active_match_line(text, "cost", 1), Some(2));
+        assert_eq!(response_find_active_match_line(text, "cost", 2), Some(2));
+        assert_eq!(response_find_active_match_line(text, "cost", 3), None);
+        assert_eq!(response_find_active_match_line(text, "", 0), None);
     }
 
     #[test]
