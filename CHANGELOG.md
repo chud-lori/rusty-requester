@@ -11,7 +11,7 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
-## Unreleased
+## [0.27.10] — 2026-06-19
 
 ### Fixed
 - **Request and collection navigation polish.** Response body search no longer
