@@ -514,7 +514,8 @@ impl ApiClient {
                             .rounding(egui::Rounding::same(9.0))
                             .inner_margin(egui::Margin::symmetric(8.0, 4.0))
                             .show(ui, |ui| {
-                                ui.set_width(find_w);
+                                ui.set_min_width(find_w);
+                                ui.set_max_width(find_w);
                                 ui.with_layout(
                                     egui::Layout::left_to_right(egui::Align::Center),
                                     |ui| {
@@ -550,8 +551,11 @@ impl ApiClient {
                                         } else {
                                             ui.spacing().item_spacing.x * 2.0
                                         };
+                                        let icon_w = 14.0;
+                                        let spacing_w = ui.spacing().item_spacing.x;
+                                        let inner_w = response_find_inner_width(find_w, 8.0);
                                         let input_w = response_find_input_width(
-                                            ui.available_width(),
+                                            inner_w - icon_w - spacing_w,
                                             count_w,
                                             close_w,
                                             gap_w,
@@ -1062,6 +1066,10 @@ fn render_response_metric(ui: &mut egui::Ui, value: &str) -> egui::Response {
 
 fn response_find_width(available_width: f32) -> f32 {
     available_width.clamp(0.0, 360.0)
+}
+
+fn response_find_inner_width(frame_width: f32, horizontal_margin: f32) -> f32 {
+    (frame_width - horizontal_margin * 2.0).max(0.0)
 }
 
 fn response_find_count_text(query: &str, match_count: usize, active_match: usize) -> String {
@@ -1816,6 +1824,12 @@ mod tests {
         assert_eq!(response_find_width(120.0), 120.0);
         assert_eq!(response_find_width(240.0), 240.0);
         assert_eq!(response_find_width(600.0), 360.0);
+    }
+
+    #[test]
+    fn response_find_inner_width_subtracts_frame_padding() {
+        assert_eq!(response_find_inner_width(360.0, 8.0), 344.0);
+        assert_eq!(response_find_inner_width(12.0, 8.0), 0.0);
     }
 
     #[test]
