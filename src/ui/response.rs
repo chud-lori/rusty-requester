@@ -503,7 +503,9 @@ impl ApiClient {
                 if self.body_search_visible {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.add_space(4.0);
+                        let horizontal_margin = 8.0;
                         let find_w = response_find_width((ui.available_width() - 4.0).max(0.0));
+                        let content_w = response_find_inner_width(find_w, horizontal_margin);
                         egui::Frame::none()
                             .fill(if is_light() {
                                 egui::Color32::from_rgb(245, 247, 250)
@@ -512,10 +514,10 @@ impl ApiClient {
                             })
                             .stroke(egui::Stroke::new(1.0, with_alpha(border(), 185)))
                             .rounding(egui::Rounding::same(9.0))
-                            .inner_margin(egui::Margin::symmetric(8.0, 4.0))
+                            .inner_margin(egui::Margin::symmetric(horizontal_margin, 4.0))
                             .show(ui, |ui| {
-                                ui.set_min_width(find_w);
-                                ui.set_max_width(find_w);
+                                ui.set_min_width(content_w);
+                                ui.set_max_width(content_w);
                                 ui.with_layout(
                                     egui::Layout::left_to_right(egui::Align::Center),
                                     |ui| {
@@ -553,9 +555,8 @@ impl ApiClient {
                                         };
                                         let icon_w = 14.0;
                                         let spacing_w = ui.spacing().item_spacing.x;
-                                        let inner_w = response_find_inner_width(find_w, 8.0);
                                         let input_w = response_find_input_width(
-                                            inner_w - icon_w - spacing_w,
+                                            content_w - icon_w - spacing_w,
                                             count_w,
                                             close_w,
                                             gap_w,
@@ -1830,6 +1831,13 @@ mod tests {
     fn response_find_inner_width_subtracts_frame_padding() {
         assert_eq!(response_find_inner_width(360.0, 8.0), 344.0);
         assert_eq!(response_find_inner_width(12.0, 8.0), 0.0);
+    }
+
+    #[test]
+    fn response_find_outer_width_includes_frame_padding() {
+        let outer_w = response_find_width(600.0);
+        let content_w = response_find_inner_width(outer_w, 8.0);
+        assert_eq!(content_w + 16.0, outer_w);
     }
 
     #[test]
