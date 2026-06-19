@@ -11,6 +11,13 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Fixed
+- **Response find frame bounds.** The response-body find field now treats the
+  search box width as the outer frame width, so frame padding cannot push the
+  close button under the right edge.
+
 ## [0.27.14] — 2026-06-19
 
 ### Fixed
