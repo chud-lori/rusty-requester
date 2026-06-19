@@ -20,6 +20,14 @@ upgrades read old files cleanly.
   collection, and collection overview now has a close button plus a cleaner
   description field.
 
+### Added
+- **File-backed collection folders.** Linked collection directories can now stay
+  in sync with app edits automatically, writing reviewable `workspace.json`,
+  `requests/*.rr`, and `environments/*.rrenv` files after normal saves. New
+  `.rr` request files use readable dictionary-style blocks for metadata,
+  method, params, headers, cookies, and auth, while older `.rr` files remain
+  importable.
+
 ## [0.27.9] — 2026-06-19
 
 ### Fixed

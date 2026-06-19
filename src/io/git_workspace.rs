@@ -1,4 +1,4 @@
-use crate::model::{Auth, BodyExt, Environment, Folder, KvRow, OAuth2State, Request};
+use crate::model::{Auth, BodyExt, Environment, Folder, HttpMethod, KvRow, OAuth2State, Request};
 use crate::privacy::{is_sensitive_key, mask_secret_value, redact_url_query_and_fragment};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -562,25 +562,49 @@ fn export_environment(environment: &Environment, options: &ExportOptions) -> Env
 fn request_to_rr(request: &Request) -> Result<String, String> {
     let mut out = String::new();
     out.push_str("rr 1\n");
-    push_field(&mut out, "id", &request.id)?;
-    push_field(&mut out, "name", &request.name)?;
-    push_field(&mut out, "description", &request.description)?;
-    push_field(&mut out, "method", &request.method.to_string())?;
-    push_field(&mut out, "url", &request.url)?;
-    push_rows(&mut out, "query", &request.query_params)?;
-    push_rows(&mut out, "path", &request.path_params)?;
-    push_rows(&mut out, "headers", &request.headers)?;
-    push_rows(&mut out, "cookies", &request.cookies)?;
-    push_text_block(&mut out, "body", &request.body)?;
-    push_json_block(&mut out, "body_ext", &request.body_ext)?;
-    push_json_block(&mut out, "auth", &request.auth)?;
-    push_json_block(&mut out, "extractors", &request.extractors)?;
-    push_json_block(&mut out, "assertions", &request.assertions)?;
-    push_json_block(&mut out, "source", &request.source)?;
+    push_dict_block(
+        &mut out,
+        "meta",
+        &[
+            ("id", request.id.as_str()),
+            ("name", request.name.as_str()),
+            ("description", request.description.as_str()),
+        ],
+    );
+    push_dict_block(
+        &mut out,
+        &request.method.to_string().to_ascii_lowercase(),
+        &[("url", request.url.as_str())],
+    );
+    push_kv_block(&mut out, "params:query", &request.query_params);
+    push_kv_block(&mut out, "params:path", &request.path_params);
+    push_kv_block(&mut out, "headers", &request.headers);
+    push_kv_block(&mut out, "cookies", &request.cookies);
+    push_body_blocks(&mut out, request)?;
+    push_auth_blocks(&mut out, &request.auth)?;
+    push_rr_json_block(&mut out, "extractors:json", &request.extractors)?;
+    push_rr_json_block(&mut out, "assertions:json", &request.assertions)?;
+    push_rr_json_block(&mut out, "source:json", &request.source)?;
     Ok(out)
 }
 
 fn rr_to_request(content: &str) -> Result<Request, String> {
+    if is_legacy_rr(content) {
+        return legacy_rr_to_request(content);
+    }
+    block_rr_to_request(content)
+}
+
+fn is_legacy_rr(content: &str) -> bool {
+    content
+        .lines()
+        .skip(1)
+        .map(str::trim)
+        .find(|line| !line.is_empty() && !line.starts_with('#'))
+        .is_some_and(|line| line.starts_with('[') || line.starts_with("id:"))
+}
+
+fn legacy_rr_to_request(content: &str) -> Result<Request, String> {
     let mut doc = RrDocument::parse(content, "rr 1")?;
     let id = doc.take_required_field("id")?;
     let name = doc.take_required_field("name")?;
@@ -644,6 +668,224 @@ fn rr_to_request(content: &str) -> Result<Request, String> {
     })
 }
 
+fn block_rr_to_request(content: &str) -> Result<Request, String> {
+    let mut doc = BlockRrDocument::parse(content, "rr 1")?;
+    let meta = doc.take_required_dict("meta")?;
+    let id = take_required_dict_value(&meta, "id")?;
+    let name = take_required_dict_value(&meta, "name")?;
+    let description = lookup_dict(&meta, "description").unwrap_or_default();
+
+    let (method, url) = doc.take_method_and_url()?;
+    let query_params = doc.take_kv_rows("params:query")?;
+    let path_params = doc.take_kv_rows("params:path")?;
+    let headers = doc.take_kv_rows("headers")?;
+    let cookies = doc.take_kv_rows("cookies")?;
+    let (body, body_ext) = doc.take_body()?;
+    let auth = doc.take_auth()?;
+    let extractors = doc
+        .take_json_block("extractors:json")?
+        .map(|value| {
+            serde_json::from_value(value).map_err(|e| format!("Invalid extractors: {}", e))
+        })
+        .transpose()?
+        .unwrap_or_default();
+    let assertions = doc
+        .take_json_block("assertions:json")?
+        .map(|value| {
+            serde_json::from_value(value).map_err(|e| format!("Invalid assertions: {}", e))
+        })
+        .transpose()?
+        .unwrap_or_default();
+    let source = doc
+        .take_json_block("source:json")?
+        .map(|value| serde_json::from_value(value).map_err(|e| format!("Invalid source: {}", e)))
+        .transpose()?
+        .unwrap_or(None);
+    doc.reject_unknown()?;
+
+    Ok(Request {
+        id,
+        name,
+        description,
+        method,
+        url,
+        query_params,
+        path_params,
+        headers,
+        cookies,
+        body,
+        body_ext,
+        auth,
+        extractors,
+        assertions,
+        source,
+    })
+}
+
+fn push_dict_block(out: &mut String, name: &str, entries: &[(&str, &str)]) {
+    let entries: Vec<(&str, &str)> = entries
+        .iter()
+        .copied()
+        .filter(|(_, value)| !value.is_empty())
+        .collect();
+    if entries.is_empty() {
+        return;
+    }
+    out.push('\n');
+    out.push_str(name);
+    out.push_str(" {\n");
+    for (key, value) in entries {
+        out.push_str("  ");
+        out.push_str(key);
+        out.push_str(": ");
+        out.push_str(&plain_value(value));
+        out.push('\n');
+    }
+    out.push_str("}\n");
+}
+
+fn push_kv_block(out: &mut String, name: &str, rows: &[KvRow]) {
+    if rows.is_empty() {
+        return;
+    }
+    out.push('\n');
+    out.push_str(name);
+    out.push_str(" {\n");
+    for row in rows {
+        out.push_str("  ");
+        if !row.enabled {
+            out.push('~');
+        }
+        out.push_str(&plain_key(&row.key));
+        out.push_str(": ");
+        out.push_str(&plain_value(&row.value));
+        out.push('\n');
+    }
+    out.push_str("}\n");
+
+    let descriptions: Vec<(&str, &str)> = rows
+        .iter()
+        .filter(|row| !row.description.is_empty())
+        .map(|row| (row.key.as_str(), row.description.as_str()))
+        .collect();
+    if !descriptions.is_empty() {
+        push_dict_block(out, &format!("{name}:docs"), &descriptions);
+    }
+}
+
+fn push_body_blocks(out: &mut String, request: &Request) -> Result<(), String> {
+    match &request.body_ext {
+        Some(BodyExt::FormUrlEncoded { fields }) => {
+            if !request.body.is_empty() {
+                push_rr_text_block(out, "body:raw", &request.body);
+            }
+            push_kv_block(out, "body:form", fields);
+        }
+        Some(BodyExt::MultipartForm { fields }) => {
+            if !request.body.is_empty() {
+                push_rr_text_block(out, "body:raw", &request.body);
+            }
+            push_kv_block(out, "body:multipart", fields);
+        }
+        Some(BodyExt::GraphQL { variables }) => {
+            if !request.body.is_empty() {
+                push_rr_text_block(out, "body:graphql", &request.body);
+            }
+            if !variables.is_empty() {
+                push_rr_text_block(out, "body:graphql:variables", variables);
+            }
+        }
+        None => {
+            if !request.body.is_empty() {
+                push_rr_text_block(out, "body:raw", &request.body);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn push_auth_blocks(out: &mut String, auth: &Auth) -> Result<(), String> {
+    match auth {
+        Auth::None => {}
+        Auth::Bearer { token } => push_dict_block(out, "auth:bearer", &[("token", token)]),
+        Auth::Basic { username, password } => push_dict_block(
+            out,
+            "auth:basic",
+            &[("username", username), ("password", password)],
+        ),
+        Auth::OAuth2(_) => push_rr_json_block(out, "auth:oauth2", auth)?,
+    }
+    Ok(())
+}
+
+fn push_rr_text_block(out: &mut String, name: &str, value: &str) {
+    if value.is_empty() {
+        return;
+    }
+    let delimiter = block_delimiter(value);
+    out.push('\n');
+    out.push_str(name);
+    out.push_str(" <<");
+    out.push_str(&delimiter);
+    out.push('\n');
+    out.push_str(value);
+    if !value.ends_with('\n') {
+        out.push('\n');
+    }
+    out.push_str(&delimiter);
+    out.push('\n');
+}
+
+fn push_rr_json_block<T: Serialize>(out: &mut String, name: &str, value: &T) -> Result<(), String> {
+    let value = serde_json::to_value(value).map_err(|e| e.to_string())?;
+    if value.is_null()
+        || value == serde_json::json!([])
+        || value == serde_json::json!({})
+        || value == serde_json::json!({"type": "None"})
+    {
+        return Ok(());
+    }
+    let text = serde_json::to_string_pretty(&value).map_err(|e| e.to_string())?;
+    push_rr_text_block(out, name, &text);
+    Ok(())
+}
+
+fn plain_key(value: &str) -> String {
+    if value.trim() == value
+        && !value.is_empty()
+        && !value.contains(':')
+        && !value.chars().any(|c| c == '\n' || c == '\r')
+    {
+        value.to_string()
+    } else {
+        json_string(value).unwrap_or_else(|_| "\"\"".to_string())
+    }
+}
+
+fn plain_value(value: &str) -> String {
+    if value.trim() == value && !value.chars().any(|c| c == '\n' || c == '\r') {
+        value.to_string()
+    } else {
+        json_string(value).unwrap_or_else(|_| "\"\"".to_string())
+    }
+}
+
+fn parse_plain_value(value: &str) -> Result<String, String> {
+    let value = value.trim();
+    if value.starts_with('"') {
+        serde_json::from_str(value).map_err(|e| format!("Invalid quoted value: {}", e))
+    } else {
+        Ok(value.to_string())
+    }
+}
+
+fn take_required_dict_value(dict: &[(String, String)], key: &str) -> Result<String, String> {
+    dict.iter()
+        .find(|(field, _)| field == key)
+        .map(|(_, value)| value.clone())
+        .ok_or_else(|| format!("Missing required field: {key}"))
+}
+
 fn environment_to_rrenv(environment: &Environment) -> Result<String, String> {
     let mut out = String::new();
     out.push_str("rrenv 1\n");
@@ -703,13 +945,6 @@ fn push_rows(out: &mut String, section: &str, rows: &[KvRow]) -> Result<(), Stri
     Ok(())
 }
 
-fn push_text_block(out: &mut String, section: &str, value: &str) -> Result<(), String> {
-    if value.is_empty() {
-        return Ok(());
-    }
-    push_block(out, section, "text", value)
-}
-
 fn push_json_block<T: Serialize>(out: &mut String, section: &str, value: &T) -> Result<(), String> {
     let value = serde_json::to_value(value).map_err(|e| e.to_string())?;
     if value.is_null()
@@ -759,6 +994,239 @@ fn block_delimiter(value: &str) -> String {
 
 fn json_string(value: &str) -> Result<String, String> {
     serde_json::to_string(value).map_err(|e| e.to_string())
+}
+
+#[derive(Default)]
+struct BlockRrDocument {
+    dicts: std::collections::BTreeMap<String, Vec<(String, String)>>,
+    blocks: std::collections::BTreeMap<String, String>,
+}
+
+impl BlockRrDocument {
+    fn parse(content: &str, header: &str) -> Result<Self, String> {
+        let lines: Vec<&str> = content.lines().collect();
+        if lines.first().map(|line| line.trim()) != Some(header) {
+            return Err(format!("Expected {} header", header));
+        }
+
+        let mut doc = BlockRrDocument::default();
+        let mut index = 1;
+        while index < lines.len() {
+            let trimmed = lines[index].trim();
+            index += 1;
+            if trimmed.is_empty() || trimmed.starts_with('#') {
+                continue;
+            }
+
+            if let Some((name, marker)) = trimmed.split_once(" <<") {
+                let name = name.trim();
+                let marker = marker.trim();
+                if name.is_empty() || marker.is_empty() {
+                    return Err(format!("Invalid text block opener: {trimmed}"));
+                }
+                let mut value = String::new();
+                let mut closed = false;
+                while index < lines.len() {
+                    let line = lines[index];
+                    index += 1;
+                    if line == marker {
+                        closed = true;
+                        break;
+                    }
+                    value.push_str(line);
+                    value.push('\n');
+                }
+                if !closed {
+                    return Err(format!("Unclosed block: {name}"));
+                }
+                if value.ends_with('\n') {
+                    value.pop();
+                }
+                doc.blocks.insert(name.to_string(), value);
+                continue;
+            }
+
+            let Some(name) = trimmed.strip_suffix('{').map(str::trim) else {
+                return Err(format!("Expected block opener, got: {trimmed}"));
+            };
+            if name.is_empty() {
+                return Err("Missing block name".to_string());
+            }
+            let mut dict = Vec::new();
+            let mut closed = false;
+            while index < lines.len() {
+                let line = lines[index];
+                index += 1;
+                let trimmed = line.trim();
+                if trimmed.is_empty() || trimmed.starts_with('#') {
+                    continue;
+                }
+                if trimmed == "}" {
+                    closed = true;
+                    break;
+                }
+                let (key, value) = trimmed
+                    .split_once(':')
+                    .ok_or_else(|| format!("Expected key/value in {name}, got: {trimmed}"))?;
+                let (enabled, key) = match key.trim().strip_prefix('~') {
+                    Some(disabled_key) => (false, disabled_key.trim()),
+                    None => (true, key.trim()),
+                };
+                let mut key = parse_plain_value(key)?;
+                if !enabled {
+                    key.insert(0, '~');
+                }
+                dict.push((key, parse_plain_value(value)?));
+            }
+            if !closed {
+                return Err(format!("Unclosed dictionary block: {name}"));
+            }
+            doc.dicts.insert(name.to_string(), dict);
+        }
+
+        Ok(doc)
+    }
+
+    fn take_required_dict(&mut self, name: &str) -> Result<Vec<(String, String)>, String> {
+        self.dicts
+            .remove(name)
+            .ok_or_else(|| format!("Missing required block: {name}"))
+    }
+
+    fn take_dict(&mut self, name: &str) -> Option<Vec<(String, String)>> {
+        self.dicts.remove(name)
+    }
+
+    fn take_block(&mut self, name: &str) -> Option<String> {
+        self.blocks.remove(name)
+    }
+
+    fn take_json_block(&mut self, name: &str) -> Result<Option<serde_json::Value>, String> {
+        let Some(value) = self.take_block(name) else {
+            return Ok(None);
+        };
+        serde_json::from_str(&value)
+            .map(Some)
+            .map_err(|e| format!("Invalid JSON block {name}: {e}"))
+    }
+
+    fn take_method_and_url(&mut self) -> Result<(HttpMethod, String), String> {
+        for method in [
+            HttpMethod::GET,
+            HttpMethod::POST,
+            HttpMethod::PUT,
+            HttpMethod::DELETE,
+            HttpMethod::PATCH,
+            HttpMethod::HEAD,
+            HttpMethod::OPTIONS,
+        ] {
+            let name = method.to_string().to_ascii_lowercase();
+            if let Some(dict) = self.take_dict(&name) {
+                let url = take_required_dict_value(&dict, "url")?;
+                return Ok((method, url));
+            }
+        }
+        Err("Missing request method block".to_string())
+    }
+
+    fn take_kv_rows(&mut self, name: &str) -> Result<Vec<KvRow>, String> {
+        let Some(dict) = self.take_dict(name) else {
+            return Ok(Vec::new());
+        };
+        let docs = self.take_dict(&format!("{name}:docs")).unwrap_or_default();
+        let mut rows = Vec::with_capacity(dict.len());
+        for (key, value) in dict {
+            let (enabled, key) = match key.strip_prefix('~') {
+                Some(key) => (false, key.to_string()),
+                None => (true, key),
+            };
+            rows.push(KvRow {
+                description: lookup_dict(&docs, &key).unwrap_or_default(),
+                enabled,
+                key,
+                value,
+            });
+        }
+        Ok(rows)
+    }
+
+    fn take_body(&mut self) -> Result<(String, Option<BodyExt>), String> {
+        if let Some(fields) = self.take_dict("body:form") {
+            return Ok((
+                self.take_block("body:raw").unwrap_or_default(),
+                Some(BodyExt::FormUrlEncoded {
+                    fields: dict_to_rows(fields, self.take_dict("body:form:docs")),
+                }),
+            ));
+        }
+        if let Some(fields) = self.take_dict("body:multipart") {
+            return Ok((
+                self.take_block("body:raw").unwrap_or_default(),
+                Some(BodyExt::MultipartForm {
+                    fields: dict_to_rows(fields, self.take_dict("body:multipart:docs")),
+                }),
+            ));
+        }
+        if let Some(query) = self.take_block("body:graphql") {
+            let variables = self
+                .take_block("body:graphql:variables")
+                .unwrap_or_default();
+            return Ok((query, Some(BodyExt::GraphQL { variables })));
+        }
+        Ok((self.take_block("body:raw").unwrap_or_default(), None))
+    }
+
+    fn take_auth(&mut self) -> Result<Auth, String> {
+        if let Some(dict) = self.take_dict("auth:bearer") {
+            return Ok(Auth::Bearer {
+                token: lookup_dict(&dict, "token").unwrap_or_default(),
+            });
+        }
+        if let Some(dict) = self.take_dict("auth:basic") {
+            return Ok(Auth::Basic {
+                username: lookup_dict(&dict, "username").unwrap_or_default(),
+                password: lookup_dict(&dict, "password").unwrap_or_default(),
+            });
+        }
+        if let Some(value) = self.take_json_block("auth:oauth2")? {
+            return serde_json::from_value(value).map_err(|e| format!("Invalid OAuth auth: {e}"));
+        }
+        Ok(Auth::None)
+    }
+
+    fn reject_unknown(self) -> Result<(), String> {
+        if let Some(key) = self.dicts.keys().next() {
+            return Err(format!("Unknown block: {key}"));
+        }
+        if let Some(key) = self.blocks.keys().next() {
+            return Err(format!("Unknown text block: {key}"));
+        }
+        Ok(())
+    }
+}
+
+fn dict_to_rows(dict: Vec<(String, String)>, docs: Option<Vec<(String, String)>>) -> Vec<KvRow> {
+    let docs = docs.unwrap_or_default();
+    dict.into_iter()
+        .map(|(key, value)| {
+            let (enabled, key) = match key.strip_prefix('~') {
+                Some(key) => (false, key.to_string()),
+                None => (true, key),
+            };
+            KvRow {
+                description: lookup_dict(&docs, &key).unwrap_or_default(),
+                enabled,
+                key,
+                value,
+            }
+        })
+        .collect()
+}
+
+fn lookup_dict(dict: &[(String, String)], key: &str) -> Option<String> {
+    dict.iter()
+        .find(|(field, _)| field == key)
+        .map(|(_, value)| value.clone())
 }
 
 #[derive(Default)]
@@ -1233,6 +1701,37 @@ mod tests {
     }
 
     #[test]
+    fn native_rr_uses_readable_block_format() {
+        let request = Request {
+            id: "request-readable".into(),
+            name: "Health check".into(),
+            description: "Simple smoke test".into(),
+            method: HttpMethod::GET,
+            url: "https://api.example.com/health".into(),
+            query_params: vec![KvRow::new("platform", "android")],
+            path_params: vec![],
+            headers: vec![KvRow::new("Accept", "application/json")],
+            cookies: vec![],
+            body: String::new(),
+            body_ext: None,
+            auth: Auth::None,
+            extractors: vec![],
+            assertions: vec![],
+            source: None,
+        };
+
+        let exported = request_to_rr(&request).unwrap();
+
+        assert!(exported.contains("meta {\n"));
+        assert!(exported.contains("  name: Health check\n"));
+        assert!(exported.contains("get {\n  url: https://api.example.com/health\n}"));
+        assert!(exported.contains("params:query {\n  platform: android\n}"));
+        assert!(exported.contains("headers {\n  Accept: application/json\n}"));
+        assert!(!exported.contains("[query]"));
+        assert_eq!(rr_to_request(&exported).unwrap(), request);
+    }
+
+    #[test]
     fn default_export_masks_sensitive_values() {
         let root = temp_workspace("mask");
         export_workspace_to_dir(&fixture_folders(), &root, ExportOptions::default()).unwrap();
@@ -1276,8 +1775,8 @@ mod tests {
             read(root.join("requests/001-fixture-api-collection-1/001-create-widget-request-1.rr"));
 
         assert!(first_request.contains("Bearer header-secret"));
-        assert!(!first_request.contains("\"android\""));
-        assert!(first_request.contains("\"*******\""));
+        assert!(!first_request.contains("platform: android"));
+        assert!(first_request.contains("platform: *******"));
         let _ = fs::remove_dir_all(root);
     }
 
@@ -1414,10 +1913,34 @@ mod tests {
             root.join("requests/001-fixture-api-collection-1/001-create-widget-request-1.rr");
         let exported = read(&request_file);
 
-        assert!(exported.contains("text <<RR_BLOCK_1"));
+        assert!(exported.contains("body:raw <<RR_BLOCK_1"));
         assert_eq!(
             import_workspace_from_dir(&root).unwrap()[0].requests[0].body,
             "line one\nRR_BLOCK\nline two"
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn native_rr_raw_json_array_does_not_trigger_legacy_parser() {
+        let mut folders = fixture_folders();
+        folders[0].requests[0].body_ext = None;
+        folders[0].requests[0].body = "[\n  {\"ok\": true}\n]".to_string();
+        let root = temp_workspace("raw-array");
+
+        export_workspace_to_dir(
+            &folders,
+            &root,
+            ExportOptions {
+                secret_policy: SecretPolicy::Include,
+                ..ExportOptions::default()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            import_workspace_from_dir(&root).unwrap()[0].requests[0].body,
+            "[\n  {\"ok\": true}\n]"
         );
         let _ = fs::remove_dir_all(root);
     }

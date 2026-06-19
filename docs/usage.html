@@ -682,7 +682,7 @@ bob,secret2,staging-b</code></pre>
 
     <section id="git-workspace">
       <h2>Collection Git Sync</h2>
-      <p>Each top-level collection can be linked to its own local folder or Git repository. Open the collection menu, choose <strong>Collection settings...</strong>, select a directory, then click <strong>Export now</strong> to write reviewable files. Use a repository root containing <code>.git</code> when you want <strong>Refresh changes</strong>, <strong>Pull from remote</strong>, or <strong>Commit and push</strong>. Private GitHub/GitLab/Bitbucket repos work through your local SSH key or Git credential helper; Rusty Requester does not sign in to Git providers or store Git provider tokens.</p>
+      <p>Each top-level collection can be linked to its own local folder or Git repository. Open the collection menu, choose <strong>Collection settings...</strong>, then select a directory. Rusty Requester enables file-backed sync by default: normal app saves rewrite <code>workspace.json</code>, <code>requests/</code>, and <code>environments/</code>, so Git status reflects the current collection without a separate export step. Turn off file-backed sync if you only want manual snapshots, then use <strong>Export now</strong>. Use a repository root containing <code>.git</code> when you want <strong>Refresh changes</strong>, <strong>Pull from remote</strong>, or <strong>Commit and push</strong>. Private GitHub/GitLab/Bitbucket repos work through your local SSH key or Git credential helper; Rusty Requester does not sign in to Git providers or store Git provider tokens.</p>
       <pre><code>workspace.json
 requests/
   001-my-api-collection-id/
@@ -692,13 +692,13 @@ requests/
 environments/
   001-local-env-local.rrenv</code></pre>
       <ul>
-        <li>One readable native <code>.rr</code> file per request.</li>
+        <li>One readable native block-style <code>.rr</code> file per request.</li>
         <li>One readable <code>.rrenv</code> file per environment.</li>
         <li>Stable IDs for round trips.</li>
         <li>Deterministic ordering for cleaner diffs.</li>
         <li>Secret masking by default for safer commits.</li>
         <li>Collection-level mask/allow key patterns for shared headers and env keys.</li>
-        <li>Free Git UI: status/diff summary, pull, export, commit, and push.</li>
+        <li>Free Git UI: status/diff summary, pull, manual export, commit, and push.</li>
         <li>Collection settings can rename the collection and store an OpenAPI spec path for refresh.</li>
       </ul>
       <p>The older <strong>Workspace Sync...</strong> modal is still available for whole-workspace import/export, but collection settings are the recommended path for team Git review.</p>

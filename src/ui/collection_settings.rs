@@ -115,7 +115,7 @@ impl ApiClient {
                                                 CollectionSettingsSection::Directory => {
                                                     directory_section(
                                                         ui,
-                                                        &mut sync.git_workspace_dir,
+                                                        &mut sync,
                                                         git_ready,
                                                         is_git_repo,
                                                         busy,
@@ -371,7 +371,7 @@ fn section_button(
 
 fn directory_section(
     ui: &mut egui::Ui,
-    git_workspace_dir: &mut String,
+    sync: &mut crate::model::SyncConfig,
     git_ready: bool,
     is_git_repo: bool,
     busy: bool,
@@ -381,16 +381,36 @@ fn directory_section(
     section_header(
         ui,
         "Collection directory",
-        "Export this collection as reviewable .rr files. Use a Git repository root if you want pull and push actions.",
+        "Store this collection as reviewable .rr files. Use a Git repository root if you want pull and push actions.",
     );
     ui.add_space(12.0);
     path_field_group(
         ui,
         "Directory",
-        git_workspace_dir,
+        &mut sync.git_workspace_dir,
         "/path/to/collection-repo",
         changed,
         || actions.choose_git_dir = true,
+    );
+    ui.add_space(10.0);
+    if ui
+        .checkbox(
+            &mut sync.file_backed,
+            "Keep linked directory in sync after app edits",
+        )
+        .changed()
+    {
+        *changed = true;
+        if sync.file_backed && git_ready {
+            actions.export_workspace = true;
+        }
+    }
+    ui.label(
+        egui::RichText::new(
+            "When enabled, normal saves rewrite workspace.json, requests/, and environments/ so Git status reflects the current collection.",
+        )
+        .size(10.5)
+        .color(muted()),
     );
     if git_ready && !is_git_repo {
         ui.add_space(8.0);
@@ -401,11 +421,12 @@ fn directory_section(
         );
     } else if git_ready {
         ui.add_space(8.0);
-        status_note(
-            ui,
-            "Directory linked. Click Export now to write reviewable files.",
-            C_GREEN,
-        );
+        let message = if sync.file_backed {
+            "File-backed collection is active. Edits are written to the linked directory on save."
+        } else {
+            "Directory linked for manual import/export. Enable file-backed sync or click Export now to write files."
+        };
+        status_note(ui, message, C_GREEN);
     }
     ui.add_space(12.0);
     action_buttons(ui, |ui| {
