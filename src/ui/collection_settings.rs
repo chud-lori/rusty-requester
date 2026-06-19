@@ -544,17 +544,14 @@ fn path_field_group(
     mut choose: impl FnMut(),
 ) {
     ui.label(egui::RichText::new(label).size(11.0).color(muted()));
-    ui.add_space(3.0);
+    ui.add_space(5.0);
     ui.horizontal(|ui| {
         let button_w = 96.0;
         let input_w = (ui.available_width() - button_w - 10.0).max(220.0);
-        let response = ui.add_sized(
-            [input_w, 30.0],
-            egui::TextEdit::singleline(value).hint_text(hint(placeholder)),
-        );
+        let response = framed_text_field(ui, input_w, value, placeholder);
         *changed |= response.changed();
         if ui
-            .add_sized([button_w, 30.0], egui::Button::new("Choose..."))
+            .add_sized([button_w, 34.0], egui::Button::new("Choose..."))
             .clicked()
         {
             choose();
@@ -570,12 +567,34 @@ fn text_field_group(
     changed: &mut bool,
 ) {
     ui.label(egui::RichText::new(label).size(11.0).color(muted()));
-    ui.add_space(3.0);
-    let response = ui.add_sized(
-        [ui.available_width(), 30.0],
-        egui::TextEdit::singleline(value).hint_text(hint(placeholder)),
-    );
+    ui.add_space(5.0);
+    let response = framed_text_field(ui, ui.available_width(), value, placeholder);
     *changed |= response.changed();
+}
+
+fn framed_text_field(
+    ui: &mut egui::Ui,
+    width: f32,
+    value: &mut String,
+    placeholder: &str,
+) -> egui::Response {
+    let frame_width = width.max(120.0);
+    egui::Frame::none()
+        .fill(elevated())
+        .stroke(egui::Stroke::new(1.0, border()))
+        .rounding(egui::Rounding::same(8.0))
+        .inner_margin(egui::Margin::symmetric(10.0, 5.0))
+        .show(ui, |ui| {
+            ui.set_width((frame_width - 20.0).max(80.0));
+            ui.add_sized(
+                [ui.available_width(), 22.0],
+                egui::TextEdit::singleline(value)
+                    .hint_text(hint(placeholder))
+                    .frame(false)
+                    .desired_width(f32::INFINITY),
+            )
+        })
+        .inner
 }
 
 fn action_buttons(ui: &mut egui::Ui, add_contents: impl FnOnce(&mut egui::Ui)) {
