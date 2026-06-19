@@ -7,10 +7,14 @@ IDs to avoid collisions, while Git workspace imports preserve IDs so branches
 can round-trip cleanly.
 
 In the app, open a top-level collection menu and choose **Collection
-settings...**. Selecting a directory links that collection to the folder; click
-**Export now** to write files. Use a repository root containing `.git` when you
-want pull, commit, and push actions. Private remotes use your local SSH key or
-Git credential helper; Rusty Requester does not store provider tokens.
+settings...**. Selecting a directory enables file-backed mode for that
+collection and writes the first workspace export. After that, normal app saves
+rewrite `workspace.json`, `requests/`, and `environments/` so Git status shows
+the current collection. You can turn file-backed sync off in Collection Settings
+and use **Export now** for a manual snapshot instead. Use a repository root
+containing `.git` when you want pull, commit, and push actions. Private remotes
+use your local SSH key or Git credential helper; Rusty Requester does not store
+provider tokens.
 
 ## Layout
 
@@ -30,9 +34,9 @@ environments/
 - `workspace.json` is the manifest. It records the format name, version, secret
   policy, ordered folder tree, request file paths, and environment file paths.
 - Each request lives in its own readable `.rr` file under `requests/`. `.rr` is
-  a compact Rusty Requester text format: scalar metadata at the top, table-like
-  row sections for params / headers / cookies, and fenced blocks only for raw
-  bodies or structured extension data.
+  a compact Rusty Requester text format with dictionary blocks for normal
+  reviewable fields and heredoc blocks for raw bodies or structured extension
+  data.
 - Each environment lives in its own `.rrenv` file under `environments/`.
   Variables are row-based and cookies remain structured data. Default exports
   mask secret-looking values.
@@ -51,6 +55,53 @@ For the same workspace data and export options, Rusty Requester writes the same
 manifest content, request/environment file paths, field order, block delimiters,
 and trailing newlines. The manifest preserves the app's visible collection,
 folder, and request order; files are written in sorted path order.
+
+## Request File Shape
+
+Common request data is intentionally easy to review in pull requests:
+
+```rr
+rr 1
+
+meta {
+  id: 3c33057e-b716-401a-815a-4130f904b75f
+  name: Eligible leads
+  description: Home-value lead eligibility check
+}
+
+get {
+  url: http://prod.home_value_leads.99.int/v20/home-value-leads/eligible
+}
+
+params:query {
+  phone: +6585552770
+}
+
+headers {
+  platform: android
+  Authorization: Bearer abcd...wxyz
+}
+
+auth:bearer {
+  token: abcd...wxyz
+}
+```
+
+Disabled rows are prefixed with `~`, for example `~Authorization: Bearer ...`.
+Raw bodies use heredoc blocks:
+
+```rr
+body:raw <<RR_BLOCK
+{
+  "name": "demo"
+}
+RR_BLOCK
+```
+
+Complex Rusty Requester-only metadata such as OAuth state, generated OpenAPI
+source metadata, assertions, and extractors is stored in explicit `*:json`
+heredoc blocks. Older scalar/table `.rr` files and legacy JSON request files
+remain importable.
 
 ## IDs
 

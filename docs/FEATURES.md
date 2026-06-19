@@ -150,12 +150,16 @@ the original values.
 - **Sidebar → 📤 Export → Export all as JSON / YAML…** — dumps every collection into a single file (good for backups).
 - **Right-click any collection / folder → Export as JSON / YAML…** — exports just that subtree (this is the "collection-level" export for sharing).
 - Before collection export, Rusty Requester runs a local-only secret scan for common API keys, bearer/JWT-style tokens, OAuth/basic auth secrets, cookies, and sensitive key names such as `Authorization`, `token`, `password`, `client_secret`, and `api_key`. If likely secrets are found, you can cancel, continue with the original export, or export a redacted copy with likely secret values replaced by `[REDACTED]`. This scanner never uploads export content. It is heuristic: unusual secret formats may be missed, and placeholder or example values may still produce false positives.
-- **Git workspace format** — Collection Settings can write a deterministic
+- **File-backed collection folders** — Collection Settings can link a
+  collection to a local folder or Git repository. With file-backed sync enabled,
+  normal app saves rewrite the reviewable files automatically so Git status
+  reflects current request edits. **Export now** remains available for manual
+  snapshots.
+- **Git workspace format** — Collection Settings writes a deterministic
   directory with `workspace.json` plus one readable `.rr` request file per
   request and one `.rrenv` file per environment. `.rr` is Rusty Requester's
-  compact text format, preserves IDs for Git round-trips, keeps legacy JSON
-  request imports working, and masks secrets by default. Choosing a directory
-  links it; click **Export now** to write files. See
+  block-style text format, preserves IDs for Git round-trips, keeps legacy JSON
+  and older `.rr` request imports working, and masks secrets by default. See
   [`GIT_WORKSPACE_FORMAT.md`](./GIT_WORKSPACE_FORMAT.md) for layout and
   merge-conflict expectations.
 - **Collection-level Git UI** — each top-level collection can point at its own

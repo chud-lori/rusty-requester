@@ -716,6 +716,7 @@ impl ApiClient {
         let _ = f.sync_all();
         drop(f);
         let _ = fs::rename(&tmp, &self.storage_path);
+        self.export_file_backed_collections_silent();
     }
 
     fn get_current_folder_mut(&mut self) -> Option<&mut Folder> {

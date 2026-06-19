@@ -439,6 +439,11 @@ pub struct SyncConfig {
     /// lossless local/private exports per operation.
     #[serde(default)]
     pub include_secrets_in_git_workspace: bool,
+    /// When enabled, this collection's linked directory is treated as a live
+    /// file-backed collection: normal app saves also rewrite the reviewable
+    /// workspace files so Git status reflects current edits.
+    #[serde(default)]
+    pub file_backed: bool,
     /// Case-insensitive key/name patterns that should be masked even when
     /// Rusty Requester's built-in sensitive-key detector would not flag them.
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -457,6 +462,7 @@ impl SyncConfig {
         self.git_workspace_dir.is_empty()
             && self.openapi_spec_path.is_empty()
             && !self.include_secrets_in_git_workspace
+            && !self.file_backed
             && self.mask_key_patterns.trim().is_empty()
             && self.allow_key_patterns.trim().is_empty()
             && self.git_commit_message == default_git_commit_message()

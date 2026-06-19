@@ -13,8 +13,10 @@ impl ApiClient {
         if let Some(path) = rfd::FileDialog::new().pick_folder() {
             if let Some(folder) = find_folder_by_id_mut(&mut self.state.folders, folder_id) {
                 folder.sync.git_workspace_dir = path.display().to_string();
+                folder.sync.file_backed = true;
                 self.save_state();
             }
+            self.export_collection_workspace_from_config(folder_id);
         }
     }
 
@@ -62,6 +64,24 @@ impl ApiClient {
                 mode, summary.request_files, summary.environment_files
             )))
         });
+    }
+
+    pub(crate) fn export_file_backed_collections_silent(&self) {
+        for folder in &self.state.folders {
+            if !folder.sync.file_backed {
+                continue;
+            }
+            let root = folder.sync.git_workspace_dir.trim();
+            if root.is_empty() {
+                continue;
+            }
+            let _ = io::git_workspace::export_workspace_with_environments_to_dir(
+                std::slice::from_ref(folder),
+                &self.state.environments,
+                &PathBuf::from(root),
+                collection_export_options(&folder.sync),
+            );
+        }
     }
 
     pub(crate) fn import_collection_workspace_from_config(&mut self, folder_id: &str) {

@@ -78,7 +78,7 @@ views, **Server-Sent Events streaming** for LLM APIs, **Cancel**
 mid-flight, **Response diff** across sends, **Collection Runner** with
 CSV/JSON data rows, presets, detail drilldowns, scoped runs, safe
 CSV/HTML reports, redacted code snippets, Git-friendly workspace
-exports, collection-level Git sync with readable `.rr` request files,
+exports, file-backed collection folders with readable `.rr` request files,
 status/diff review, pull/commit/push through your local Git credentials,
 OpenAPI refresh, request finder + actions palette (`Cmd` on macOS,
 `Ctrl` on Linux/Windows), and platform menus. Full catalog in
