@@ -71,10 +71,11 @@ impl ApiClient {
             ui.add_space(10.0);
 
             ui.label(egui::RichText::new("Proxy URL").size(11.5).color(muted()));
-            ui.add(
-                egui::TextEdit::singleline(&mut self.editing_settings.proxy_url)
-                    .hint_text(hint("http://proxy:8080 (leave empty for direct)"))
-                    .desired_width(f32::INFINITY),
+            ui.add_space(5.0);
+            settings_text_field(
+                ui,
+                &mut self.editing_settings.proxy_url,
+                "http://proxy:8080 (leave empty for direct)",
             );
             ui.add_space(10.0);
 
@@ -336,4 +337,23 @@ impl ApiClient {
                 .spawn();
         }
     }
+}
+
+fn settings_text_field(ui: &mut egui::Ui, value: &mut String, placeholder: &str) -> egui::Response {
+    egui::Frame::none()
+        .fill(elevated())
+        .stroke(egui::Stroke::new(1.0, border()))
+        .rounding(egui::Rounding::same(8.0))
+        .inner_margin(egui::Margin::symmetric(10.0, 5.0))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width().max(240.0));
+            ui.add_sized(
+                [ui.available_width(), 22.0],
+                egui::TextEdit::singleline(value)
+                    .hint_text(hint(placeholder))
+                    .frame(false)
+                    .desired_width(f32::INFINITY),
+            )
+        })
+        .inner
 }

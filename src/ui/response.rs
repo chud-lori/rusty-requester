@@ -35,6 +35,16 @@ impl ApiClient {
                 return;
             }
 
+            if self.is_loading {
+                ui.add(egui::Spinner::new().size(14.0).color(accent()));
+                ui.label(
+                    egui::RichText::new("Sending request...")
+                        .size(12.0)
+                        .color(muted()),
+                );
+                return;
+            }
+
             let sc = status_color(&self.response_status);
             egui::Frame::none()
                 .fill(with_alpha(sc, if is_light() { 22 } else { 34 }))
@@ -501,7 +511,7 @@ impl ApiClient {
                             })
                             .stroke(egui::Stroke::new(1.0, with_alpha(border(), 185)))
                             .rounding(egui::Rounding::same(9.0))
-                            .inner_margin(egui::Margin::symmetric(8.0, 3.0))
+                            .inner_margin(egui::Margin::symmetric(8.0, 4.0))
                             .show(ui, |ui| {
                                 ui.set_width(find_w);
                                 ui.horizontal(|ui| {
@@ -513,13 +523,25 @@ impl ApiClient {
                                         .size(13.0)
                                         .color(muted()),
                                     );
-                                    let count_w = 58.0;
                                     let close_w = 22.0;
-                                    let input_w = (ui.available_width()
-                                        - count_w
-                                        - close_w
-                                        - (ui.spacing().item_spacing.x * 2.0))
-                                        .max(96.0);
+                                    let match_count = count_case_insensitive_matches(
+                                        &self.response_text,
+                                        &self.body_search_query,
+                                    );
+                                    let count_text = if self.body_search_query.is_empty() {
+                                        String::new()
+                                    } else {
+                                        format!("{} hit{}", match_count, plural(match_count))
+                                    };
+                                    let count_w = if count_text.is_empty() { 0.0 } else { 58.0 };
+                                    let gap_w = if count_text.is_empty() {
+                                        ui.spacing().item_spacing.x
+                                    } else {
+                                        ui.spacing().item_spacing.x * 2.0
+                                    };
+                                    let input_w =
+                                        (ui.available_width() - count_w - close_w - gap_w)
+                                            .max(130.0);
                                     let search_resp = ui.add_sized(
                                         [input_w, 22.0],
                                         egui::TextEdit::singleline(&mut self.body_search_query)
@@ -537,23 +559,16 @@ impl ApiClient {
                                         self.body_search_query.clear();
                                     }
 
-                                    let match_count = count_case_insensitive_matches(
-                                        &self.response_text,
-                                        &self.body_search_query,
-                                    );
-                                    let count_text = if self.body_search_query.is_empty() {
-                                        String::new()
-                                    } else {
-                                        format!("{} hit{}", match_count, plural(match_count))
-                                    };
-                                    ui.add_sized(
-                                        [count_w, 20.0],
-                                        egui::Label::new(
-                                            egui::RichText::new(count_text)
-                                                .size(11.0)
-                                                .color(muted()),
-                                        ),
-                                    );
+                                    if !count_text.is_empty() {
+                                        ui.add_sized(
+                                            [count_w, 20.0],
+                                            egui::Label::new(
+                                                egui::RichText::new(count_text)
+                                                    .size(11.0)
+                                                    .color(muted()),
+                                            ),
+                                        );
+                                    }
                                     if close_x_button(ui, "Close search").clicked() {
                                         self.body_search_visible = false;
                                         self.body_search_query.clear();

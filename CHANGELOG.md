@@ -11,6 +11,14 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Fixed
+- **Settings and response control alignment.** Settings text fields now use
+  consistent framed padding, Response "Sending request" renders as a quiet
+  inline progress state, and the Response body find box no longer squeezes the
+  input when no match count is shown.
+
 ## [0.27.8] — 2026-06-18
 
 ### Fixed
