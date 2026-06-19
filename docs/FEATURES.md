@@ -7,7 +7,7 @@ Full feature catalog for Rusty Requester. For a quick pitch see the
 ## Core
 
 - 🚀 **Truly native** — Rust + `egui`, no Electron, no Chromium
-- 💾 **Fully offline** — all data lives in one local JSON file, no cloud sync, no telemetry
+- 💾 **Fully offline** — app data stays local; collections can also be exported as reviewable `.rr` files for Git, with no cloud account or telemetry
 - 🎨 **Dark / Light / Postman themes** — rust-orange / amber accents on either a deep Monokai-style dark canvas *(v0.1)* or a GitHub-ish near-white canvas *(v0.14)*; plus a **Postman** theme (pure-white canvas, warm-gray sidebar chrome, Postman-blue accent, Inter-Light UI font) *(v0.18)*. Toggle in Settings, preview immediately, and persist only when Save is pressed. Syntax-highlighted response body adapts: Monokai on dark, dark-on-paper on the paper themes.
 - 🍎 Builds for Apple Silicon, Intel Mac, Linux, and Windows
 - 🪟 **Native macOS title-bar integration** — traffic-light buttons float over the app content (no dark stub strip above the workspace).
@@ -65,7 +65,7 @@ Full feature catalog for Rusty Requester. For a quick pitch see the
 - 📚 **Collections & subfolders** — organize requests in nested folders
 - ➕ **Inline `+` button** on every folder header — adds a request in one click
 - ⋯ **Overflow menu** on every folder header — Open overview · Add request · Add folder · Rename · Duplicate · Delete
-- 📖 **Collection overview page** — click "Open overview" to see a dedicated homepage with title, recursive request/folder counts, an editable description, and a clickable request list
+- 📖 **Collection overview page** — click "Open overview" to see a dedicated homepage with title, recursive request/folder counts, an editable description, a close action, and a clickable request list
 - 🪆 **Duplicate** folders recursively (keeps structure, fresh UUIDs) or individual requests
 - 💾 **Save draft to any folder** — the save-draft modal shows a full folder tree with search + "New folder"
 - 🔄 **Drag to reorder** requests within a folder (drag the row, drop on a new position)
@@ -102,7 +102,7 @@ Full feature catalog for Rusty Requester. For a quick pitch see the
 - 🍎 **Native macOS NSMenu bar** *(v0.3)* — (Rusty Requester · File · View · Request · Help) via `muda`; in-window menu on Linux
 - 🎨 **Phosphor icon font** *(v0.9)* — 1,200+ tintable icons rendered as font glyphs; crisp at every DPI, zero image assets to ship
 - ℹ **Help → About** opens a custom modal with creator credit + Contribute / Report-issue links
-- 🔔 **Update check + sidebar pill** *(v0.13 / v0.16.1)* — on-launch GitHub-latest-release check (one silent GET, off-switch in Settings); sidebar pill when a newer tag lands, with a copyable install-one-liner modal. Dismissible per-version so deferring doesn't re-pester.
+- 🔔 **Update check + sidebar pill** *(v0.13 / v0.16.1)* — on-launch update check reads the public GitHub Pages `latest.json` first, then falls back to GitHub Releases if needed (off-switch in Settings); sidebar pill appears when a newer tag lands, with a copyable install-one-liner modal. Dismissible per-version so deferring doesn't re-pester.
 
 ---
 
@@ -150,19 +150,22 @@ the original values.
 - **Sidebar → 📤 Export → Export all as JSON / YAML…** — dumps every collection into a single file (good for backups).
 - **Right-click any collection / folder → Export as JSON / YAML…** — exports just that subtree (this is the "collection-level" export for sharing).
 - Before collection export, Rusty Requester runs a local-only secret scan for common API keys, bearer/JWT-style tokens, OAuth/basic auth secrets, cookies, and sensitive key names such as `Authorization`, `token`, `password`, `client_secret`, and `api_key`. If likely secrets are found, you can cancel, continue with the original export, or export a redacted copy with likely secret values replaced by `[REDACTED]`. This scanner never uploads export content. It is heuristic: unusual secret formats may be missed, and placeholder or example values may still produce false positives.
-- **Git workspace format** — core import/export code can write a deterministic
+- **Git workspace format** — Collection Settings can write a deterministic
   directory with `workspace.json` plus one readable `.rr` request file per
   request and one `.rrenv` file per environment. `.rr` is Rusty Requester's
   compact text format, preserves IDs for Git round-trips, keeps legacy JSON
-  request imports working, and masks secrets by default. See
+  request imports working, and masks secrets by default. Choosing a directory
+  links it; click **Export now** to write files. See
   [`GIT_WORKSPACE_FORMAT.md`](./GIT_WORKSPACE_FORMAT.md) for layout and
   merge-conflict expectations.
 - **Collection-level Git UI** — each top-level collection can point at its own
   local Git repository from **Collection settings...**. The free Git panel can
   show status/diff summary, pull from remote, export the collection, commit,
-  and push through your existing local Git credentials. Collection settings also
-  include custom mask/allow key patterns so shared headers like `platform` can
-  stay readable while `x-api-key` or similar values are forced masked.
+  and push through your existing local Git credentials. Private remotes use your
+  existing SSH key or Git credential helper; Rusty Requester does not store
+  provider tokens. Collection settings also include rename, directory, OpenAPI,
+  and custom mask/allow key patterns so shared headers like `platform` can stay
+  readable while `x-api-key` or similar values are forced masked.
 - **Workspace Sync** — optional, off by default in Settings. When enabled,
   **Workspace Sync…** lets you pull from a Git workspace directory, push a
   masked Git workspace snapshot, pull/push a Git remote through your local Git

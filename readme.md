@@ -42,7 +42,7 @@ packages. Rusty Requester is a single ~15 MB native binary: Rust +
 | Cold start        | 2–5 s | 1–3 s | 1–2 s | **<100 ms** |
 | Account required  | yes (for sync) | yes (gated 2023) | no | **no** |
 | Telemetry         | yes | yes | off by default | **none** |
-| Storage           | cloud-first | cloud or local | git-native files | **one local JSON file** |
+| Storage           | cloud-first | cloud or local | git-native files | **local app data + optional reviewable `.rr` files** |
 | Supply chain      | ~1000+ npm deps | ~1000+ npm deps | ~800 npm deps | **~150 Rust crates** |
 | Response HTML     | Chromium webview | Chromium webview | Chromium webview | **egui text/markup — no JS engine** |
 
@@ -105,8 +105,10 @@ server sends bytes back. The headline guarantees:
 
 You still own: SSRF from your own machine (`localhost`, internal IPs),
 files you explicitly save and then open in a vulnerable downstream app,
-and the plaintext `data.json` under your home directory (`0600` perms
-only). Full threat model + vulnerability reporting in
+and plaintext local data under your home directory or collection Git folders.
+App data is kept local with restrictive file permissions where supported;
+collection exports mask secrets by default, but private repos are still access
+control, not encryption. Full threat model + vulnerability reporting in
 [`SECURITY.md`](./SECURITY.md).
 
 ---

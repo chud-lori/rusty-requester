@@ -1,9 +1,16 @@
 # Git Workspace Format
 
 Rusty Requester's Git workspace format is a deterministic directory export for
-reviewable request collections. It is separate from the single-file JSON/YAML
-backup export: normal imports still regenerate IDs to avoid collisions, while
-Git workspace imports preserve IDs so branches can round-trip cleanly.
+reviewable request collections. It is separate from the app's local data file
+and from single-file JSON/YAML backup exports: normal imports still regenerate
+IDs to avoid collisions, while Git workspace imports preserve IDs so branches
+can round-trip cleanly.
+
+In the app, open a top-level collection menu and choose **Collection
+settings...**. Selecting a directory links that collection to the folder; click
+**Export now** to write files. Use a repository root containing `.git` when you
+want pull, commit, and push actions. Private remotes use your local SSH key or
+Git credential helper; Rusty Requester does not store provider tokens.
 
 ## Layout
 
