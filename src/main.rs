@@ -373,6 +373,10 @@ struct ApiClient {
     /// view to call `request_focus()` on the search TextEdit so the
     /// user can start typing immediately. Cleared after consumption.
     body_search_focus_pending: bool,
+    /// One-shot scroll request set by Enter / Shift+Enter in response
+    /// find. The response body renderer consumes it after scrolling the
+    /// active match into view.
+    body_search_scroll_pending: bool,
     /// Per-current-response set of collapsed JSON object/array opener
     /// lines (1-based line numbers in `response_text`). Postman-style
     /// folding: clicking the chevron next to a `{` or `[` adds its
@@ -578,6 +582,7 @@ impl Default for ApiClient {
             body_search_last_query: String::new(),
             body_search_visible: false,
             body_search_focus_pending: false,
+            body_search_scroll_pending: false,
             folded_response_lines: HashSet::new(),
             http_client: net::build_client(&AppSettings::default()),
             http_runtime: net::build_runtime(),

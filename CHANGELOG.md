@@ -11,6 +11,13 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Fixed
+- **Response find navigation.** Enter / Shift+Enter now scrolls the response
+  body to the active search match, and Raw view uses the same search highlight
+  rendering as JSON text.
+
 ## [0.27.16] — 2026-06-19
 
 ### Fixed
