@@ -17,6 +17,9 @@ upgrades read old files cleanly.
 - **Response find reliability.** Enter / Shift+Enter is now captured before the
   search input can consume it, and the response body editor is width-bounded so the
   response surface cannot overflow the right edge.
+- **Response find follow-up.** Enter navigation now also works when the single-line
+  find field releases focus during the key press, and JSON gutter/body rows are
+  constrained before layout so the body panel stays boxed.
 
 ## [0.27.17] — 2026-06-19
 
