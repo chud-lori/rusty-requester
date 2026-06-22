@@ -560,9 +560,17 @@ impl ApiClient {
                                     close_w,
                                     gap_w,
                                 );
+                                let search_id = ui.make_persistent_id("response_body_find_input");
+                                let search_focused_before_text_edit =
+                                    ui.memory(|m| m.has_focus(search_id));
+                                let enter_pressed_before_text_edit = search_focused_before_text_edit
+                                    && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                                let shift_pressed_before_text_edit =
+                                    ui.input(|i| i.modifiers.shift);
                                 let search_resp = ui.add_sized(
                                     [input_w, 22.0],
                                     egui::TextEdit::singleline(&mut self.body_search_query)
+                                        .id(search_id)
                                         .hint_text(hint("Find"))
                                         .frame(false),
                                 );
@@ -577,10 +585,11 @@ impl ApiClient {
                                         self.body_search_last_query.clear();
                                         self.body_search_active_match = 0;
                                     }
-                                    if ui.input(|i| i.key_pressed(egui::Key::Enter))
+                                    if (enter_pressed_before_text_edit
+                                        || ui.input(|i| i.key_pressed(egui::Key::Enter)))
                                         && match_count > 0
                                     {
-                                        let backward = ui.input(|i| i.modifiers.shift);
+                                        let backward = shift_pressed_before_text_edit;
                                         self.body_search_active_match = next_search_match_index(
                                             self.body_search_active_match,
                                             match_count,
@@ -905,10 +914,15 @@ impl ApiClient {
                                                 job.wrap.max_width = wrap_width;
                                                 ui.fonts(|f| f.layout_job(job))
                                             };
-                                        let text_resp = ui.add(
+                                        let editor_size = egui::vec2(
+                                            ui.available_width().max(0.0),
+                                            ui.available_height().max(120.0),
+                                        );
+                                        let text_resp = ui.add_sized(
+                                            editor_size,
                                             egui::TextEdit::multiline(&mut buf)
                                                 .frame(false)
-                                                .desired_width(f32::INFINITY)
+                                                .desired_width(editor_size.x)
                                                 .font(egui::TextStyle::Monospace)
                                                 .layouter(&mut layouter),
                                         );
@@ -994,14 +1008,15 @@ impl ApiClient {
                                             job.wrap.max_width = wrap_width;
                                             ui.fonts(|f| f.layout_job(job))
                                         };
+                                    let editor_size = egui::vec2(
+                                        ui.available_width().max(0.0),
+                                        ui.available_height().max(120.0),
+                                    );
                                     let text_resp = ui.add_sized(
-                                        egui::vec2(
-                                            ui.available_width(),
-                                            ui.available_height().max(120.0),
-                                        ),
+                                        editor_size,
                                         egui::TextEdit::multiline(&mut buf)
                                             .frame(false)
-                                            .desired_width(f32::INFINITY)
+                                            .desired_width(editor_size.x)
                                             .font(egui::TextStyle::Monospace)
                                             .layouter(&mut layouter),
                                     );

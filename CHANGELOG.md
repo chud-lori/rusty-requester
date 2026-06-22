@@ -11,6 +11,13 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Fixed
+- **Response find reliability.** Enter / Shift+Enter is now captured before the
+  search input can consume it, and the response body editor is width-bounded so the
+  response surface cannot overflow the right edge.
+
 ## [0.27.17] — 2026-06-19
 
 ### Fixed
