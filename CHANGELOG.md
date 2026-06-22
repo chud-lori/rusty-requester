@@ -11,7 +11,7 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
-## Unreleased
+## [0.27.18] — 2026-06-22
 
 ### Fixed
 - **Response find reliability.** Enter / Shift+Enter is now captured before the
