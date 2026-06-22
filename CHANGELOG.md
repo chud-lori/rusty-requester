@@ -11,6 +11,14 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Fixed
+- **Long response find scrolling.** JSON and Raw response bodies now use
+  code-style horizontal scrolling instead of soft wrapping, and find navigation
+  targets the active match using the current monospace line height so long
+  responses scroll to the correct row.
+
 ## [0.27.20] — 2026-06-22
 
 ### Fixed

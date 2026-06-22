@@ -806,7 +806,7 @@ impl ApiClient {
                 // Toolbar lives in the row above (inline with Body /
                 // Headers tabs); this Frame just hosts the scrollable
                 // content.
-                egui::ScrollArea::vertical()
+                egui::ScrollArea::both()
                     .id_salt("response_scroll")
                     .auto_shrink([false, false])
                     .show(ui, |ui| match self.response_tab {
@@ -831,7 +831,7 @@ impl ApiClient {
                                     // over the visible text.
                                     let gutter_w = 60.0;
                                     let chevron_w = 16.0;
-                                    let row_h = 17.0;
+                                    let row_h = response_body_line_height(ui);
                                     let pairs = compute_json_fold_pairs(&self.response_text);
                                     let display = build_folded_display(
                                         &self.response_text,
@@ -910,14 +910,14 @@ impl ApiClient {
                                         let search = self.body_search_query.clone();
                                         let active_match = self.body_search_active_match;
                                         let mut layouter =
-                                            move |ui: &egui::Ui, s: &str, wrap_width: f32| {
+                                            move |ui: &egui::Ui, s: &str, _wrap_width: f32| {
                                                 let mut job =
                                                     build_json_layout_job_content_only_with_search_active(
                                                         s,
                                                         &search,
                                                         Some(active_match),
                                                     );
-                                                job.wrap.max_width = wrap_width;
+                                                job.wrap.max_width = f32::INFINITY;
                                                 ui.fonts(|f| f.layout_job(job))
                                             };
                                         let editor_size = egui::vec2(
@@ -928,7 +928,7 @@ impl ApiClient {
                                             editor_size,
                                             egui::TextEdit::multiline(&mut buf)
                                                 .frame(false)
-                                                .desired_width(editor_size.x)
+                                                .desired_width(f32::INFINITY)
                                                 .font(egui::TextStyle::Monospace)
                                                 .layouter(&mut layouter),
                                         );
@@ -938,15 +938,12 @@ impl ApiClient {
                                                 &self.body_search_query,
                                                 self.body_search_active_match,
                                             ) {
-                                                let y = text_resp.rect.top() + line_idx as f32 * row_h;
-                                                let target = egui::Rect::from_min_size(
-                                                    egui::pos2(text_resp.rect.left(), y),
-                                                    egui::vec2(1.0, row_h),
+                                                let target = response_find_scroll_target_rect(
+                                                    text_resp.rect,
+                                                    line_idx,
+                                                    row_h,
                                                 );
-                                                ui.scroll_to_rect(
-                                                    target,
-                                                    Some(egui::Align::Center),
-                                                );
+                                                ui.scroll_to_rect(target, Some(egui::Align::Center));
                                             }
                                             self.body_search_scroll_pending = false;
                                         }
@@ -1005,14 +1002,14 @@ impl ApiClient {
                                     let search = self.body_search_query.clone();
                                     let active_match = self.body_search_active_match;
                                     let mut layouter =
-                                        move |ui: &egui::Ui, s: &str, wrap_width: f32| {
+                                        move |ui: &egui::Ui, s: &str, _wrap_width: f32| {
                                             let mut job =
                                                 build_json_layout_job_content_only_with_search_active(
                                                     s,
                                                     &search,
                                                     Some(active_match),
                                                 );
-                                            job.wrap.max_width = wrap_width;
+                                            job.wrap.max_width = f32::INFINITY;
                                             ui.fonts(|f| f.layout_job(job))
                                         };
                                     let editor_size = egui::vec2(
@@ -1023,7 +1020,7 @@ impl ApiClient {
                                         editor_size,
                                         egui::TextEdit::multiline(&mut buf)
                                             .frame(false)
-                                            .desired_width(editor_size.x)
+                                            .desired_width(f32::INFINITY)
                                             .font(egui::TextStyle::Monospace)
                                             .layouter(&mut layouter),
                                     );
@@ -1033,11 +1030,11 @@ impl ApiClient {
                                             &self.body_search_query,
                                             self.body_search_active_match,
                                         ) {
-                                            let row_h = 17.0;
-                                            let y = text_resp.rect.top() + line_idx as f32 * row_h;
-                                            let target = egui::Rect::from_min_size(
-                                                egui::pos2(text_resp.rect.left(), y),
-                                                egui::vec2(1.0, row_h),
+                                            let row_h = response_body_line_height(ui);
+                                            let target = response_find_scroll_target_rect(
+                                                text_resp.rect,
+                                                line_idx,
+                                                row_h,
                                             );
                                             ui.scroll_to_rect(target, Some(egui::Align::Center));
                                         }
@@ -1173,6 +1170,22 @@ fn response_find_input_width(
     gap_width: f32,
 ) -> f32 {
     (available_width - count_width - close_width - gap_width).max(0.0)
+}
+
+fn response_body_line_height(ui: &egui::Ui) -> f32 {
+    ui.text_style_height(&egui::TextStyle::Monospace).max(1.0)
+}
+
+fn response_find_scroll_target_rect(
+    text_rect: egui::Rect,
+    line_idx: usize,
+    line_height: f32,
+) -> egui::Rect {
+    let y = text_rect.top() + line_idx as f32 * line_height;
+    egui::Rect::from_min_size(
+        egui::pos2(text_rect.left(), y),
+        egui::vec2(1.0, line_height),
+    )
 }
 
 fn response_find_active_match_line(text: &str, query: &str, active_match: usize) -> Option<usize> {
@@ -1969,6 +1982,15 @@ mod tests {
         assert_eq!(response_find_active_match_line(text, "cost", 2), Some(2));
         assert_eq!(response_find_active_match_line(text, "cost", 3), None);
         assert_eq!(response_find_active_match_line(text, "", 0), None);
+    }
+
+    #[test]
+    fn response_find_scroll_target_uses_line_height() {
+        let rect = egui::Rect::from_min_size(egui::pos2(20.0, 100.0), egui::vec2(300.0, 80.0));
+        let target = response_find_scroll_target_rect(rect, 4, 18.0);
+        assert_eq!(target.left(), 20.0);
+        assert_eq!(target.top(), 172.0);
+        assert_eq!(target.height(), 18.0);
     }
 
     #[test]
