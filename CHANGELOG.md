@@ -11,6 +11,13 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Fixed
+- **Response find focus retention.** Pressing Enter / Shift+Enter in the
+  response find field keeps keyboard focus in the field, so repeated Enter
+  advances through matches without clicking the search box again.
+
 ## [0.27.19] — 2026-06-22
 
 ### Fixed

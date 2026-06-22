@@ -598,6 +598,7 @@ impl ApiClient {
                                             backward,
                                         );
                                         self.body_search_scroll_pending = true;
+                                        search_resp.request_focus();
                                     }
                                 }
 
