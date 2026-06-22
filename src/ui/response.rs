@@ -578,7 +578,9 @@ impl ApiClient {
                                     self.body_search_focus_pending = false;
                                     search_resp.request_focus();
                                 }
-                                if search_resp.has_focus() {
+                                let search_has_focus =
+                                    search_focused_before_text_edit || search_resp.has_focus();
+                                if search_has_focus {
                                     if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
                                         self.body_search_visible = false;
                                         self.body_search_query.clear();
@@ -836,8 +838,11 @@ impl ApiClient {
                                         &self.folded_response_lines,
                                     );
                                     let mut toggle_fold: Option<u32> = None;
+                                    let text_w =
+                                        (ui.available_width() - gutter_w - 6.0).max(80.0);
                                     ui.horizontal_top(|ui| {
                                         ui.vertical(|ui| {
+                                            ui.set_width(gutter_w);
                                             ui.spacing_mut().item_spacing.y = 0.0;
                                             for d in &display {
                                                 ui.horizontal(|ui| {
@@ -915,7 +920,7 @@ impl ApiClient {
                                                 ui.fonts(|f| f.layout_job(job))
                                             };
                                         let editor_size = egui::vec2(
-                                            ui.available_width().max(0.0),
+                                            text_w.min(ui.available_width().max(0.0)),
                                             ui.available_height().max(120.0),
                                         );
                                         let text_resp = ui.add_sized(
@@ -977,14 +982,15 @@ impl ApiClient {
                                     let stripped =
                                         crate::html_preview::strip_to_text(&self.response_text);
                                     let mut buf: &str = &stripped;
+                                    let editor_size = egui::vec2(
+                                        ui.available_width().max(0.0),
+                                        ui.available_height().max(120.0),
+                                    );
                                     ui.add_sized(
-                                        egui::vec2(
-                                            ui.available_width(),
-                                            ui.available_height().max(120.0),
-                                        ),
+                                        editor_size,
                                         egui::TextEdit::multiline(&mut buf)
                                             .frame(false)
-                                            .desired_width(f32::INFINITY),
+                                            .desired_width(editor_size.x),
                                     );
                                 }
                                 BodyView::Events => {
