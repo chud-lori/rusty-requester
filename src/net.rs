@@ -184,6 +184,10 @@ pub async fn execute_request_async(
             HttpMethod::PUT => client.put(&final_url),
             HttpMethod::DELETE => client.delete(&final_url),
             HttpMethod::PATCH => client.patch(&final_url),
+            HttpMethod::QUERY => client.request(
+                reqwest::Method::from_bytes(b"QUERY").expect("QUERY is a valid HTTP token"),
+                &final_url,
+            ),
             HttpMethod::HEAD => client.head(&final_url),
             HttpMethod::OPTIONS => client.request(reqwest::Method::OPTIONS, &final_url),
         };

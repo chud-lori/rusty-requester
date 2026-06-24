@@ -207,8 +207,22 @@ pub enum HttpMethod {
     PUT,
     DELETE,
     PATCH,
+    QUERY,
     HEAD,
     OPTIONS,
+}
+
+impl HttpMethod {
+    pub const ALL: [Self; 8] = [
+        Self::GET,
+        Self::POST,
+        Self::PUT,
+        Self::DELETE,
+        Self::PATCH,
+        Self::QUERY,
+        Self::HEAD,
+        Self::OPTIONS,
+    ];
 }
 
 impl std::fmt::Display for HttpMethod {

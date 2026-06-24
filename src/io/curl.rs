@@ -310,6 +310,7 @@ fn parse_method(s: &str) -> HttpMethod {
         "PUT" => HttpMethod::PUT,
         "DELETE" => HttpMethod::DELETE,
         "PATCH" => HttpMethod::PATCH,
+        "QUERY" => HttpMethod::QUERY,
         "HEAD" => HttpMethod::HEAD,
         "OPTIONS" => HttpMethod::OPTIONS,
         _ => HttpMethod::GET,
@@ -580,6 +581,18 @@ mod tests {
         assert_eq!(r.body, "{\"k\":\"v\"}");
         assert!(matches!(r.auth, Auth::Bearer { .. }));
         assert_eq!(r.headers.len(), 1);
+    }
+
+    #[test]
+    fn parse_query_with_body() {
+        let r = parse_curl(
+            "curl -X QUERY 'https://api.example.com/search' \\\n  -H 'Content-Type: application/json' \\\n  --data-raw '{\"filter\":\"active\"}'",
+        )
+        .unwrap();
+
+        assert_eq!(r.method, HttpMethod::QUERY);
+        assert_eq!(r.url, "https://api.example.com/search");
+        assert_eq!(r.body, "{\"filter\":\"active\"}");
     }
 
     #[test]
