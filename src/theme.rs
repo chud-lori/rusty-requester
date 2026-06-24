@@ -122,6 +122,13 @@ pub fn method_color(m: &HttpMethod) -> egui::Color32 {
                 C_PURPLE_LIGHT
             }
         }
+        HttpMethod::QUERY => {
+            if dark_mode {
+                C_ORANGE
+            } else {
+                C_ORANGE_LIGHT
+            }
+        }
         _ => muted(), // theme-aware neutral for HEAD / OPTIONS
     }
 }

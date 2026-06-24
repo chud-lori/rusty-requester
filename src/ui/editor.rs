@@ -509,15 +509,7 @@ impl ApiClient {
                         )
                         .width(90.0)
                         .show_ui(ui, |ui| {
-                            for method in [
-                                HttpMethod::GET,
-                                HttpMethod::POST,
-                                HttpMethod::PUT,
-                                HttpMethod::DELETE,
-                                HttpMethod::PATCH,
-                                HttpMethod::HEAD,
-                                HttpMethod::OPTIONS,
-                            ] {
+                            for method in HttpMethod::ALL {
                                 let mc2 = method_color(&method);
                                 if ui
                                     .selectable_value(

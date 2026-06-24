@@ -1111,15 +1111,7 @@ impl BlockRrDocument {
     }
 
     fn take_method_and_url(&mut self) -> Result<(HttpMethod, String), String> {
-        for method in [
-            HttpMethod::GET,
-            HttpMethod::POST,
-            HttpMethod::PUT,
-            HttpMethod::DELETE,
-            HttpMethod::PATCH,
-            HttpMethod::HEAD,
-            HttpMethod::OPTIONS,
-        ] {
+        for method in HttpMethod::ALL {
             let name = method.to_string().to_ascii_lowercase();
             if let Some(dict) = self.take_dict(&name) {
                 let url = take_required_dict_value(&dict, "url")?;
@@ -1728,6 +1720,32 @@ mod tests {
         assert!(exported.contains("params:query {\n  platform: android\n}"));
         assert!(exported.contains("headers {\n  Accept: application/json\n}"));
         assert!(!exported.contains("[query]"));
+        assert_eq!(rr_to_request(&exported).unwrap(), request);
+    }
+
+    #[test]
+    fn native_rr_round_trips_query_method() {
+        let request = Request {
+            id: "request-query".into(),
+            name: "Complex search".into(),
+            description: String::new(),
+            method: HttpMethod::QUERY,
+            url: "https://api.example.com/search".into(),
+            query_params: vec![],
+            path_params: vec![],
+            headers: vec![KvRow::new("Content-Type", "application/json")],
+            cookies: vec![],
+            body: "{\"filter\":\"active\"}".into(),
+            body_ext: None,
+            auth: Auth::None,
+            extractors: vec![],
+            assertions: vec![],
+            source: None,
+        };
+
+        let exported = request_to_rr(&request).unwrap();
+
+        assert!(exported.contains("query {\n  url: https://api.example.com/search\n}"));
         assert_eq!(rr_to_request(&exported).unwrap(), request);
     }
 

@@ -158,7 +158,9 @@ fn openapi_to_folders(root: &Value) -> Result<Vec<Folder>, String> {
             continue;
         };
 
-        for method_name in ["get", "post", "put", "delete", "patch", "head", "options"] {
+        for method_name in [
+            "get", "post", "put", "delete", "patch", "query", "head", "options",
+        ] {
             let Some(operation) = path_item_obj.get(method_name) else {
                 continue;
             };
@@ -389,6 +391,7 @@ fn openapi_method(method_name: &str) -> Option<HttpMethod> {
         "put" => Some(HttpMethod::PUT),
         "delete" => Some(HttpMethod::DELETE),
         "patch" => Some(HttpMethod::PATCH),
+        "query" => Some(HttpMethod::QUERY),
         "head" => Some(HttpMethod::HEAD),
         "options" => Some(HttpMethod::OPTIONS),
         _ => None,
@@ -997,6 +1000,7 @@ fn parse_method(s: &str) -> HttpMethod {
         "PUT" => HttpMethod::PUT,
         "DELETE" => HttpMethod::DELETE,
         "PATCH" => HttpMethod::PATCH,
+        "QUERY" => HttpMethod::QUERY,
         "HEAD" => HttpMethod::HEAD,
         "OPTIONS" => HttpMethod::OPTIONS,
         _ => HttpMethod::GET,
@@ -1543,6 +1547,38 @@ paths:
         assert_eq!(
             serde_json::from_str::<Value>(&req.body).unwrap(),
             serde_json::json!({"status": "shipped"})
+        );
+    }
+
+    #[test]
+    fn import_openapi_query_operation() {
+        let openapi = r#"
+openapi: 3.1.0
+info:
+  title: Search API
+  version: 1.0.0
+paths:
+  /search:
+    query:
+      summary: Complex search
+      requestBody:
+        content:
+          application/json:
+            example:
+              filter: active
+"#;
+
+        let folders = import_from_str(openapi, "yaml").unwrap();
+        assert_eq!(folders.len(), 1);
+        assert_eq!(folders[0].requests.len(), 1);
+
+        let req = &folders[0].requests[0];
+        assert_eq!(req.name, "Complex search");
+        assert_eq!(req.method, HttpMethod::QUERY);
+        assert_eq!(req.url, "/search");
+        assert_eq!(
+            serde_json::from_str::<Value>(&req.body).unwrap(),
+            serde_json::json!({"filter": "active"})
         );
     }
 

@@ -11,6 +11,14 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Added
+- **HTTP QUERY method.** Requests can now use the standardized `QUERY`
+  method for safe, idempotent searches that need a request body. The method is
+  available in the editor, cURL import/export, OpenAPI import, and reviewable
+  `.rr` workspace files.
+
 ## [0.27.21] — 2026-06-22
 
 ### Fixed

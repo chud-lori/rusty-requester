@@ -14,7 +14,7 @@ Full feature catalog for Rusty Requester. For a quick pitch see the
 
 ## Request building
 
-- 🔧 Full HTTP methods: `GET`, `POST`, `PUT`, `DELETE`, `PATCH`, `HEAD`, `OPTIONS`
+- 🔧 Full HTTP methods: `GET`, `POST`, `PUT`, `DELETE`, `PATCH`, `QUERY`, `HEAD`, `OPTIONS`
 - 📝 Tabbed editor: **Params · Headers · Cookies · Body · Auth · Tests**
 - 🔗 **Bidirectional URL ↔ Params sync** (Postman-style): type `?foo=bar` in the URL bar → params populate the table; edit the table → URL bar rebuilds. Auto-growing "ghost" row.
 - 🍪 Cookies list (merged into a `Cookie` header on send)
@@ -273,6 +273,7 @@ filled pill background — matches Postman's current look):
 - 🟧 **PUT** — deep rust (`#B7410E`)
 - 🔴 **DELETE** — crimson (`#DC2626`)
 - 🟤 **PATCH** — burnt sienna (`#BA7850`)
+- 🟠 **QUERY** — amber gold (`#F59E0B`)
 - ⚪ **HEAD / OPTIONS** — warm muted (`#7E8391`)
 
 The primary UI accent (selected tab, Send button, focus ring) is the brand
