@@ -11,6 +11,15 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Fixed
+- **cURL auth and cookie import.** Pasted cURL commands now detect Bearer
+  tokens from tighter `Authorization:Bearer ...` header formatting and
+  `--oauth2-bearer`, parse `Cookie:` headers into the Cookies tab, and render
+  Bearer / Basic auth inputs as compact key/value rows with an explicit
+  show/hide token control.
+
 ## [0.28.0] — 2026-06-24
 
 ### Added

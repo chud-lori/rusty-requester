@@ -148,6 +148,7 @@ struct ApiClient {
     editing_cookies: Vec<KvRow>,
     editing_body_ext: Option<BodyExt>,
     editing_auth: Auth,
+    show_bearer_token: bool,
     editing_extractors: Vec<ResponseExtractor>,
     editing_assertions: Vec<ResponseAssertion>,
     /// Transient per-send outcomes — populated by
@@ -493,6 +494,7 @@ impl Default for ApiClient {
             editing_cookies: vec![],
             editing_body_ext: None,
             editing_auth: Auth::None,
+            show_bearer_token: false,
             editing_extractors: vec![],
             editing_assertions: vec![],
             assertion_results: vec![],

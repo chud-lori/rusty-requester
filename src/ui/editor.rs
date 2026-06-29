@@ -10,6 +10,85 @@ use crate::widgets::*;
 use crate::ApiClient;
 use eframe::egui;
 
+fn auth_header(ui: &mut egui::Ui) {
+    let label_w = 112.0;
+    let gap = 12.0;
+    ui.horizontal(|ui| {
+        ui.add_sized(
+            [label_w, 16.0],
+            egui::Label::new(egui::RichText::new("KEY").size(10.0).color(muted())),
+        );
+        ui.add_space(gap);
+        ui.add_sized(
+            [ui.available_width(), 16.0],
+            egui::Label::new(egui::RichText::new("VALUE").size(10.0).color(muted())),
+        );
+    });
+    ui.add_space(2.0);
+    ui.painter().line_segment(
+        [
+            egui::pos2(ui.cursor().left(), ui.cursor().top()),
+            egui::pos2(ui.cursor().left() + ui.available_width(), ui.cursor().top()),
+        ],
+        egui::Stroke::new(
+            1.0,
+            with_alpha(border(), if is_light() { 160 } else { 110 }),
+        ),
+    );
+    ui.add_space(4.0);
+}
+
+fn auth_field_row(
+    ui: &mut egui::Ui,
+    id: impl std::hash::Hash,
+    label: &str,
+    value: &mut String,
+    placeholder: &str,
+    password: bool,
+    reserve_right: f32,
+) -> bool {
+    let label_w = 112.0;
+    let row_h = 30.0;
+    let gap = 12.0;
+    let mut changed = false;
+
+    let bg = if is_light() {
+        with_alpha(border(), 46)
+    } else {
+        with_alpha(elevated(), 54)
+    };
+    egui::Frame::none()
+        .fill(bg)
+        .rounding(egui::Rounding::same(7.0))
+        .inner_margin(egui::Margin::symmetric(8.0, 4.0))
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.add_sized(
+                    [label_w, row_h],
+                    egui::Label::new(egui::RichText::new(label).color(muted()).size(12.0)),
+                );
+                ui.add_space(gap);
+                let width = (ui.available_width() - reserve_right).max(140.0);
+                if ui
+                    .add_sized(
+                        [width, row_h],
+                        egui::TextEdit::singleline(value)
+                            .id(ui.make_persistent_id(id))
+                            .hint_text(hint(placeholder))
+                            .password(password)
+                            .text_color(text())
+                            .frame(false),
+                    )
+                    .changed()
+                {
+                    changed = true;
+                }
+            });
+        });
+
+    changed
+}
+
 impl ApiClient {
     pub(crate) fn render_central(&mut self, ctx: &egui::Context) {
         let theme_bg = crate::theme::palette_for(self.effective_theme()).bg;
@@ -1065,7 +1144,12 @@ impl ApiClient {
                 AuthKind::Bearer => Auth::Bearer {
                     token: match &self.editing_auth {
                         Auth::Bearer { token } => token.clone(),
-                        _ => String::new(),
+                        _ => self
+                            .editing_headers
+                            .iter()
+                            .find(|h| h.key.eq_ignore_ascii_case("Authorization"))
+                            .and_then(|h| curl::bearer_token_from_authorization_header(&h.value))
+                            .unwrap_or_default(),
                     },
                 },
                 AuthKind::Basic => match &self.editing_auth {
@@ -1098,18 +1182,26 @@ impl ApiClient {
                 );
             }
             Auth::Bearer { token } => {
-                ui.label(egui::RichText::new("Token").color(accent()));
-                if ui
-                    .add(
-                        egui::TextEdit::singleline(token)
-                            .desired_width(ui.available_width())
-                            .password(false)
-                            .hint_text(hint("eyJhbGciOi...")),
-                    )
-                    .changed()
-                {
-                    changed = true;
-                }
+                auth_header(ui);
+                ui.horizontal(|ui| {
+                    changed |= auth_field_row(
+                        ui,
+                        "auth_bearer_token",
+                        "Token",
+                        token,
+                        "Bearer token",
+                        !self.show_bearer_token,
+                        38.0,
+                    );
+                    let (icon, label) = if self.show_bearer_token {
+                        (egui_phosphor::regular::EYE_SLASH, "Hide token")
+                    } else {
+                        (egui_phosphor::regular::EYE, "Show token")
+                    };
+                    if icon_btn(ui, icon, label).clicked() {
+                        self.show_bearer_token = !self.show_bearer_token;
+                    }
+                });
                 // JWT decoder — if the token looks like `header.payload.sig`
                 // with 2 dots and each part is base64url-ish, render the
                 // decoded header + payload below.
@@ -1160,31 +1252,26 @@ impl ApiClient {
                 }
             }
             Auth::Basic { username, password } => {
-                ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new("Username").color(accent()));
-                    if ui
-                        .add(
-                            egui::TextEdit::singleline(username)
-                                .desired_width(ui.available_width() - 100.0),
-                        )
-                        .changed()
-                    {
-                        changed = true;
-                    }
-                });
-                ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new("Password").color(accent()));
-                    if ui
-                        .add(
-                            egui::TextEdit::singleline(password)
-                                .desired_width(ui.available_width() - 100.0)
-                                .password(true),
-                        )
-                        .changed()
-                    {
-                        changed = true;
-                    }
-                });
+                auth_header(ui);
+                changed |= auth_field_row(
+                    ui,
+                    "auth_basic_username",
+                    "Username",
+                    username,
+                    "username",
+                    false,
+                    0.0,
+                );
+                ui.add_space(4.0);
+                changed |= auth_field_row(
+                    ui,
+                    "auth_basic_password",
+                    "Password",
+                    password,
+                    "password",
+                    true,
+                    0.0,
+                );
             }
             Auth::OAuth2(s) => {
                 // Config form — six fields. Stored persistently on
