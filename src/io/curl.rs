@@ -11,6 +11,34 @@ pub fn to_curl_redacted(req: &Request) -> String {
     to_curl_inner(req, true)
 }
 
+pub fn bearer_token_from_authorization_header(value: &str) -> Option<String> {
+    let mut parts = value.trim().splitn(2, char::is_whitespace);
+    let scheme = parts.next()?.trim();
+    if !scheme.eq_ignore_ascii_case("bearer") {
+        return None;
+    }
+    let token = parts.next()?.trim();
+    if token.is_empty() {
+        None
+    } else {
+        Some(token.to_string())
+    }
+}
+
+fn parse_cookie_header(value: &str) -> Vec<KvRow> {
+    value
+        .split(';')
+        .filter_map(|part| {
+            let part = part.trim();
+            if part.is_empty() {
+                return None;
+            }
+            let (key, value) = part.split_once('=')?;
+            Some(KvRow::new(key.trim(), value.trim()))
+        })
+        .collect()
+}
+
 fn to_curl_inner(req: &Request, redact: bool) -> String {
     let mut parts: Vec<String> = Vec::new();
     parts.push("curl".to_string());
@@ -198,6 +226,14 @@ pub fn parse_curl(input: &str) -> Result<Request, String> {
                     };
                 }
             }
+            "--oauth2-bearer" => {
+                i += 1;
+                if i < tokens.len() && matches!(auth, Auth::None) {
+                    auth = Auth::Bearer {
+                        token: tokens[i].trim().to_string(),
+                    };
+                }
+            }
             "--url" => {
                 i += 1;
                 if i < tokens.len() {
@@ -213,15 +249,7 @@ pub fn parse_curl(input: &str) -> Result<Request, String> {
             "-b" | "--cookie" => {
                 i += 1;
                 if i < tokens.len() {
-                    for part in tokens[i].split(';') {
-                        let part = part.trim();
-                        if part.is_empty() {
-                            continue;
-                        }
-                        if let Some((k, v)) = part.split_once('=') {
-                            cookies.push(KvRow::new(k.trim(), v.trim()));
-                        }
-                    }
+                    cookies.extend(parse_cookie_header(&tokens[i]));
                 }
             }
             "-e" | "--referer" => {
@@ -268,17 +296,18 @@ pub fn parse_curl(input: &str) -> Result<Request, String> {
     let mut filtered_headers: Vec<KvRow> = Vec::new();
     for h in headers {
         if h.key.eq_ignore_ascii_case("Authorization") {
-            let trimmed = h.value.trim();
-            if let Some(rest) = trimmed
-                .strip_prefix("Bearer ")
-                .or_else(|| trimmed.strip_prefix("bearer "))
-            {
+            if let Some(token) = bearer_token_from_authorization_header(&h.value) {
                 if matches!(auth, Auth::None) {
-                    auth = Auth::Bearer {
-                        token: rest.to_string(),
-                    };
+                    auth = Auth::Bearer { token };
                     continue;
                 }
+            }
+        }
+        if h.key.eq_ignore_ascii_case("Cookie") {
+            let parsed = parse_cookie_header(&h.value);
+            if !parsed.is_empty() {
+                cookies.extend(parsed);
+                continue;
             }
         }
         filtered_headers.push(h);
@@ -579,8 +608,38 @@ mod tests {
         .unwrap();
         assert_eq!(r.method, HttpMethod::POST);
         assert_eq!(r.body, "{\"k\":\"v\"}");
-        assert!(matches!(r.auth, Auth::Bearer { .. }));
+        assert!(matches!(r.auth, Auth::Bearer { token } if token == "abc123"));
         assert_eq!(r.headers.len(), 1);
+    }
+
+    #[test]
+    fn parse_bearer_header_without_space_after_colon() {
+        let r =
+            parse_curl("curl https://api.example.com -H 'Authorization:Bearer abc123'").unwrap();
+
+        assert!(matches!(r.auth, Auth::Bearer { token } if token == "abc123"));
+        assert!(r.headers.is_empty());
+    }
+
+    #[test]
+    fn parse_oauth2_bearer_flag() {
+        let r = parse_curl("curl https://api.example.com --oauth2-bearer abc123").unwrap();
+
+        assert!(matches!(r.auth, Auth::Bearer { token } if token == "abc123"));
+        assert!(r.headers.is_empty());
+    }
+
+    #[test]
+    fn parse_cookie_header_into_cookies_tab() {
+        let r =
+            parse_curl("curl https://api.example.com -H 'Cookie: sid=abc; theme=dark'").unwrap();
+
+        assert!(r.headers.is_empty());
+        assert_eq!(r.cookies.len(), 2);
+        assert_eq!(r.cookies[0].key, "sid");
+        assert_eq!(r.cookies[0].value, "abc");
+        assert_eq!(r.cookies[1].key, "theme");
+        assert_eq!(r.cookies[1].value, "dark");
     }
 
     #[test]
