@@ -142,7 +142,9 @@ impl ApiClient {
                         if ui
                             .add(
                                 egui::Button::new(
-                                    egui::RichText::new("⚙").size(14.0).color(muted()),
+                                    egui::RichText::new(egui_phosphor::regular::GEAR)
+                                        .size(14.0)
+                                        .color(muted()),
                                 )
                                 .min_size(egui::vec2(26.0, 24.0))
                                 .fill(egui::Color32::TRANSPARENT)
@@ -160,8 +162,9 @@ impl ApiClient {
                 ui.add_space(6.0);
                 self.render_environment_picker(ui);
                 ui.add_space(8.0);
-                // Tab toggle. Use fixed-size Buttons (not `selectable_label`)
-                // so the width doesn't shift when the selected state changes.
+                // Tab toggle. Use fixed-size Buttons so the width doesn't
+                // shift. Active state is a bottom accent line, matching the
+                // request/response tab language without a heavy filled pill.
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 4.0;
                     let v = self.sidebar_view;
@@ -169,28 +172,30 @@ impl ApiClient {
 
                     let coll_label = format!("Collections ({})", self.state.folders.len());
                     let coll_selected = v == SidebarView::Collections;
-                    // Selected pill: brighter text (theme-aware) on a
-                    // tinted accent background. Accent on TEXT was at
-                    // ~4:1 contrast and felt cramped.
                     let coll_btn = egui::Button::new(
                         egui::RichText::new(coll_label)
                             .size(12.0)
                             .strong()
                             .color(if coll_selected { text() } else { muted() }),
                     )
-                    .fill(if coll_selected {
-                        accent().linear_multiply(0.18)
-                    } else {
-                        egui::Color32::TRANSPARENT
-                    })
+                    .fill(egui::Color32::TRANSPARENT)
                     .stroke(egui::Stroke::NONE)
                     .rounding(egui::Rounding::same(5.0))
                     .min_size(tab_size);
-                    if ui
+                    let coll_resp = ui
                         .add(coll_btn)
-                        .on_hover_cursor(egui::CursorIcon::PointingHand)
-                        .clicked()
-                    {
+                        .on_hover_cursor(egui::CursorIcon::PointingHand);
+                    if coll_selected {
+                        let y = coll_resp.rect.bottom() - 1.0;
+                        ui.painter().line_segment(
+                            [
+                                egui::pos2(coll_resp.rect.left() + 10.0, y),
+                                egui::pos2(coll_resp.rect.right() - 10.0, y),
+                            ],
+                            egui::Stroke::new(2.5, accent()),
+                        );
+                    }
+                    if coll_resp.clicked() {
                         self.sidebar_view = SidebarView::Collections;
                     }
 
@@ -202,19 +207,24 @@ impl ApiClient {
                             .strong()
                             .color(if hist_selected { text() } else { muted() }),
                     )
-                    .fill(if hist_selected {
-                        accent().linear_multiply(0.18)
-                    } else {
-                        egui::Color32::TRANSPARENT
-                    })
+                    .fill(egui::Color32::TRANSPARENT)
                     .stroke(egui::Stroke::NONE)
                     .rounding(egui::Rounding::same(5.0))
                     .min_size(tab_size);
-                    if ui
+                    let hist_resp = ui
                         .add(hist_btn)
-                        .on_hover_cursor(egui::CursorIcon::PointingHand)
-                        .clicked()
-                    {
+                        .on_hover_cursor(egui::CursorIcon::PointingHand);
+                    if hist_selected {
+                        let y = hist_resp.rect.bottom() - 1.0;
+                        ui.painter().line_segment(
+                            [
+                                egui::pos2(hist_resp.rect.left() + 10.0, y),
+                                egui::pos2(hist_resp.rect.right() - 10.0, y),
+                            ],
+                            egui::Stroke::new(2.5, accent()),
+                        );
+                    }
+                    if hist_resp.clicked() {
                         self.sidebar_view = SidebarView::History;
                     }
                 });
@@ -228,10 +238,13 @@ impl ApiClient {
                     .add_sized(
                         [ui.available_width(), 32.0],
                         egui::Button::new(
-                            egui::RichText::new("➕  New Collection")
-                                .size(13.0)
-                                .color(egui::Color32::WHITE)
-                                .strong(),
+                            egui::RichText::new(format!(
+                                "{}  New Collection",
+                                egui_phosphor::regular::PLUS
+                            ))
+                            .size(13.0)
+                            .color(egui::Color32::WHITE)
+                            .strong(),
                         )
                         .fill(accent())
                         .rounding(egui::Rounding::same(8.0))
@@ -479,10 +492,14 @@ impl ApiClient {
                 });
             if ui
                 .add(
-                    egui::Button::new(egui::RichText::new("⚙").size(13.0).color(muted()))
-                        .min_size(egui::vec2(28.0, 26.0))
-                        .fill(egui::Color32::TRANSPARENT)
-                        .stroke(egui::Stroke::new(1.0, border())),
+                    egui::Button::new(
+                        egui::RichText::new(egui_phosphor::regular::GEAR)
+                            .size(13.0)
+                            .color(muted()),
+                    )
+                    .min_size(egui::vec2(28.0, 26.0))
+                    .fill(egui::Color32::TRANSPARENT)
+                    .stroke(egui::Stroke::new(1.0, border())),
                 )
                 .on_hover_cursor(egui::CursorIcon::PointingHand)
                 .on_hover_text("Manage environments")
@@ -968,7 +985,21 @@ impl ApiClient {
                 egui::pos2(header_rect.left() + 25.0, header_rect.top()),
                 egui::pos2(right_edge - 4.0, header_rect.bottom()),
             );
-            let mut child_ui = ui.new_child(egui::UiBuilder::new().max_rect(rename_rect));
+            let bg = if is_light() {
+                egui::Color32::from_rgb(248, 250, 253)
+            } else {
+                elevated()
+            };
+            ui.painter()
+                .rect_filled(rename_rect.expand(1.0), egui::Rounding::same(7.0), bg);
+            ui.painter().rect_stroke(
+                rename_rect.expand(1.0),
+                egui::Rounding::same(7.0),
+                egui::Stroke::new(1.2, accent()),
+            );
+            let mut child_ui = ui.new_child(
+                egui::UiBuilder::new().max_rect(rename_rect.shrink2(egui::vec2(6.0, 1.0))),
+            );
             child_ui.horizontal(|ui| {
                 let btn_size = egui::vec2(22.0, 22.0);
                 // Reserve space for the two action buttons, everything
@@ -977,7 +1008,9 @@ impl ApiClient {
                 let response = ui.add(
                     egui::TextEdit::singleline(&mut self.rename_folder_text)
                         .desired_width(edit_width)
-                        .font(egui::TextStyle::Body),
+                        .font(egui::TextStyle::Body)
+                        .text_color(text())
+                        .frame(false),
                 );
                 let (enter, escape) = ui.input(|i| {
                     (

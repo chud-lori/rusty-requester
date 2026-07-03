@@ -11,6 +11,15 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Changed
+- **UI consistency pass.** Sidebar tabs, response body view tabs, Save Request
+  folder selection, OAuth2 auth fields, Tests tab rows, cURL import, and Runner
+  controls now use the newer compact underline/rail and theme-aware accent
+  patterns instead of older filled pills, default inputs, native checkboxes, or
+  legacy method colors.
+
 ## [0.28.1] — 2026-06-29
 
 ### Fixed

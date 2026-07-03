@@ -104,8 +104,7 @@ impl ApiClient {
             ui.label(
                 egui::RichText::new(
                     "Light theme flips egui's chrome (panels, text, borders). \
-                         HTTP method colors and status pills stay the same across \
-                         themes.",
+                         HTTP method colors and status pills are tuned per theme.",
                 )
                 .size(10.5)
                 .color(muted()),

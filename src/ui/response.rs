@@ -382,7 +382,7 @@ impl ApiClient {
                                     "{} Copied",
                                     egui_phosphor::regular::CHECK
                                 ))
-                                .color(C_GREEN)
+                                .color(status_color("200"))
                                 .size(12.0),
                             );
                             ui.ctx().request_repaint();
@@ -406,52 +406,50 @@ impl ApiClient {
         // Overflow row — only when the inline block didn't fit.
         // Renders the same right-side content pushed to the panel's
         // right edge so the visual rhythm is preserved.
-        if !inline_room {
+        if !inline_room && body_active {
             ui.horizontal(|ui| {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if body_active {
-                        if icon_btn(
-                            ui,
-                            egui_phosphor::regular::DOWNLOAD_SIMPLE,
-                            "Save raw response body to file",
-                        )
+                    if icon_btn(
+                        ui,
+                        egui_phosphor::regular::DOWNLOAD_SIMPLE,
+                        "Save raw response body to file",
+                    )
+                    .clicked()
+                    {
+                        save_clicked = true;
+                    }
+                    ui.add_space(2.0);
+                    if icon_btn(ui, egui_phosphor::regular::COPY, "Copy raw response body")
                         .clicked()
-                        {
-                            save_clicked = true;
+                    {
+                        copy_clicked = true;
+                    }
+                    if let Some(t0) = self.response_copied_at {
+                        let now = ui.ctx().input(|i| i.time);
+                        let age = now - t0;
+                        if age < 1.5 {
+                            ui.label(
+                                egui::RichText::new(format!(
+                                    "{} Copied",
+                                    egui_phosphor::regular::CHECK
+                                ))
+                                .color(status_color("200"))
+                                .size(12.0),
+                            );
+                            ui.ctx().request_repaint();
+                        } else {
+                            self.response_copied_at = None;
                         }
-                        ui.add_space(2.0);
-                        if icon_btn(ui, egui_phosphor::regular::COPY, "Copy raw response body")
-                            .clicked()
-                        {
-                            copy_clicked = true;
-                        }
-                        if let Some(t0) = self.response_copied_at {
-                            let now = ui.ctx().input(|i| i.time);
-                            let age = now - t0;
-                            if age < 1.5 {
-                                ui.label(
-                                    egui::RichText::new(format!(
-                                        "{} Copied",
-                                        egui_phosphor::regular::CHECK
-                                    ))
-                                    .color(C_GREEN)
-                                    .size(12.0),
-                                );
-                                ui.ctx().request_repaint();
-                            } else {
-                                self.response_copied_at = None;
-                            }
-                        }
-                        ui.add_space(2.0);
-                        if icon_btn(
-                            ui,
-                            egui_phosphor::regular::MAGNIFYING_GLASS,
-                            "Search in body",
-                        )
-                        .clicked()
-                        {
-                            toggle_search = true;
-                        }
+                    }
+                    ui.add_space(2.0);
+                    if icon_btn(
+                        ui,
+                        egui_phosphor::regular::MAGNIFYING_GLASS,
+                        "Search in body",
+                    )
+                    .clicked()
+                    {
+                        toggle_search = true;
                     }
                 });
             });
@@ -1269,13 +1267,34 @@ fn render_body_view_selector(
     // compatibility, but M1 exposes only the core Body views here.
     let _retained_modes = [BodyView::Preview, BodyView::Events, BodyView::Diff];
     ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 6.0;
         for view in [BodyView::Json, BodyView::Tree, BodyView::Raw] {
             let selected = effective == view;
-            if ui
-                .selectable_label(selected, body_view_label(view, 0))
-                .on_hover_cursor(egui::CursorIcon::PointingHand)
-                .clicked()
-            {
+            let label = body_view_label(view, 0);
+            let resp = ui
+                .add(
+                    egui::Button::new(egui::RichText::new(label).size(13.0).color(if selected {
+                        text()
+                    } else {
+                        muted()
+                    }))
+                    .fill(egui::Color32::TRANSPARENT)
+                    .stroke(egui::Stroke::NONE)
+                    .rounding(egui::Rounding::same(6.0))
+                    .min_size(egui::vec2(54.0, 28.0)),
+                )
+                .on_hover_cursor(egui::CursorIcon::PointingHand);
+            if selected {
+                let y = resp.rect.bottom() - 1.0;
+                ui.painter().line_segment(
+                    [
+                        egui::pos2(resp.rect.left() + 8.0, y),
+                        egui::pos2(resp.rect.right() - 8.0, y),
+                    ],
+                    egui::Stroke::new(2.5, accent()),
+                );
+            }
+            if resp.clicked() {
                 *current = view;
             }
         }

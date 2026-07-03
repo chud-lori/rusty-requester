@@ -89,6 +89,39 @@ fn auth_field_row(
     changed
 }
 
+fn compact_toggle(ui: &mut egui::Ui, enabled: &mut bool, hover_text: &str) -> egui::Response {
+    let toggle_label = if *enabled {
+        egui_phosphor::regular::CHECK
+    } else {
+        ""
+    };
+    let resp = ui
+        .add_sized(
+            [18.0, 18.0],
+            egui::Button::new(egui::RichText::new(toggle_label).size(9.5).color(text()))
+                .fill(if *enabled {
+                    with_alpha(accent(), if is_light() { 14 } else { 22 })
+                } else {
+                    egui::Color32::TRANSPARENT
+                })
+                .stroke(egui::Stroke::new(
+                    if *enabled { 1.2 } else { 1.0 },
+                    if *enabled {
+                        with_alpha(accent(), 165)
+                    } else {
+                        border()
+                    },
+                ))
+                .rounding(egui::Rounding::same(4.0)),
+        )
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_text(hover_text);
+    if resp.clicked() {
+        *enabled = !*enabled;
+    }
+    resp
+}
+
 impl ApiClient {
     pub(crate) fn render_central(&mut self, ctx: &egui::Context) {
         let theme_bg = crate::theme::palette_for(self.effective_theme()).bg;
@@ -1277,60 +1310,65 @@ impl ApiClient {
                 // Config form — six fields. Stored persistently on
                 // the request; `Get New Token` uses these to drive
                 // the PKCE flow.
-                fn field(
-                    ui: &mut egui::Ui,
-                    label: &str,
-                    value: &mut String,
-                    hint: &str,
-                    password: bool,
-                ) -> bool {
-                    ui.horizontal(|ui| {
-                        ui.label(egui::RichText::new(label).color(accent()));
-                        let mut edit = egui::TextEdit::singleline(value)
-                            .desired_width(ui.available_width() - 140.0)
-                            .hint_text(hint);
-                        if password {
-                            edit = edit.password(true);
-                        }
-                        ui.add(edit).changed()
-                    })
-                    .inner
-                }
-                changed |= field(
+                auth_header(ui);
+                changed |= auth_field_row(
                     ui,
+                    "oauth2_auth_url",
                     "Auth URL",
                     &mut s.config.auth_url,
                     "https://provider.example.com/oauth/authorize",
                     false,
+                    0.0,
                 );
-                changed |= field(
+                ui.add_space(4.0);
+                changed |= auth_field_row(
                     ui,
+                    "oauth2_token_url",
                     "Token URL",
                     &mut s.config.token_url,
                     "https://provider.example.com/oauth/token",
                     false,
+                    0.0,
                 );
-                changed |= field(ui, "Client ID", &mut s.config.client_id, "", false);
-                changed |= field(
+                ui.add_space(4.0);
+                changed |= auth_field_row(
                     ui,
+                    "oauth2_client_id",
+                    "Client ID",
+                    &mut s.config.client_id,
+                    "",
+                    false,
+                    0.0,
+                );
+                ui.add_space(4.0);
+                changed |= auth_field_row(
+                    ui,
+                    "oauth2_client_secret",
                     "Client secret",
                     &mut s.config.client_secret,
                     "(public / PKCE clients: leave empty)",
                     true,
+                    0.0,
                 );
-                changed |= field(
+                ui.add_space(4.0);
+                changed |= auth_field_row(
                     ui,
+                    "oauth2_scope",
                     "Scope",
                     &mut s.config.scope,
                     "read:all write:all",
                     false,
+                    0.0,
                 );
-                changed |= field(
+                ui.add_space(4.0);
+                changed |= auth_field_row(
                     ui,
+                    "oauth2_redirect_uri",
                     "Redirect URI",
                     &mut s.config.redirect_uri,
                     "http://127.0.0.1/callback",
                     false,
+                    0.0,
                 );
 
                 ui.add_space(8.0);
@@ -1500,8 +1538,12 @@ impl ApiClient {
             ui.horizontal(|ui| {
                 if is_ghost {
                     ui.add_space(cb_w);
-                } else if ui.add(egui::Checkbox::new(&mut ex.enabled, "")).changed() {
-                    changed = true;
+                } else {
+                    let before = ex.enabled;
+                    compact_toggle(ui, &mut ex.enabled, "Toggle extractor");
+                    if ex.enabled != before {
+                        changed = true;
+                    }
                 }
                 ui.add_space(pad);
 
@@ -1512,7 +1554,8 @@ impl ApiClient {
                         egui::TextEdit::singleline(&mut ex.variable)
                             .id(id_salt.with((i, "var")))
                             .hint_text(if is_ghost { "var_name" } else { "" })
-                            .text_color(color),
+                            .text_color(color)
+                            .frame(false),
                     )
                     .changed()
                 {
@@ -1552,7 +1595,8 @@ impl ApiClient {
                             .id(id_salt.with((i, "expr")))
                             .hint_text(if expr_enabled && is_ghost { hint } else { "" })
                             .interactive(expr_enabled)
-                            .text_color(color),
+                            .text_color(color)
+                            .frame(false),
                     )
                     .changed()
                 {
@@ -1704,8 +1748,12 @@ impl ApiClient {
                 ui.add_space(pad);
                 if is_ghost {
                     ui.add_space(cb_w);
-                } else if ui.add(egui::Checkbox::new(&mut asr.enabled, "")).changed() {
-                    changed = true;
+                } else {
+                    let before = asr.enabled;
+                    compact_toggle(ui, &mut asr.enabled, "Toggle assertion");
+                    if asr.enabled != before {
+                        changed = true;
+                    }
                 }
                 ui.add_space(pad);
 
@@ -1748,7 +1796,8 @@ impl ApiClient {
                                 ""
                             })
                             .interactive(expr_enabled)
-                            .text_color(color),
+                            .text_color(color)
+                            .frame(false),
                     )
                     .changed()
                 {
@@ -1792,7 +1841,8 @@ impl ApiClient {
                                 ""
                             })
                             .interactive(expected_enabled)
-                            .text_color(color),
+                            .text_color(color)
+                            .frame(false),
                     )
                     .changed()
                 {

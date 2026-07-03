@@ -41,7 +41,7 @@ impl ApiClient {
                                     .color(egui::Color32::WHITE)
                                     .strong(),
                             )
-                            .fill(C_PURPLE)
+                            .fill(accent())
                             .min_size(egui::vec2(90.0, 28.0)),
                         )
                         .clicked()
