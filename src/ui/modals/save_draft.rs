@@ -359,15 +359,22 @@ impl ApiClient {
             egui::Sense::click(),
         );
         if ui.is_rect_visible(rect) {
-            let bg = if is_selected {
-                accent().linear_multiply(0.18)
-            } else if resp.hovered() {
+            let bg = if resp.hovered() {
                 elevated()
             } else {
                 egui::Color32::TRANSPARENT
             };
             ui.painter()
                 .rect_filled(rect, egui::Rounding::same(4.0), bg);
+            if is_selected {
+                ui.painter().line_segment(
+                    [
+                        egui::pos2(rect.left() + 1.5, rect.top() + 4.0),
+                        egui::pos2(rect.left() + 1.5, rect.bottom() - 4.0),
+                    ],
+                    egui::Stroke::new(3.0, accent()),
+                );
+            }
             let icon_x = rect.left() + indent;
             let text_y = rect.center().y;
             let icon_color = if is_selected { accent() } else { muted() };

@@ -13,6 +13,9 @@ venv/
 .env
 .env.*
 
+# Local Codex handoff notes.
+SKILL.md
+
 # macOS Finder metadata — never tracked.
 .DS_Store
 **/.DS_Store
