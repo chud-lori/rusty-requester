@@ -111,4 +111,8 @@ jobs:
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked
       - name: Run audit
-        run: cargo audit
+        # quick-xml is pulled in transitively by Linux GUI/accessibility
+        # build/platform crates (`eframe` -> `winit`/`accesskit`, plus `rfd`).
+        # Current upstream constraints pin quick-xml 0.30/0.39; remove these
+        # ignores once the GUI stack can move to quick-xml >= 0.41.
+        run: cargo audit --ignore RUSTSEC-2026-0194 --ignore RUSTSEC-2026-0195
