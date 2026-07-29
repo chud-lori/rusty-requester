@@ -699,11 +699,25 @@ impl ApiClient {
                 // drag isn't supported yet (would need extra path
                 // matching + fallback if dropped in dead space).
                 let row_h = 26.0;
-                let (rect, resp) = ui.allocate_exact_size(
-                    egui::vec2(ui.available_width(), row_h),
-                    egui::Sense::click_and_drag(),
-                );
-                let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+                // While the row is being renamed the row itself must NOT
+                // sense clicks/drags: it sits under the rename TextEdit and
+                // any click landing on the parts of the row the TextEdit
+                // doesn't cover (the method slot, the padding around the
+                // input) would steal focus from the TextEdit and cancel the
+                // rename. Hover-only here means those clicks hit nothing and
+                // the input keeps focus.
+                let row_sense = if is_renaming {
+                    egui::Sense::hover()
+                } else {
+                    egui::Sense::click_and_drag()
+                };
+                let (rect, resp) =
+                    ui.allocate_exact_size(egui::vec2(ui.available_width(), row_h), row_sense);
+                let resp = if is_renaming {
+                    resp
+                } else {
+                    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+                };
 
                 // Reveal-from-tab: if a tab click queued a reveal and
                 // this is the target row, scroll it into view and
@@ -794,15 +808,18 @@ impl ApiClient {
                     // regardless of method length (GET vs OPTIONS).
                     let method_slot_w = 46.0;
                     let method_left = rect.left() + 10.0;
-                    ui.painter().text(
-                        egui::pos2(method_left, rect.center().y),
-                        egui::Align2::LEFT_CENTER,
-                        format!("{}", req.method),
-                        egui::FontId::new(10.0, egui::FontFamily::Proportional),
-                        mc,
-                    );
-
+                    // Hidden while renaming: the rename input takes the whole
+                    // row so there is no gap left where a click could miss the
+                    // input and cancel the rename.
                     if !is_renaming {
+                        ui.painter().text(
+                            egui::pos2(method_left, rect.center().y),
+                            egui::Align2::LEFT_CENTER,
+                            format!("{}", req.method),
+                            egui::FontId::new(10.0, egui::FontFamily::Proportional),
+                            mc,
+                        );
+
                         let name_x = method_left + method_slot_w;
                         let name_pos = egui::pos2(name_x, rect.center().y);
                         let font = egui::FontId::new(12.5, egui::FontFamily::Proportional);
@@ -820,10 +837,11 @@ impl ApiClient {
 
                 // Inline rename TextEdit overlay (clearly visible against the row)
                 if is_renaming {
-                    // Same geometry as the name: method_left (10) + method_slot_w (46)
-                    let name_start = rect.left() + 10.0 + 46.0;
+                    // Full-row input: any click on the row lands in the text
+                    // field and places the caret at that character, instead of
+                    // hitting bare row and dismissing the rename.
                     let edit_rect = egui::Rect::from_min_max(
-                        egui::pos2(name_start - 4.0, rect.top() + 2.0),
+                        egui::pos2(rect.left() + 4.0, rect.top() + 2.0),
                         egui::pos2(rect.right() - 6.0, rect.bottom() - 2.0),
                     );
                     // Visible background + accent border so the input is obvious.
@@ -834,10 +852,15 @@ impl ApiClient {
                         egui::Rounding::same(6.0),
                         egui::Stroke::new(1.0, accent()),
                     );
-                    let inner = edit_rect.shrink2(egui::vec2(8.0, 1.0));
+                    // Keep the clickable area of the input flush with the
+                    // painted box (only a 2px visual gutter), so clicking
+                    // anywhere that *looks* like the field places the caret
+                    // instead of landing next to it.
+                    let inner = edit_rect.shrink2(egui::vec2(2.0, 1.0));
                     let edit_resp = ui.put(
                         inner,
                         egui::TextEdit::singleline(&mut self.rename_request_text)
+                            .margin(egui::Margin::symmetric(4.0, 0.0))
                             .desired_width(inner.width())
                             .frame(false)
                             .text_color(text())
@@ -847,26 +870,24 @@ impl ApiClient {
                         self.request_rename_focus_pending = false;
                         edit_resp.request_focus();
                     }
-                    let (enter, escape) = ui.input(|i| {
-                        (
-                            i.key_pressed(egui::Key::Enter),
-                            i.key_pressed(egui::Key::Escape),
-                        )
-                    });
-                    // Canonical egui "Enter-to-submit" pattern: check
-                    // `lost_focus() && enter` together. egui's singleline
-                    // TextEdit de-focuses in the SAME frame Enter fires, so
-                    // the earlier `enter && has_focus()` check would see
+                    let escape = ui.input(|i| i.key_pressed(egui::Key::Escape));
+                    // Commit on `lost_focus()`: egui's singleline TextEdit
+                    // de-focuses in the SAME frame Enter fires, so an
+                    // `enter && has_focus()` check would see
                     // `has_focus() == false` and silently drop the commit —
                     // the rename appeared to do nothing. (Issue #16.)
-                    if edit_resp.lost_focus() && enter {
+                    // Escape always discards. Enter and click-away both
+                    // commit: losing focus by clicking elsewhere used to
+                    // throw the edit away, which reads as "the rename did
+                    // nothing" — commit instead, like Finder/Postman.
+                    if escape {
+                        self.renaming_request_id = None;
+                    } else if edit_resp.lost_focus() {
                         let id = req.id.clone();
                         let new_name = self.rename_request_text.trim().to_string();
                         if !new_name.is_empty() {
                             self.rename_request(&id, new_name);
                         }
-                        self.renaming_request_id = None;
-                    } else if escape || (edit_resp.lost_focus() && !enter) {
                         self.renaming_request_id = None;
                     }
                 } else {
