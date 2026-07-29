@@ -11,6 +11,15 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## [0.28.3] — 2026-07-29
+
+### Fixed
+- **Inline request rename.** Clicking inside the rename field no longer
+  dismisses it — the input now covers the whole sidebar row, so a click
+  places the caret at that character instead of landing on the row and
+  cancelling. Clicking away (or another request) commits the new name
+  instead of discarding it; Escape still cancels.
+
 ## [0.28.2] — 2026-07-03
 
 ### Changed
