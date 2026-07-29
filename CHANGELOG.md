@@ -11,7 +11,7 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
-## Unreleased
+## [0.28.3] — 2026-07-29
 
 ### Fixed
 - **Inline request rename.** Clicking inside the rename field no longer
