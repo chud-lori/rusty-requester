@@ -1,30 +1,65 @@
 <h1 align="center">
-  <img src="assets/icon.png" width="96" alt="Rusty Requester" /><br/>
+  <br>
+  <a href="https://chud-lori.github.io/rusty-requester/"><img src="assets/icon.png" width="140px" alt="Rusty Requester"></a>
+  <br>
   Rusty Requester
+  <br>
 </h1>
 
+<h4 align="center">A native, offline, lightweight API client built with Rust and <code>egui</code> — a Postman alternative that doesn't chew through hundreds of MB of RAM just to make HTTP requests.</h4>
+
 <p align="center">
-A <b>native, offline, lightweight</b> API client built with Rust and <code>egui</code> —
-a Postman alternative that doesn't chew through hundreds of MB of RAM just to make HTTP requests.
+  <b>~15 MB binary</b> · <b>~30 MB idle RAM</b> · <b>&lt;100 ms cold start</b>
 </p>
 
 <p align="center">
-<i>Why "Rusty"?</i> It's a double pun on <b>Rust</b> (the language) and
-<b>rust-as-in-old-stuff-that-still-works</b>. Plenty of developers
-are on older / low-spec machines that can't stomach a 500 MB Electron
-app with half a gig of idle RAM — so this is built for them first.
-~15 MB binary, ~30 MB idle RAM, &lt;100 ms cold start.
+  <a href="https://www.rust-lang.org"><img src="https://img.shields.io/badge/made%20with-Rust-orange?logo=rust&logoColor=white" alt="Made with Rust"></a>
+  <a href="https://github.com/chud-lori/rusty-requester/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/chud-lori/rusty-requester/ci.yml?branch=main&label=CI" alt="CI"></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/github/license/chud-lori/rusty-requester?color=yellowgreen" alt="License"></a>
+  <a href="#-install"><img src="https://img.shields.io/badge/platform-macos%2Flinux-green" alt="Platform"></a>
+  <a href="https://github.com/chud-lori/rusty-requester/releases/latest"><img src="https://img.shields.io/github/v/release/chud-lori/rusty-requester" alt="Release"></a>
+  <a href="https://github.com/chud-lori/rusty-requester/releases"><img src="https://img.shields.io/github/downloads/chud-lori/rusty-requester/total?color=blue" alt="Downloads"></a>
+  <a href="https://github.com/chud-lori/rusty-requester/issues"><img src="https://img.shields.io/github/issues/chud-lori/rusty-requester" alt="Issues"></a>
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/rust-%23000000.svg?style=for-the-badge&logo=rust&logoColor=white" alt="Rust" />
-  <img src="https://img.shields.io/badge/mac%20os-000000?style=for-the-badge&logo=macos&logoColor=F0F0F0" alt="macOS" />
-  <img src="https://img.shields.io/badge/linux-000000?style=for-the-badge&logo=linux&logoColor=F0F0F0" alt="Linux" />
+  <a href="docs/FEATURES.md">Features</a> •
+  <a href="CHANGELOG.md">What's new</a> •
+  <a href="https://chud-lori.github.io/rusty-requester/">Documentation</a> •
+  <a href="#-contributing">Contributing</a> •
+  <a href="https://github.com/chud-lori/rusty-requester/issues/new">Report Issues</a>
 </p>
 
 ---
 
+- [Why Rusty Requester?](#-why-rusty-requester)
+  - [vs Postman / Insomnia / Bruno](#vs-postman--insomnia--bruno)
+  - [Why Rust for an API client?](#why-rust-for-an-api-client)
+  - [Highlights](#highlights)
+- [Security](#-security)
+- [Install](#-install)
+  - [One-line install (macOS + Linux)](#one-line-install-macos--linux)
+  - [Manual install](#manual-install)
+  - [First launch — Gatekeeper (macOS)](#first-launch--gatekeeper-macos)
+  - [Uninstall](#uninstall)
+  - [Build from source](#build-from-source)
+- [Quickstart](#-quickstart)
+  - [Useful shortcuts](#useful-shortcuts)
+  - [Collection Runner](#collection-runner)
+- [Compatibility & stability](#-compatibility--stability)
+- [Docs](#-docs)
+- [Contributing](#-contributing)
+- [License](#-license)
+- [Contact](#-contact)
+
+---
+
 ## 🎯 Why Rusty Requester?
+
+*Why "Rusty"?* It's a double pun on **Rust** (the language) and
+**rust-as-in-old-stuff-that-still-works**. Plenty of developers are on
+older / low-spec machines that can't stomach a 500 MB Electron app with
+half a gig of idle RAM — so this is built for them first.
 
 Most API clients today are Electron apps — Chromium + Node wrapped
 around a form builder. That buys you cross-platform consistency at the
