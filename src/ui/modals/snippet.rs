@@ -97,7 +97,7 @@ impl ApiClient {
                 ui.add_space(8.0);
                 egui::Frame::none()
                     .fill(panel_dark())
-                    .stroke(egui::Stroke::new(1.0, border()))
+                    .stroke(egui::Stroke::new(1.0_f32, border()))
                     .rounding(egui::Rounding::same(8.0))
                     .inner_margin(10.0)
                     .show(ui, |ui| {

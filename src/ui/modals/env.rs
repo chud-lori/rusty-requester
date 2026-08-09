@@ -50,7 +50,7 @@ impl ApiClient {
                                         .color(accent()),
                                 )
                                 .fill(egui::Color32::TRANSPARENT)
-                                .stroke(egui::Stroke::new(1.0, border())),
+                                .stroke(egui::Stroke::new(1.0_f32, border())),
                             )
                             .clicked()
                         {
@@ -86,7 +86,7 @@ impl ApiClient {
                                             egui::RichText::new("Delete").color(C_RED).size(11.0),
                                         )
                                         .fill(egui::Color32::TRANSPARENT)
-                                        .stroke(egui::Stroke::new(1.0, C_RED)),
+                                        .stroke(egui::Stroke::new(1.0_f32, C_RED)),
                                     )
                                     .clicked()
                                 {

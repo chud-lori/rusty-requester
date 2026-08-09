@@ -31,7 +31,7 @@ fn auth_header(ui: &mut egui::Ui) {
             egui::pos2(ui.cursor().left() + ui.available_width(), ui.cursor().top()),
         ],
         egui::Stroke::new(
-            1.0,
+            1.0_f32,
             with_alpha(border(), if is_light() { 160 } else { 110 }),
         ),
     );
@@ -105,7 +105,7 @@ fn compact_toggle(ui: &mut egui::Ui, enabled: &mut bool, hover_text: &str) -> eg
                     egui::Color32::TRANSPARENT
                 })
                 .stroke(egui::Stroke::new(
-                    if *enabled { 1.2 } else { 1.0 },
+                    if *enabled { 1.2_f32 } else { 1.0_f32 },
                     if *enabled {
                         with_alpha(accent(), 165)
                     } else {
@@ -238,7 +238,7 @@ impl ApiClient {
                                     egui::pos2(handle_resp.rect.left() + 20.0, line_y),
                                     egui::pos2(handle_resp.rect.right() - 20.0, line_y),
                                 ],
-                                egui::Stroke::new(1.0, line_color),
+                                egui::Stroke::new(1.0_f32, line_color),
                             );
                         }
                         if handle_resp.dragged() {
@@ -406,7 +406,7 @@ impl ApiClient {
                                                 ui.painter().rect_stroke(
                                                     edit_rect,
                                                     egui::Rounding::same(4.0),
-                                                    egui::Stroke::new(1.5, accent()),
+                                                    egui::Stroke::new(1.5_f32, accent()),
                                                 );
                                                 let inner = edit_rect.shrink2(egui::vec2(6.0, 2.0));
                                                 let edit_resp = ui.put(
@@ -608,7 +608,7 @@ impl ApiClient {
             .fill(bg())
             .inner_margin(12.0)
             .rounding(10.0)
-            .stroke(egui::Stroke::new(1.0, border()))
+            .stroke(egui::Stroke::new(1.0_f32, border()))
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
                     let mc = method_color(&self.editing_method);
@@ -842,7 +842,7 @@ impl ApiClient {
             .fill(bg())
             .inner_margin(12.0)
             .rounding(10.0)
-            .stroke(egui::Stroke::new(1.0, border()))
+            .stroke(egui::Stroke::new(1.0_f32, border()))
             .show(ui, |ui| {
                 let avail = ui.available_height();
                 egui::ScrollArea::vertical()
@@ -1943,7 +1943,7 @@ impl ApiClient {
                         ui.add_space(4.0);
                         let desc_resp = egui::Frame::none()
                             .fill(elevated())
-                            .stroke(egui::Stroke::new(1.0, border()))
+                            .stroke(egui::Stroke::new(1.0_f32, border()))
                             .rounding(egui::Rounding::same(8.0))
                             .inner_margin(egui::Margin::symmetric(10.0, 8.0))
                             .show(ui, |ui| {

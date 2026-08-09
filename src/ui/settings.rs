@@ -218,7 +218,10 @@ impl ApiClient {
                     ui.add_space(8.0);
                     egui::Frame::none()
                         .fill(elevated())
-                        .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(76, 175, 80)))
+                        .stroke(egui::Stroke::new(
+                            1.0_f32,
+                            egui::Color32::from_rgb(76, 175, 80),
+                        ))
                         .rounding(egui::Rounding::same(6.0))
                         .inner_margin(egui::Margin::symmetric(10.0, 8.0))
                         .show(ui, |ui| {
@@ -341,7 +344,7 @@ impl ApiClient {
 fn settings_text_field(ui: &mut egui::Ui, value: &mut String, placeholder: &str) -> egui::Response {
     egui::Frame::none()
         .fill(elevated())
-        .stroke(egui::Stroke::new(1.0, border()))
+        .stroke(egui::Stroke::new(1.0_f32, border()))
         .rounding(egui::Rounding::same(8.0))
         .inner_margin(egui::Margin::symmetric(10.0, 5.0))
         .show(ui, |ui| {

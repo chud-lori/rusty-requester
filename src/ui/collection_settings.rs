@@ -336,9 +336,9 @@ fn section_button(
         egui::Color32::TRANSPARENT
     };
     let stroke = if active {
-        egui::Stroke::new(1.0, with_alpha(accent(), 110))
+        egui::Stroke::new(1.0_f32, with_alpha(accent(), 110))
     } else {
-        egui::Stroke::new(1.0, egui::Color32::TRANSPARENT)
+        egui::Stroke::new(1.0_f32, egui::Color32::TRANSPARENT)
     };
     ui.painter()
         .rect(rect, egui::Rounding::same(6.0), fill, stroke);
@@ -348,7 +348,7 @@ fn section_button(
                 egui::pos2(rect.left() + 1.0, rect.top() + 7.0),
                 egui::pos2(rect.left() + 1.0, rect.bottom() - 7.0),
             ],
-            egui::Stroke::new(3.0, accent()),
+            egui::Stroke::new(3.0_f32, accent()),
         );
     }
     let status_color = if ready { C_GREEN } else { muted() };
@@ -531,7 +531,7 @@ fn git_section(
         ui.add_space(12.0);
         egui::Frame::none()
             .fill(elevated())
-            .stroke(egui::Stroke::new(1.0, border()))
+            .stroke(egui::Stroke::new(1.0_f32, border()))
             .rounding(egui::Rounding::same(6.0))
             .inner_margin(egui::Margin::symmetric(10.0, 8.0))
             .show(ui, |ui| {
@@ -633,7 +633,7 @@ fn framed_text_field(
     let frame_width = width.max(120.0);
     egui::Frame::none()
         .fill(elevated())
-        .stroke(egui::Stroke::new(1.0, border()))
+        .stroke(egui::Stroke::new(1.0_f32, border()))
         .rounding(egui::Rounding::same(8.0))
         .inner_margin(egui::Margin::symmetric(10.0, 5.0))
         .show(ui, |ui| {
@@ -667,7 +667,7 @@ fn fixed_button(ui: &mut egui::Ui, enabled: bool, label: &str, width: f32) -> eg
 fn sync_status(ui: &mut egui::Ui, label: &str) {
     egui::Frame::none()
         .fill(elevated())
-        .stroke(egui::Stroke::new(1.0, border()))
+        .stroke(egui::Stroke::new(1.0_f32, border()))
         .rounding(egui::Rounding::same(6.0))
         .inner_margin(egui::Margin::symmetric(10.0, 8.0))
         .show(ui, |ui| {
@@ -681,7 +681,7 @@ fn sync_status(ui: &mut egui::Ui, label: &str) {
 fn info_note(ui: &mut egui::Ui, text_value: &str) {
     egui::Frame::none()
         .fill(elevated())
-        .stroke(egui::Stroke::new(1.0, border()))
+        .stroke(egui::Stroke::new(1.0_f32, border()))
         .rounding(egui::Rounding::same(6.0))
         .inner_margin(egui::Margin::symmetric(9.0, 7.0))
         .show(ui, |ui| {

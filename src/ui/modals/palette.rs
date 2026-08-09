@@ -489,7 +489,7 @@ fn palette_frame(theme: Theme) -> egui::Frame {
     };
     egui::Frame::none()
         .fill(fill)
-        .stroke(egui::Stroke::new(1.0, border))
+        .stroke(egui::Stroke::new(1.0_f32, border))
         .rounding(egui::Rounding::same(8.0))
         .inner_margin(egui::Margin::same(14.0))
         .shadow(egui::epaint::Shadow {

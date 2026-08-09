@@ -344,16 +344,17 @@ pub fn apply_style(ctx: &egui::Context, theme: Theme) {
     style.visuals.override_text_color = Some(p.text);
     style.visuals.selection.bg_fill =
         with_alpha(a, if matches!(theme, Theme::Dark) { 92 } else { 46 });
-    style.visuals.selection.stroke = egui::Stroke::new(1.0, a);
+    style.visuals.selection.stroke = egui::Stroke::new(1.0_f32, a);
     style.visuals.hyperlink_color = a;
     style.visuals.widgets.noninteractive.bg_fill = p.bg;
     style.visuals.widgets.noninteractive.weak_bg_fill = p.bg;
-    style.visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, p.border);
-    style.visuals.widgets.noninteractive.fg_stroke = egui::Stroke::new(1.0, p.text);
+    style.visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0_f32, p.border);
+    style.visuals.widgets.noninteractive.fg_stroke = egui::Stroke::new(1.0_f32, p.text);
     style.visuals.widgets.noninteractive.rounding = egui::Rounding::same(8.0);
     style.visuals.widgets.inactive.bg_fill = p.elevated;
     style.visuals.widgets.inactive.weak_bg_fill = p.elevated;
-    style.visuals.widgets.inactive.bg_stroke = egui::Stroke::new(1.0, with_alpha(p.border, 120));
+    style.visuals.widgets.inactive.bg_stroke =
+        egui::Stroke::new(1.0_f32, with_alpha(p.border, 120));
     style.visuals.widgets.inactive.rounding = egui::Rounding::same(9.0);
     style.visuals.widgets.hovered.bg_fill = if matches!(theme, Theme::Dark) {
         egui::Color32::from_rgb(48, 54, 63)
@@ -369,7 +370,7 @@ pub fn apply_style(ctx: &egui::Context, theme: Theme) {
     style.visuals.widgets.active.bg_fill =
         with_alpha(a, if matches!(theme, Theme::Dark) { 56 } else { 28 });
     style.visuals.widgets.active.weak_bg_fill = style.visuals.widgets.active.bg_fill;
-    style.visuals.widgets.active.bg_stroke = egui::Stroke::new(1.0, a);
+    style.visuals.widgets.active.bg_stroke = egui::Stroke::new(1.0_f32, a);
     style.visuals.widgets.active.rounding = egui::Rounding::same(9.0);
     // `widgets.open.bg_fill` is what egui uses for the title-bar
     // band on open Windows. Previously set to `p.border` which made
@@ -380,7 +381,7 @@ pub fn apply_style(ctx: &egui::Context, theme: Theme) {
     style.visuals.widgets.open.rounding = egui::Rounding::same(8.0);
     style.visuals.menu_rounding = egui::Rounding::same(10.0);
     style.visuals.window_rounding = egui::Rounding::same(12.0);
-    style.visuals.window_stroke = egui::Stroke::new(1.0, p.border);
+    style.visuals.window_stroke = egui::Stroke::new(1.0_f32, p.border);
     // Light-based themes (Light, Postman) want dark widgets on a light
     // panel — flip `dark_mode` so egui's internal defaults pick sensible
     // colors for things we don't override (scroll thumbs, tooltips, etc).

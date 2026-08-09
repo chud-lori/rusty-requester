@@ -18,7 +18,7 @@ impl ApiClient {
             .show(ctx, |ui| {
                 egui::Frame::none()
                     .fill(bg())
-                    .stroke(egui::Stroke::new(1.0, accent()))
+                    .stroke(egui::Stroke::new(1.0_f32, accent()))
                     .rounding(10.0)
                     .inner_margin(10.0)
                     .show(ui, |ui| {

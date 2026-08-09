@@ -101,7 +101,7 @@ pub fn tab_button_with_dot<T: PartialEq + Copy>(
                 egui::pos2(rect.left() + pad, y),
                 egui::pos2(rect.right() - pad, y),
             ],
-            egui::Stroke::new(2.75, accent()),
+            egui::Stroke::new(2.75_f32, accent()),
         );
     }
     if resp.clicked() {
@@ -257,7 +257,7 @@ pub fn render_kv_table(
             egui::pos2(ui.cursor().left() + ui.available_width(), ui.cursor().top()),
         ],
         egui::Stroke::new(
-            1.0,
+            1.0_f32,
             with_alpha(border(), if is_light() { 160 } else { 110 }),
         ),
     );
@@ -321,7 +321,7 @@ pub fn render_kv_table(
                                         egui::Color32::TRANSPARENT
                                     })
                                     .stroke(egui::Stroke::new(
-                                        if row.enabled { 1.2 } else { 1.0 },
+                                        if row.enabled { 1.2_f32 } else { 1.0_f32 },
                                         if row.enabled {
                                             with_alpha(accent(), 165)
                                         } else {
@@ -446,7 +446,7 @@ pub fn render_kv_table(
                     ui.painter().rect_stroke(
                         row_resp.rect.expand(0.5),
                         egui::Rounding::same(7.0),
-                        egui::Stroke::new(1.0, stroke_color),
+                        egui::Stroke::new(1.0_f32, stroke_color),
                     );
                 }
             });
@@ -464,7 +464,7 @@ pub fn render_kv_table(
                     egui::pos2(ui.cursor().left() + ui.available_width(), y),
                 ],
                 egui::Stroke::new(
-                    1.0,
+                    1.0_f32,
                     with_alpha(border(), if is_light() { 150 } else { 105 }),
                 ),
             );
@@ -555,7 +555,7 @@ pub fn render_single_tab(
         ui.painter().rect_stroke(
             rect,
             egui::Rounding::same(8.0),
-            egui::Stroke::new(1.5, accent()),
+            egui::Stroke::new(1.5_f32, accent()),
         );
     }
     if resp.hovered() && dragging_some_tab && ui.ctx().input(|i| i.pointer.any_down()) {
@@ -568,7 +568,7 @@ pub fn render_single_tab(
                 egui::pos2(rect.left() + 1.0, rect.top() + 4.0),
                 egui::pos2(rect.left() + 1.0, rect.bottom() - 4.0),
             ],
-            egui::Stroke::new(2.0, accent()),
+            egui::Stroke::new(2.0_f32, accent()),
         );
     }
     if let Some(payload) = resp.dnd_release_payload::<TabDragPayload>() {
@@ -617,7 +617,7 @@ pub fn render_single_tab(
                     egui::pos2(rect.left() + pad, y),
                     egui::pos2(rect.right() - pad, y),
                 ],
-                egui::Stroke::new(3.0, accent()),
+                egui::Stroke::new(3.0_f32, accent()),
             );
         }
 
@@ -884,7 +884,7 @@ pub fn icon_btn(ui: &mut egui::Ui, icon: &str, hover_text: &str) -> egui::Respon
             ui.painter().rect_stroke(
                 rect.shrink(0.5),
                 egui::Rounding::same(6.0),
-                egui::Stroke::new(1.0, with_alpha(accent(), 64)),
+                egui::Stroke::new(1.0_f32, with_alpha(accent(), 64)),
             );
         }
         ui.painter().text(

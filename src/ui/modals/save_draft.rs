@@ -108,7 +108,7 @@ impl ApiClient {
                         egui::pos2(ui.min_rect().left(), ui.min_rect().top()),
                         egui::pos2(ui.min_rect().right(), ui.min_rect().top()),
                     ],
-                    egui::Stroke::new(1.0, border()),
+                    egui::Stroke::new(1.0_f32, border()),
                 );
                 ui.add_space(14.0);
 
@@ -144,7 +144,7 @@ impl ApiClient {
                 // Folder tree (scrollable)
                 egui::Frame::none()
                     .fill(panel_dark())
-                    .stroke(egui::Stroke::new(1.0, border()))
+                    .stroke(egui::Stroke::new(1.0_f32, border()))
                     .rounding(egui::Rounding::same(6.0))
                     .inner_margin(4.0)
                     .show(ui, |ui| {
@@ -372,7 +372,7 @@ impl ApiClient {
                         egui::pos2(rect.left() + 1.5, rect.top() + 4.0),
                         egui::pos2(rect.left() + 1.5, rect.bottom() - 4.0),
                     ],
-                    egui::Stroke::new(3.0, accent()),
+                    egui::Stroke::new(3.0_f32, accent()),
                 );
             }
             let icon_x = rect.left() + indent;

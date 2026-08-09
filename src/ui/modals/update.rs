@@ -89,7 +89,7 @@ impl ApiClient {
                     ui.add_space(4.0);
                     egui::Frame::none()
                         .fill(panel_dark())
-                        .stroke(egui::Stroke::new(1.0, border()))
+                        .stroke(egui::Stroke::new(1.0_f32, border()))
                         .rounding(egui::Rounding::same(6.0))
                         .inner_margin(egui::Margin::symmetric(10.0, 8.0))
                         .show(ui, |ui| {
@@ -252,7 +252,7 @@ impl ApiClient {
 
                 egui::Frame::none()
                     .fill(panel_dark())
-                    .stroke(egui::Stroke::new(1.0, border()))
+                    .stroke(egui::Stroke::new(1.0_f32, border()))
                     .rounding(egui::Rounding::same(6.0))
                     .inner_margin(egui::Margin::symmetric(10.0, 8.0))
                     .show(ui, |ui| {
@@ -358,7 +358,7 @@ impl ApiClient {
                 ui.add_space(8.0);
                 egui::Frame::none()
                     .fill(panel_dark())
-                    .stroke(egui::Stroke::new(1.0, border()))
+                    .stroke(egui::Stroke::new(1.0_f32, border()))
                     .rounding(egui::Rounding::same(6.0))
                     .inner_margin(egui::Margin::symmetric(10.0, 9.0))
                     .show(ui, |ui| {
@@ -474,7 +474,7 @@ impl ApiClient {
             .show(ctx, |ui| {
                 egui::Frame::none()
                     .fill(bg())
-                    .stroke(egui::Stroke::new(1.5, border_color))
+                    .stroke(egui::Stroke::new(1.5_f32, border_color))
                     .rounding(10.0)
                     .inner_margin(egui::Margin::symmetric(14.0, 10.0))
                     .show(ui, |ui| {
@@ -611,7 +611,7 @@ fn render_update_progress_strip(ui: &mut egui::Ui, time: f64) {
     ui.painter().rect_stroke(
         rect,
         egui::Rounding::same(4.0),
-        egui::Stroke::new(1.0, border()),
+        egui::Stroke::new(1.0_f32, border()),
     );
 
     let segment_width = rect.width() * 0.32;

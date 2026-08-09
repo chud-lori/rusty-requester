@@ -243,7 +243,7 @@ impl ApiClient {
             .fill(panel_dark())
             .inner_margin(16.0)
             .rounding(10.0)
-            .stroke(egui::Stroke::new(1.0, border()))
+            .stroke(egui::Stroke::new(1.0_f32, border()))
             .show(ui, |ui| {
                 let margin = 32.0;
                 ui.set_width(full_w - margin);
@@ -514,7 +514,7 @@ impl ApiClient {
                             } else {
                                 egui::Color32::from_rgb(22, 25, 31)
                             })
-                            .stroke(egui::Stroke::new(1.0, with_alpha(border(), 185)))
+                            .stroke(egui::Stroke::new(1.0_f32, with_alpha(border(), 185)))
                             .rounding(egui::Rounding::same(9.0))
                             .inner_margin(egui::Margin::symmetric(horizontal_margin, 4.0))
                             .show(ui, |ui| {
@@ -684,7 +684,7 @@ impl ApiClient {
                 .fill(panel_dark())
                 .inner_margin(16.0)
                 .rounding(10.0)
-                .stroke(egui::Stroke::new(1.0, border()))
+                .stroke(egui::Stroke::new(1.0_f32, border()))
                 .show(ui, |ui| {
                     let margin = 32.0;
                     ui.set_width(full_w - margin);
@@ -721,7 +721,7 @@ impl ApiClient {
                 .fill(panel_dark())
                 .inner_margin(16.0)
                 .rounding(10.0)
-                .stroke(egui::Stroke::new(1.0, border()))
+                .stroke(egui::Stroke::new(1.0_f32, border()))
                 .show(ui, |ui| {
                     // Force the Frame to expand to the full size of the
                     // response panel. Without these, the Frame shrinks to
@@ -795,7 +795,7 @@ impl ApiClient {
             .fill(panel_dark())
             .inner_margin(12.0)
             .rounding(10.0)
-            .stroke(egui::Stroke::new(1.0, border()))
+            .stroke(egui::Stroke::new(1.0_f32, border()))
             .show(ui, |ui| {
                 let margin = 24.0;
                 ui.set_width(full_w - margin);
@@ -1291,7 +1291,7 @@ fn render_body_view_selector(
                         egui::pos2(resp.rect.left() + 8.0, y),
                         egui::pos2(resp.rect.right() - 8.0, y),
                     ],
-                    egui::Stroke::new(2.5, accent()),
+                    egui::Stroke::new(2.5_f32, accent()),
                 );
             }
             if resp.clicked() {
@@ -1454,7 +1454,7 @@ fn render_event_row(ui: &mut egui::Ui, idx: usize, ev: &crate::sse::SseEvent, to
         .fill(panel_dark())
         .rounding(egui::Rounding::same(4.0))
         .inner_margin(egui::Margin::symmetric(10.0, 6.0))
-        .stroke(egui::Stroke::new(1.0, border()))
+        .stroke(egui::Stroke::new(1.0_f32, border()))
         .show(ui, |ui| {
             egui::CollapsingHeader::new(header_richtext(idx + 1, event_label, ev))
                 .id_salt(id)
@@ -1526,7 +1526,10 @@ fn render_response_summary(
 
     egui::Frame::none()
         .fill(summary.tint.linear_multiply(0.12))
-        .stroke(egui::Stroke::new(1.0, summary.tint.linear_multiply(0.45)))
+        .stroke(egui::Stroke::new(
+            1.0_f32,
+            summary.tint.linear_multiply(0.45),
+        ))
         .rounding(egui::Rounding::same(7.0))
         .inner_margin(egui::Margin::symmetric(10.0, 8.0))
         .show(ui, |ui| {
@@ -1711,7 +1714,7 @@ fn render_error_pill(ui: &mut egui::Ui, tint: egui::Color32, prefix: &str, detai
         |ui| {
             egui::Frame::none()
                 .fill(tint.linear_multiply(0.22))
-                .stroke(egui::Stroke::new(1.0, tint.linear_multiply(0.55)))
+                .stroke(egui::Stroke::new(1.0_f32, tint.linear_multiply(0.55)))
                 .rounding(egui::Rounding::same(6.0))
                 .inner_margin(egui::Margin::symmetric(12.0, 8.0))
                 .show(ui, |ui| {

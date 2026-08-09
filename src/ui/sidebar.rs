@@ -192,7 +192,7 @@ impl ApiClient {
                                 egui::pos2(coll_resp.rect.left() + 10.0, y),
                                 egui::pos2(coll_resp.rect.right() - 10.0, y),
                             ],
-                            egui::Stroke::new(2.5, accent()),
+                            egui::Stroke::new(2.5_f32, accent()),
                         );
                     }
                     if coll_resp.clicked() {
@@ -221,7 +221,7 @@ impl ApiClient {
                                 egui::pos2(hist_resp.rect.left() + 10.0, y),
                                 egui::pos2(hist_resp.rect.right() - 10.0, y),
                             ],
-                            egui::Stroke::new(2.5, accent()),
+                            egui::Stroke::new(2.5_f32, accent()),
                         );
                     }
                     if hist_resp.clicked() {
@@ -365,7 +365,7 @@ impl ApiClient {
                     } else {
                         egui::Color32::from_rgb(22, 25, 31)
                     })
-                    .stroke(egui::Stroke::new(1.0, with_alpha(border(), 185)))
+                    .stroke(egui::Stroke::new(1.0_f32, with_alpha(border(), 185)))
                     .rounding(egui::Rounding::same(9.0))
                     .inner_margin(egui::Margin::symmetric(10.0, 4.0))
                     .show(ui, |ui| {
@@ -499,7 +499,7 @@ impl ApiClient {
                     )
                     .min_size(egui::vec2(28.0, 26.0))
                     .fill(egui::Color32::TRANSPARENT)
-                    .stroke(egui::Stroke::new(1.0, border())),
+                    .stroke(egui::Stroke::new(1.0_f32, border())),
                 )
                 .on_hover_cursor(egui::CursorIcon::PointingHand)
                 .on_hover_text("Manage environments")
@@ -755,7 +755,7 @@ impl ApiClient {
                     ui.painter().rect_stroke(
                         rect,
                         egui::Rounding::same(5.0),
-                        egui::Stroke::new(1.5, accent()),
+                        egui::Stroke::new(1.5_f32, accent()),
                     );
                 }
                 // While *another* row is being dragged and the pointer
@@ -771,7 +771,7 @@ impl ApiClient {
                                 egui::pos2(rect.left() + 4.0, rect.top() + 1.0),
                                 egui::pos2(rect.right() - 4.0, rect.top() + 1.0),
                             ],
-                            egui::Stroke::new(2.0, accent()),
+                            egui::Stroke::new(2.0_f32, accent()),
                         );
                     }
                 }
@@ -850,7 +850,7 @@ impl ApiClient {
                     ui.painter().rect_stroke(
                         edit_rect,
                         egui::Rounding::same(6.0),
-                        egui::Stroke::new(1.0, accent()),
+                        egui::Stroke::new(1.0_f32, accent()),
                     );
                     // Keep the clickable area of the input flush with the
                     // painted box (only a 2px visual gutter), so clicking
@@ -1016,7 +1016,7 @@ impl ApiClient {
             ui.painter().rect_stroke(
                 rename_rect.expand(1.0),
                 egui::Rounding::same(7.0),
-                egui::Stroke::new(1.2, accent()),
+                egui::Stroke::new(1.2_f32, accent()),
             );
             let mut child_ui = ui.new_child(
                 egui::UiBuilder::new().max_rect(rename_rect.shrink2(egui::vec2(6.0, 1.0))),

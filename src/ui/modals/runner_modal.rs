@@ -78,7 +78,7 @@ impl ApiClient {
                         ui.add_space(4.0);
                         egui::Frame::none()
                             .fill(elevated())
-                            .stroke(egui::Stroke::new(1.0, border()))
+                            .stroke(egui::Stroke::new(1.0_f32, border()))
                             .rounding(6.0)
                             .inner_margin(egui::Margin::same(10.0))
                             .show(ui, |ui| {
@@ -148,7 +148,7 @@ impl ApiClient {
                         ui.add_space(4.0);
                         egui::Frame::none()
                             .fill(elevated())
-                            .stroke(egui::Stroke::new(1.0, border()))
+                            .stroke(egui::Stroke::new(1.0_f32, border()))
                             .rounding(6.0)
                             .inner_margin(egui::Margin::same(10.0))
                             .show(ui, |ui| {
@@ -916,7 +916,7 @@ fn runner_result_cell(ui: &mut egui::Ui, selected: bool, value: &str) -> bool {
 fn render_runner_detail_panel(ui: &mut egui::Ui, row: &RunnerResultRow) {
     egui::Frame::none()
         .fill(elevated())
-        .stroke(egui::Stroke::new(1.0, border()))
+        .stroke(egui::Stroke::new(1.0_f32, border()))
         .rounding(6.0)
         .inner_margin(egui::Margin::same(10.0))
         .show(ui, |ui| {
