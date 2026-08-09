@@ -11,6 +11,24 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Fixed
+- **Green CI again.** The `clippy` job had been failing on `main` since
+  2026-07-29 against a newer stable toolchain, which turned the new
+  `float_literal_f32_fallback` lint on 66 bare float literals passed to
+  `egui::Stroke::new` (it takes `impl Into<f32>`, so the literals were
+  resolving through inference fallback). Each one now carries an explicit
+  `_f32` suffix. Behaviour is unchanged — same values, same rendering —
+  but the lint is slated to become a hard error in a future Rust
+  release, so this is done ahead of that.
+
+### Changed
+- **Readme header.** Live, linked status badges (CI, license, latest
+  release, downloads, open issues) replace the previous static
+  decorative ones, plus a navigation row and a table of contents over
+  the 19 sections.
+
 ## [0.28.3] — 2026-07-29
 
 ### Fixed
