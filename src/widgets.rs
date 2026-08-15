@@ -1122,7 +1122,14 @@ fn short_path(p: &str) -> String {
     if p.len() <= MAX {
         p.to_string()
     } else {
-        format!("…{}", &p[p.len() - (MAX - 1)..])
+        // Byte offset `len - (MAX - 1)` can land inside a multibyte
+        // char (CJK/emoji keys) — walk forward to the next boundary
+        // so the slice can't panic.
+        let mut cut = p.len() - (MAX - 1);
+        while !p.is_char_boundary(cut) {
+            cut += 1;
+        }
+        format!("…{}", &p[cut..])
     }
 }
 
@@ -1413,4 +1420,27 @@ pub fn sanitize_filename(name: &str) -> Option<String> {
 /// Mask a secret token for display.
 pub fn mask_token(token: &str) -> String {
     mask_secret_value(token)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::short_path;
+
+    #[test]
+    fn short_path_leaves_short_paths_alone() {
+        assert_eq!(short_path("data.items[0].name"), "data.items[0].name");
+    }
+
+    #[test]
+    fn short_path_truncates_multibyte_on_char_boundary() {
+        // 61 bytes; the naive cut at len-47 = 14 lands mid-char
+        // ('字' is 3 bytes, boundaries at 1, 4, 7, …).
+        let p = format!("x{}", "字".repeat(20));
+        assert!(p.len() > 48);
+        let s = short_path(&p);
+        assert!(s.starts_with('…'));
+        // Suffix after the ellipsis is a real tail of the original.
+        assert!(p.ends_with(&s['…'.len_utf8()..]));
+        assert!(s.len() <= '…'.len_utf8() + 47);
+    }
 }

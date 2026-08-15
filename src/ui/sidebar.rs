@@ -1301,14 +1301,43 @@ impl ApiClient {
         if from_index == to_index {
             return;
         }
-        let item = folder.requests.remove(from_index);
-        let insert_at = if to_index > from_index {
-            to_index - 1
-        } else {
-            to_index
-        };
-        folder.requests.insert(insert_at, item);
+        reorder_move(&mut folder.requests, from_index, to_index);
         self.save_state();
+    }
+}
+
+/// Move `items[from_index]` so it lands at `to_index`. Indices are
+/// final positions in the vec — no "insert before" adjustment; the
+/// old `to_index - 1` when moving right made the last slot
+/// unreachable. Callers bounds-check both indices.
+fn reorder_move<T>(items: &mut Vec<T>, from_index: usize, to_index: usize) {
+    let item = items.remove(from_index);
+    items.insert(to_index, item);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::reorder_move;
+
+    #[test]
+    fn reorder_to_last_position() {
+        let mut v = vec![1, 2, 3, 4];
+        reorder_move(&mut v, 0, 3);
+        assert_eq!(v, vec![2, 3, 4, 1]);
+    }
+
+    #[test]
+    fn reorder_to_first_position() {
+        let mut v = vec![1, 2, 3, 4];
+        reorder_move(&mut v, 3, 0);
+        assert_eq!(v, vec![4, 1, 2, 3]);
+    }
+
+    #[test]
+    fn reorder_one_step_right() {
+        let mut v = vec![1, 2, 3, 4];
+        reorder_move(&mut v, 1, 2);
+        assert_eq!(v, vec![1, 3, 2, 4]);
     }
 }
 

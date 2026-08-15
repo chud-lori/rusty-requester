@@ -37,14 +37,16 @@ pub fn strip_to_text(html: &str) -> String {
 /// tags are left untouched (malformed input is fine).
 fn strip_block_tag(html: &str, tag: &str) -> String {
     let mut out = String::with_capacity(html.len());
-    let bytes = html.as_bytes();
     let open_needle = format!("<{}", tag);
     let close_needle = format!("</{}>", tag);
-    let open_len = open_needle.len();
     let close_len = close_needle.len();
+    // ASCII lowercasing keeps byte lengths and char boundaries
+    // identical to `html`, so offsets are interchangeable. We walk
+    // `i` char-by-char (never byte-by-byte) — a continuation byte
+    // would panic the `lc[i..]` slice.
     let lc = html.to_ascii_lowercase();
     let mut i = 0usize;
-    while i < bytes.len() {
+    while i < html.len() {
         // Look for an opening tag that matches (case-insensitively).
         if lc[i..].starts_with(&open_needle) {
             // Find the tag's `>` to see where its opening ends, then
@@ -57,15 +59,12 @@ fn strip_block_tag(html: &str, tag: &str) -> String {
                     continue;
                 }
             }
-            // Orphaned opener — skip this char and keep scanning.
-            out.push(bytes[i] as char);
-            i += 1;
-            continue;
+            // Orphaned opener — fall through, emit the char below.
         }
-        out.push(bytes[i] as char);
-        i += 1;
+        let c = html[i..].chars().next().expect("i is a char boundary");
+        out.push(c);
+        i += c.len_utf8();
     }
-    let _ = open_len;
     out
 }
 
@@ -78,10 +77,13 @@ fn replace_block_tags_with_newlines(html: &str) -> String {
     ];
     let mut out = String::with_capacity(html.len());
     let bytes = html.as_bytes();
+    // Same boundary story as `strip_block_tag`: ASCII lowercasing
+    // preserves offsets; advance `i` a char at a time.
     let lc = html.to_ascii_lowercase();
     let mut i = 0usize;
-    while i < bytes.len() {
-        if bytes[i] == b'<' {
+    while i < html.len() {
+        let c = html[i..].chars().next().expect("i is a char boundary");
+        if c == '<' {
             for tag in &block_tags {
                 let open = format!("<{}", tag);
                 let close = format!("</{}", tag);
@@ -107,8 +109,8 @@ fn replace_block_tags_with_newlines(html: &str) -> String {
                 }
             }
         }
-        out.push(bytes[i] as char);
-        i += 1;
+        out.push(c);
+        i += c.len_utf8();
     }
     out
 }
@@ -292,6 +294,23 @@ mod tests {
         assert!(lines.contains(&"Title"));
         assert!(lines.contains(&"Paragraph 1"));
         assert!(lines.contains(&"Paragraph 2"));
+    }
+
+    #[test]
+    fn strip_block_tag_survives_multibyte_html() {
+        // Multibyte chars before/around the tags used to panic the
+        // byte-walking `lc[i..]` slice and mojibake the output.
+        let out = strip_block_tag("é — ☕<script>var π = 1;</script>ü", "script");
+        assert_eq!(out, "é — ☕ü");
+    }
+
+    #[test]
+    fn strip_to_text_survives_multibyte_error_page() {
+        let html = "<p>café — naïve ☕</p><script>console.log('π')</script><p>fin</p>";
+        let out = strip_to_text(html);
+        assert!(out.contains("café — naïve ☕"));
+        assert!(out.contains("fin"));
+        assert!(!out.contains("π"));
     }
 
     #[test]
