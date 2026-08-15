@@ -1411,7 +1411,7 @@ impl ApiClient {
                 continue;
             }
             let value = match ex.source {
-                ExtractorSource::Body => extract::eval_body_path(&body, ex.expression.trim()),
+                ExtractorSource::Body => extract::eval_body_path(body, ex.expression.trim()),
                 ExtractorSource::Header => headers
                     .iter()
                     .find(|(k, _)| k.eq_ignore_ascii_case(ex.expression.trim()))
@@ -1422,7 +1422,7 @@ impl ApiClient {
                     status
                         .split_whitespace()
                         .next()
-                        .unwrap_or(&status)
+                        .unwrap_or(status)
                         .to_string(),
                 ),
             };

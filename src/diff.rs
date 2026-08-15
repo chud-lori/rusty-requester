@@ -62,10 +62,10 @@ pub fn diff_lines(before: &str, after: &str) -> Vec<DiffLine> {
     }
 
     let mut out: Vec<DiffLine> = Vec::with_capacity(n + m - prefix - suffix);
-    for i in 0..prefix {
+    for (i, line) in a.iter().enumerate().take(prefix) {
         out.push(DiffLine {
             op: Op::Same,
-            text: a[i].to_string(),
+            text: line.to_string(),
             lhs: Some(i + 1),
             rhs: Some(i + 1),
         });
@@ -313,7 +313,9 @@ mod tests {
         assert_eq!(last.lhs, Some(100 + mid + 100));
         assert_eq!(last.rhs, Some(100 + mid + 100));
         // Blanket path: even the shared middle line is not matched.
-        assert!(!d.iter().any(|l| l.op == Op::Same && l.text == "shared-inside"));
+        assert!(!d
+            .iter()
+            .any(|l| l.op == Op::Same && l.text == "shared-inside"));
         // First middle row is a Removed with the right line number.
         assert_eq!(d[100].op, Op::Removed);
         assert_eq!(d[100].lhs, Some(101));

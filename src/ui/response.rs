@@ -1239,10 +1239,7 @@ fn cached_json_parse(body: &str) -> Option<Rc<serde_json::Value>> {
 /// Fold pairs + folded display rows + joined display text, recomputed
 /// only when the body or the fold set changes (fold toggles bump
 /// `fold_set_hash`, so they still take effect next frame).
-fn cached_folded_display(
-    body: &str,
-    folded: &std::collections::HashSet<u32>,
-) -> Rc<FoldedDisplay> {
+fn cached_folded_display(body: &str, folded: &std::collections::HashSet<u32>) -> Rc<FoldedDisplay> {
     let fp = body_fingerprint(body);
     let fold_rev = fold_set_hash(folded);
     RENDER_CACHES.with(|caches| {
