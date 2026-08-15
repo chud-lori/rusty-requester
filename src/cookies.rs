@@ -48,6 +48,14 @@ pub fn parse_set_cookie(header_value: &str, request_host: &str) -> Option<Stored
                 // as host-suffix match.
                 let d = v.trim_start_matches('.').to_ascii_lowercase();
                 if !d.is_empty() {
+                    // RFC 6265 §5.3 step 6: the declared domain must
+                    // cover the responding host, or the whole cookie
+                    // is rejected — otherwise evil.example could set
+                    // Domain=api.github.com and have the jar attach
+                    // it to real api.github.com requests.
+                    if !domain_matches(&d, &cookie.domain) {
+                        return None;
+                    }
                     cookie.domain = d;
                 }
             }
@@ -93,13 +101,23 @@ pub fn upsert(jar: &mut Vec<StoredCookie>, cookie: StoredCookie) {
 
 /// Return the `name=value` pairs from `jar` that apply to this
 /// request URL. Matches are filtered by domain-suffix and path-prefix;
-/// expired cookies are skipped (the jar should be pruned separately,
-/// but this is defensive). Empty jar yields an empty Vec.
-pub fn cookies_for_url(jar: &[StoredCookie], host: &str, path: &str) -> Vec<(String, String)> {
+/// `Secure` cookies are withheld unless `https` (the request scheme
+/// is https/wss); expired cookies are skipped (the jar should be
+/// pruned separately, but this is defensive). Empty jar yields an
+/// empty Vec.
+pub fn cookies_for_url(
+    jar: &[StoredCookie],
+    host: &str,
+    path: &str,
+    https: bool,
+) -> Vec<(String, String)> {
     let host_lc = host.to_ascii_lowercase();
     let now = now_epoch();
     jar.iter()
         .filter(|c| {
+            if c.secure && !https {
+                return false;
+            }
             if let Some(exp) = c.expires {
                 if exp <= now {
                     return false;
@@ -119,12 +137,21 @@ pub fn prune(jar: &mut Vec<StoredCookie>) {
 }
 
 fn domain_matches(cookie_domain: &str, request_host: &str) -> bool {
-    // Exact or suffix match (with a leading `.` boundary).
-    cookie_domain == request_host
-        || request_host
-            .strip_suffix(cookie_domain)
-            .map(|rest| rest.is_empty() || rest.ends_with('.'))
-            .unwrap_or(false)
+    if cookie_domain == request_host {
+        return true;
+    }
+    // Suffix matches must sit on a label boundary (`foo.example.com`
+    // under `example.com`, never `notexample.com`). A domain with no
+    // dot ("com") would match every host under that TLD, and an IP
+    // address has no subdomains — both are exact-match only.
+    let is_ip = |s: &str| s.parse::<std::net::IpAddr>().is_ok();
+    if !cookie_domain.contains('.') || is_ip(cookie_domain) || is_ip(request_host) {
+        return false;
+    }
+    request_host
+        .strip_suffix(cookie_domain)
+        .map(|rest| !rest.is_empty() && rest.ends_with('.'))
+        .unwrap_or(false)
 }
 
 fn path_matches(cookie_path: &str, request_path: &str) -> bool {
@@ -260,6 +287,37 @@ mod tests {
     }
 
     #[test]
+    fn dotless_domain_is_not_a_wildcard() {
+        // "Domain=com" must not match every .com host — the old bare
+        // suffix test let it through ("api.foo." ends with '.').
+        assert!(!domain_matches("com", "api.foo.com"));
+        // Dotless is still fine as an exact host match (localhost).
+        assert!(domain_matches("localhost", "localhost"));
+        assert!(!domain_matches("localhost", "app.localhost"));
+    }
+
+    #[test]
+    fn ip_only_exact_matches() {
+        assert!(domain_matches("127.0.0.1", "127.0.0.1"));
+        assert!(!domain_matches("0.0.1", "127.0.0.1"));
+        assert!(!domain_matches("127.0.0.1", "1.127.0.0.1"));
+    }
+
+    #[test]
+    fn rejects_cross_origin_domain() {
+        // evil.example must not be able to plant cookies for another
+        // host (RFC 6265 §5.3 step 6).
+        assert!(parse_set_cookie("sid=1; Domain=api.github.com", "evil.example").is_none());
+        assert!(parse_set_cookie("sid=1; Domain=com", "example.com").is_none());
+        // Parent domain of the responding host is allowed…
+        let c = parse_set_cookie("sid=1; Domain=example.com", "api.example.com").unwrap();
+        assert_eq!(c.domain, "example.com");
+        // …but a sibling or child is not.
+        assert!(parse_set_cookie("sid=1; Domain=other.example.com", "api.example.com").is_none());
+        assert!(parse_set_cookie("sid=1; Domain=api.example.com", "example.com").is_none());
+    }
+
+    #[test]
     fn path_prefix_match() {
         assert!(path_matches("/", "/anything"));
         assert!(path_matches("/api", "/api"));
@@ -347,7 +405,25 @@ mod tests {
                 http_only: false,
             },
         ];
-        let matched = cookies_for_url(&jar, "api.example.com", "/anything");
+        let matched = cookies_for_url(&jar, "api.example.com", "/anything", true);
         assert_eq!(matched, vec![("a".to_string(), "1".to_string())]);
+    }
+
+    #[test]
+    fn secure_cookie_skipped_over_http() {
+        let jar = vec![StoredCookie {
+            name: "token".into(),
+            value: "s3cret".into(),
+            domain: "example.com".into(),
+            path: "/".into(),
+            expires: None,
+            secure: true,
+            http_only: false,
+        }];
+        assert!(cookies_for_url(&jar, "example.com", "/", false).is_empty());
+        assert_eq!(
+            cookies_for_url(&jar, "example.com", "/", true),
+            vec![("token".to_string(), "s3cret".to_string())]
+        );
     }
 }

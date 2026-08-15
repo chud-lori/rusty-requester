@@ -197,8 +197,15 @@ pub async fn execute_request_async(
         // tab, explicit `Cookie:` headers, and the active
         // environment's persisted cookie jar (matched by host+path).
         let (url_host, url_path) = parse_url_host_path(&final_url);
+        // Secure cookies stay off the wire for plain http/ws — and
+        // `ensure_url_scheme` defaults schemeless URLs to http://, so
+        // this check does real work.
+        let url_https = {
+            let lower = final_url.to_ascii_lowercase();
+            lower.starts_with("https://") || lower.starts_with("wss://")
+        };
         let jar_cookies = env
-            .map(|e| crate::cookies::cookies_for_url(&e.cookies, &url_host, &url_path))
+            .map(|e| crate::cookies::cookies_for_url(&e.cookies, &url_host, &url_path, url_https))
             .unwrap_or_default();
         let mut cookie_map: std::collections::BTreeMap<String, String> =
             std::collections::BTreeMap::new();
@@ -617,6 +624,11 @@ async fn read_body_capped(mut response: reqwest::Response, max_bytes: usize) -> 
                 if buf.len() + bytes.len() > max_bytes {
                     let remaining = max_bytes.saturating_sub(buf.len());
                     buf.extend_from_slice(&bytes[..remaining]);
+                    // The cap is a byte offset — it can land mid-way
+                    // through a multibyte character. Trim the partial
+                    // sequence so the lossy decode below doesn't end
+                    // the body with a fabricated U+FFFD.
+                    trim_partial_utf8_tail(&mut buf);
                     truncated = true;
                     break;
                 }
@@ -632,4 +644,45 @@ async fn read_body_capped(mut response: reqwest::Response, max_bytes: usize) -> 
     }
     // Lossy — response may stop mid-UTF-8; safer than failing.
     (String::from_utf8_lossy(&buf).into_owned(), truncated)
+}
+
+/// Drop a trailing *incomplete* UTF-8 sequence (0–3 bytes) left by a
+/// byte-offset cut. Genuinely invalid bytes elsewhere are untouched —
+/// `error_len() == None` singles out "ran out of input at the end".
+fn trim_partial_utf8_tail(buf: &mut Vec<u8>) {
+    if let Err(e) = std::str::from_utf8(buf) {
+        if e.error_len().is_none() {
+            buf.truncate(e.valid_up_to());
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn trims_partial_utf8_at_cut() {
+        // "🦀" is 4 bytes; cut after 2 of them.
+        let full = "abc🦀".as_bytes();
+        let mut buf = full[..5].to_vec();
+        trim_partial_utf8_tail(&mut buf);
+        assert_eq!(buf, b"abc");
+    }
+
+    #[test]
+    fn keeps_complete_utf8_intact() {
+        let mut buf = "abc🦀".as_bytes().to_vec();
+        trim_partial_utf8_tail(&mut buf);
+        assert_eq!(buf, "abc🦀".as_bytes());
+    }
+
+    #[test]
+    fn leaves_interior_invalid_bytes_alone() {
+        // Invalid byte mid-buffer (error_len is Some) — not our case;
+        // the lossy decode handles it.
+        let mut buf = vec![b'a', 0xFF, b'b'];
+        trim_partial_utf8_tail(&mut buf);
+        assert_eq!(buf, vec![b'a', 0xFF, b'b']);
+    }
 }
