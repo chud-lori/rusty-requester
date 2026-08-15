@@ -33,6 +33,11 @@ pub struct SseEvent {
 /// alive across calls so partial events buffer correctly.
 pub struct SseParser {
     buf: String,
+    /// Trailing incomplete UTF-8 sequence (0–3 bytes) from the last
+    /// chunk — a multibyte char can straddle a TCP chunk boundary, so
+    /// we hold the partial bytes and prepend them to the next chunk
+    /// instead of mangling them to U+FFFD.
+    pending: Vec<u8>,
     id: Option<String>,
     event_type: Option<String>,
     data_lines: Vec<String>,
@@ -49,6 +54,7 @@ impl SseParser {
     pub fn new() -> Self {
         Self {
             buf: String::new(),
+            pending: Vec::new(),
             id: None,
             event_type: None,
             data_lines: Vec::new(),
@@ -59,12 +65,26 @@ impl SseParser {
     /// Feed a chunk of bytes. Returns any events that completed with
     /// this chunk (usually zero, one, or a couple).
     pub fn feed(&mut self, bytes: &[u8]) -> Vec<SseEvent> {
-        // Invalid UTF-8 is lossily replaced — SSE is text/event-stream
-        // per spec so this is the right move (drop the odd byte rather
-        // than error out).
-        match std::str::from_utf8(bytes) {
+        // Prepend any partial UTF-8 sequence carried over from the
+        // previous chunk, then decode. An *incomplete* tail is held
+        // for the next chunk; genuinely invalid bytes are lossily
+        // replaced — SSE is text/event-stream per spec so this is the
+        // right move (drop the odd byte rather than error out).
+        self.pending.extend_from_slice(bytes);
+        let input = std::mem::take(&mut self.pending);
+        match std::str::from_utf8(&input) {
             Ok(s) => self.buf.push_str(s),
-            Err(_) => self.buf.push_str(&String::from_utf8_lossy(bytes)),
+            Err(e) => {
+                let (valid, rest) = input.split_at(e.valid_up_to());
+                self.buf.push_str(&String::from_utf8_lossy(valid));
+                if e.error_len().is_none() {
+                    // Incomplete multibyte char at the chunk boundary
+                    // — carry it into the next feed().
+                    self.pending = rest.to_vec();
+                } else {
+                    self.buf.push_str(&String::from_utf8_lossy(rest));
+                }
+            }
         }
 
         let mut events = Vec::new();
@@ -218,6 +238,30 @@ mod tests {
         let events = p.feed(b"\n");
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].data, "partial");
+    }
+
+    #[test]
+    fn reassembles_utf8_split_across_chunks() {
+        let mut p = SseParser::new();
+        let wire = "data: caf\u{e9} \u{1F980}\n\n".as_bytes();
+        // Cut inside the 4-byte crab emoji.
+        let cut = wire.len() - 4;
+        assert!(p.feed(&wire[..cut]).is_empty());
+        let events = p.feed(&wire[cut..]);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].data, "café 🦀");
+    }
+
+    #[test]
+    fn reassembles_utf8_fed_byte_by_byte() {
+        let mut p = SseParser::new();
+        let wire = "data: héllo — ünïcode\n\n".as_bytes();
+        let mut events = Vec::new();
+        for b in wire {
+            events.extend(p.feed(std::slice::from_ref(b)));
+        }
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].data, "héllo — ünïcode");
     }
 
     #[test]

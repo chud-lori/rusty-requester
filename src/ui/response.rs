@@ -9,7 +9,9 @@ use crate::theme::*;
 use crate::widgets::*;
 use crate::ApiClient;
 use eframe::egui;
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 impl ApiClient {
     /// Stable response header metadata. This renders inside the single
@@ -154,8 +156,11 @@ impl ApiClient {
             return;
         };
         let after = self.response_text.as_str();
-        let d = crate::diff::diff_lines(before, after);
-        let (added, removed) = crate::diff::summarize(&d);
+        // Diffing is the single most expensive derivation in this
+        // panel (line-based LCS) — computed once per body pair and
+        // cached, never per frame.
+        let d = cached_diff(before, after);
+        let (added, removed) = (d.added, d.removed);
 
         ui.horizontal(|ui| {
             ui.label(
@@ -196,7 +201,7 @@ impl ApiClient {
             .id_salt("diff_scroll")
             .auto_shrink([false, false])
             .show(ui, |ui| {
-                for line in &d {
+                for line in &d.lines {
                     let (prefix, fg, bg) = match line.op {
                         crate::diff::Op::Same => (" ", text(), egui::Color32::TRANSPARENT),
                         crate::diff::Op::Added => ("+", C_GREEN, C_GREEN.linear_multiply(0.12)),
@@ -310,8 +315,7 @@ impl ApiClient {
         let mut toggle_search = false;
         let mut save_clicked = false;
         let mut inline_room = true;
-        let is_json_body = !self.response_text.is_empty()
-            && serde_json::from_str::<serde_json::Value>(&self.response_text).is_ok();
+        let is_json_body = cached_json_parse(&self.response_text).is_some();
         let body_active = matches!(self.response_tab, ResponseTab::Body);
         let is_html_body =
             crate::html_preview::is_html(&self.response_headers, &self.response_text);
@@ -767,7 +771,7 @@ impl ApiClient {
             return;
         }
 
-        let parsed: Option<serde_json::Value> = serde_json::from_str(&self.response_text).ok();
+        let parsed: Option<Rc<serde_json::Value>> = cached_json_parse(&self.response_text);
         let is_json = parsed.is_some();
         let effective_view = effective_body_view(
             self.body_view,
@@ -830,12 +834,15 @@ impl ApiClient {
                                     let gutter_w = 60.0;
                                     let chevron_w = 16.0;
                                     let row_h = response_body_line_height(ui);
-                                    let pairs = compute_json_fold_pairs(&self.response_text);
-                                    let display = build_folded_display(
+                                    // Fold pairs, gutter rows, and the
+                                    // joined display text are cached —
+                                    // rebuilt only when the body or the
+                                    // fold set changes, not per frame.
+                                    let folded_display = cached_folded_display(
                                         &self.response_text,
-                                        &pairs,
                                         &self.folded_response_lines,
                                     );
+                                    let display = &folded_display.display;
                                     let mut toggle_fold: Option<u32> = None;
                                     let text_w =
                                         (ui.available_width() - gutter_w - 6.0).max(80.0);
@@ -843,7 +850,7 @@ impl ApiClient {
                                         ui.vertical(|ui| {
                                             ui.set_width(gutter_w);
                                             ui.spacing_mut().item_spacing.y = 0.0;
-                                            for d in &display {
+                                            for d in display {
                                                 ui.horizontal(|ui| {
                                                     ui.spacing_mut().item_spacing.x = 0.0;
                                                     let chev_color =
@@ -899,12 +906,8 @@ impl ApiClient {
                                             }
                                         });
                                         ui.add_space(6.0);
-                                        let displayed_text: String = display
-                                            .iter()
-                                            .map(|d| d.content.as_str())
-                                            .collect::<Vec<_>>()
-                                            .join("\n");
-                                        let mut buf: &str = &displayed_text;
+                                        let displayed_text: &str = &folded_display.joined;
+                                        let mut buf: &str = displayed_text;
                                         let search = self.body_search_query.clone();
                                         let active_match = self.body_search_active_match;
                                         let mut layouter =
@@ -932,7 +935,7 @@ impl ApiClient {
                                         );
                                         if self.body_search_scroll_pending {
                                             if let Some(line_idx) = response_find_active_match_line(
-                                                &displayed_text,
+                                                displayed_text,
                                                 &self.body_search_query,
                                                 self.body_search_active_match,
                                             ) {
@@ -1116,6 +1119,198 @@ impl ApiClient {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Per-frame render caches.
+//
+// The response panel renders every frame (~60 fps) while a body is on
+// screen, but its inputs — the response body, the previous body, the
+// fold set, the find query — change rarely. Re-parsing / re-diffing /
+// re-lowercasing a multi-MB body per frame burns CPU at best and (for
+// the quadratic diff) gigabytes of memory at worst, so each heavy
+// derivation is cached in a module-local one-entry cache keyed by a
+// cheap body fingerprint. The UI is single-threaded, so
+// `thread_local!` + `RefCell` suffices; only one response renders at
+// a time, so one entry per cache suffices.
+//
+// Fingerprint: bodies are immutable `String`s once a response lands,
+// so `(buffer ptr, len, hash of the first/last 4 KB)` is cheap enough
+// to recompute every frame and still changes whenever the body is
+// replaced — a new body either lives at a new allocation, has a new
+// length, or differs within the sampled edges. Correctness beats
+// speed here: showing a stale parse for a new response would be worse
+// than the original per-frame cost.
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+struct BodyFingerprint {
+    ptr: usize,
+    len: usize,
+    edge_hash: u64,
+}
+
+fn body_fingerprint(text: &str) -> BodyFingerprint {
+    use std::hash::{Hash, Hasher};
+    const EDGE: usize = 4096;
+    let bytes = text.as_bytes();
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    bytes.len().hash(&mut h);
+    if bytes.len() <= EDGE * 2 {
+        bytes.hash(&mut h);
+    } else {
+        bytes[..EDGE].hash(&mut h);
+        bytes[bytes.len() - EDGE..].hash(&mut h);
+    }
+    BodyFingerprint {
+        ptr: bytes.as_ptr() as usize,
+        len: bytes.len(),
+        edge_hash: h.finish(),
+    }
+}
+
+/// Order-independent hash of the fold set — a cheap "revision" for
+/// the folded-display cache so fold toggles invalidate it without
+/// needing a revision counter on the app struct.
+fn fold_set_hash(folded: &std::collections::HashSet<u32>) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut acc = folded.len() as u64;
+    for &line in folded {
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        line.hash(&mut h);
+        acc = acc.wrapping_add(h.finish());
+    }
+    acc
+}
+
+/// Cached fold viewer state: gutter rows + the joined display text
+/// (what the layouter renders). Both are rebuilt only when the body
+/// or the fold set changes.
+struct FoldedDisplay {
+    display: Vec<DisplayLine>,
+    joined: String,
+}
+
+/// Cached diff between the previous and current response bodies.
+struct CachedDiff {
+    lines: Vec<crate::diff::DiffLine>,
+    added: usize,
+    removed: usize,
+}
+
+#[derive(Default)]
+struct ResponseRenderCaches {
+    parse: Option<(BodyFingerprint, Option<Rc<serde_json::Value>>)>,
+    fold: Option<(BodyFingerprint, u64, Rc<FoldedDisplay>)>,
+    diff: Option<(BodyFingerprint, BodyFingerprint, Rc<CachedDiff>)>,
+    /// Two slots: the raw body (match counting) and the folded display
+    /// text (scroll-to-match) are both lowercased in the same frame,
+    /// so a single entry would thrash between them.
+    lowercase: Vec<(BodyFingerprint, Rc<String>)>,
+    match_count: Option<(BodyFingerprint, String, usize)>,
+}
+
+thread_local! {
+    static RENDER_CACHES: RefCell<ResponseRenderCaches> =
+        RefCell::new(ResponseRenderCaches::default());
+}
+
+/// Parse the body as JSON once per body, not once per frame. A failed
+/// parse is cached too (as `None`) so non-JSON bodies don't re-parse
+/// every frame either.
+fn cached_json_parse(body: &str) -> Option<Rc<serde_json::Value>> {
+    if body.is_empty() {
+        return None;
+    }
+    let fp = body_fingerprint(body);
+    RENDER_CACHES.with(|caches| {
+        let mut caches = caches.borrow_mut();
+        if let Some((cached_fp, value)) = &caches.parse {
+            if *cached_fp == fp {
+                return value.clone();
+            }
+        }
+        let value = serde_json::from_str::<serde_json::Value>(body)
+            .ok()
+            .map(Rc::new);
+        caches.parse = Some((fp, value.clone()));
+        value
+    })
+}
+
+/// Fold pairs + folded display rows + joined display text, recomputed
+/// only when the body or the fold set changes (fold toggles bump
+/// `fold_set_hash`, so they still take effect next frame).
+fn cached_folded_display(body: &str, folded: &std::collections::HashSet<u32>) -> Rc<FoldedDisplay> {
+    let fp = body_fingerprint(body);
+    let fold_rev = fold_set_hash(folded);
+    RENDER_CACHES.with(|caches| {
+        let mut caches = caches.borrow_mut();
+        if let Some((cached_fp, cached_rev, entry)) = &caches.fold {
+            if *cached_fp == fp && *cached_rev == fold_rev {
+                return entry.clone();
+            }
+        }
+        let pairs = compute_json_fold_pairs(body);
+        let display = build_folded_display(body, &pairs, folded);
+        let joined = display
+            .iter()
+            .map(|d| d.content.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        let entry = Rc::new(FoldedDisplay { display, joined });
+        caches.fold = Some((fp, fold_rev, entry.clone()));
+        entry
+    })
+}
+
+/// Line diff between the previous and current bodies, computed once
+/// per body pair instead of once per frame.
+fn cached_diff(before: &str, after: &str) -> Rc<CachedDiff> {
+    let before_fp = body_fingerprint(before);
+    let after_fp = body_fingerprint(after);
+    RENDER_CACHES.with(|caches| {
+        let mut caches = caches.borrow_mut();
+        if let Some((cached_before, cached_after, diff)) = &caches.diff {
+            if *cached_before == before_fp && *cached_after == after_fp {
+                return diff.clone();
+            }
+        }
+        let lines = crate::diff::diff_lines(before, after);
+        let (added, removed) = crate::diff::summarize(&lines);
+        let diff = Rc::new(CachedDiff {
+            lines,
+            added,
+            removed,
+        });
+        caches.diff = Some((before_fp, after_fp, diff.clone()));
+        diff
+    })
+}
+
+/// Lowercased copy of `text`, allocated once per body instead of once
+/// per frame while the find bar is open.
+fn cached_lowercase(text: &str) -> Rc<String> {
+    let fp = body_fingerprint(text);
+    if let Some(hit) = RENDER_CACHES.with(|caches| {
+        let mut caches = caches.borrow_mut();
+        if let Some(pos) = caches.lowercase.iter().position(|(f, _)| *f == fp) {
+            let entry = caches.lowercase.remove(pos);
+            let value = entry.1.clone();
+            caches.lowercase.insert(0, entry);
+            return Some(value);
+        }
+        None
+    }) {
+        return hit;
+    }
+    let value = Rc::new(text.to_lowercase());
+    RENDER_CACHES.with(|caches| {
+        let mut caches = caches.borrow_mut();
+        caches.lowercase.insert(0, (fp, value.clone()));
+        caches.lowercase.truncate(2);
+    });
+    value
+}
+
 fn render_response_metric(ui: &mut egui::Ui, value: &str) -> egui::Response {
     ui.add_space(2.0);
     ui.label(egui::RichText::new("·").size(12.0).color(muted()));
@@ -1191,7 +1386,7 @@ fn response_find_active_match_line(text: &str, query: &str, active_match: usize)
         return None;
     }
 
-    let text_lc = text.to_lowercase();
+    let text_lc = cached_lowercase(text);
     let query_lc = query.to_lowercase();
     let mut cursor = 0usize;
     let mut seen = 0usize;
@@ -1213,9 +1408,24 @@ fn count_case_insensitive_matches(text: &str, query: &str) -> usize {
     if query.is_empty() {
         return 0;
     }
-    let text = text.to_lowercase();
-    let query = query.to_lowercase();
-    text.match_indices(&query).count()
+    // This runs every frame while the find bar is open — both the
+    // lowercased body and the resulting count are cached so a frame
+    // with an unchanged body + query does no O(body) work.
+    let fp = body_fingerprint(text);
+    let cached = RENDER_CACHES.with(|caches| match &caches.borrow().match_count {
+        Some((cfp, cq, count)) if *cfp == fp && cq == query => Some(*count),
+        _ => None,
+    });
+    if let Some(count) = cached {
+        return count;
+    }
+    let text_lc = cached_lowercase(text);
+    let query_lc = query.to_lowercase();
+    let count = text_lc.match_indices(&query_lc).count();
+    RENDER_CACHES.with(|caches| {
+        caches.borrow_mut().match_count = Some((fp, query.to_string(), count));
+    });
+    count
 }
 
 fn next_search_match_index(current: usize, match_count: usize, backward: bool) -> usize {
@@ -2022,5 +2232,158 @@ mod tests {
         assert_eq!(next_search_match_index(2, 3, false), 0);
         assert_eq!(next_search_match_index(0, 3, true), 2);
         assert_eq!(next_search_match_index(2, 3, true), 1);
+    }
+
+    // -- Per-frame cache / fingerprint tests -----------------------------
+    // Each test runs on its own thread (Rust test harness default), so
+    // the thread-local caches start empty per test.
+
+    #[test]
+    fn body_fingerprint_detects_in_place_content_change() {
+        // Reuse one allocation (same buffer ptr, same len) with new
+        // content — the edge hash must still change, otherwise a new
+        // response landing in a reused buffer would show stale data.
+        let mut s = String::with_capacity(64);
+        s.push_str("aaaa");
+        let fp1 = body_fingerprint(&s);
+        s.clear();
+        s.push_str("bbbb");
+        let fp2 = body_fingerprint(&s);
+        assert_eq!(fp1.len, fp2.len);
+        assert_ne!(fp1, fp2);
+    }
+
+    #[test]
+    fn body_fingerprint_detects_edge_change_in_large_body() {
+        // Bodies larger than 2×4 KB only sample the edges; a change
+        // in the last byte must still flip the fingerprint even when
+        // ptr and len are identical.
+        let n = 20_000;
+        let mut s = String::with_capacity(n);
+        s.push_str(&"a".repeat(n));
+        let fp1 = body_fingerprint(&s);
+        s.truncate(n - 1);
+        s.push('b');
+        let fp2 = body_fingerprint(&s);
+        assert_eq!(fp1.ptr, fp2.ptr);
+        assert_eq!(fp1.len, fp2.len);
+        assert_ne!(fp1.edge_hash, fp2.edge_hash);
+    }
+
+    #[test]
+    fn body_fingerprint_differs_on_length_change() {
+        let s = "abc".to_string();
+        let t = "abcd".to_string();
+        assert_ne!(body_fingerprint(&s), body_fingerprint(&t));
+    }
+
+    #[test]
+    fn cached_json_parse_hits_and_invalidates() {
+        let valid = "{\"ok\":true}".to_string();
+        let first = cached_json_parse(&valid).expect("valid JSON must parse");
+        let second = cached_json_parse(&valid).expect("cache hit must still be Some");
+        // Same Rc back = the parse was not redone.
+        assert!(Rc::ptr_eq(&first, &second));
+        assert_eq!(first["ok"], serde_json::Value::Bool(true));
+
+        // A different (non-JSON) body must invalidate — and the
+        // failed parse is cached as None, not retried forever.
+        let invalid = "not json".to_string();
+        assert!(cached_json_parse(&invalid).is_none());
+        assert!(cached_json_parse(&invalid).is_none());
+
+        // Back to the valid body: recomputed, correct again.
+        let third = cached_json_parse(&valid).expect("must reparse after eviction");
+        assert_eq!(third["ok"], serde_json::Value::Bool(true));
+    }
+
+    #[test]
+    fn cached_json_parse_empty_body_is_none() {
+        assert!(cached_json_parse("").is_none());
+    }
+
+    #[test]
+    fn cached_folded_display_tracks_body_and_fold_state() {
+        let body = pretty(serde_json::json!({ "a": { "b": 1 } }));
+        let no_folds = std::collections::HashSet::new();
+
+        let open = cached_folded_display(&body, &no_folds);
+        assert_eq!(open.joined, body);
+        let open_again = cached_folded_display(&body, &no_folds);
+        assert!(Rc::ptr_eq(&open, &open_again));
+
+        // Folding line 1 must invalidate (fold revision changed) and
+        // collapse everything into the opener row.
+        let mut folds = std::collections::HashSet::new();
+        folds.insert(1u32);
+        let closed = cached_folded_display(&body, &folds);
+        assert_eq!(closed.display.len(), 1);
+        assert!(closed.joined.ends_with("…}"));
+
+        // Unfolding restores the full display.
+        let reopened = cached_folded_display(&body, &no_folds);
+        assert_eq!(reopened.joined, body);
+    }
+
+    #[test]
+    fn fold_set_hash_changes_with_content_not_insertion_order() {
+        let mut a = std::collections::HashSet::new();
+        a.insert(1u32);
+        a.insert(2u32);
+        let mut b = std::collections::HashSet::new();
+        b.insert(2u32);
+        b.insert(1u32);
+        assert_eq!(fold_set_hash(&a), fold_set_hash(&b));
+
+        let mut c = std::collections::HashSet::new();
+        c.insert(3u32);
+        assert_ne!(fold_set_hash(&a), fold_set_hash(&c));
+        assert_ne!(
+            fold_set_hash(&a),
+            fold_set_hash(&std::collections::HashSet::new())
+        );
+    }
+
+    #[test]
+    fn cached_diff_hits_and_invalidates_on_body_change() {
+        let before = "a\nb".to_string();
+        let after = "a\nc".to_string();
+        let first = cached_diff(&before, &after);
+        assert_eq!((first.added, first.removed), (1, 1));
+        let second = cached_diff(&before, &after);
+        assert!(Rc::ptr_eq(&first, &second));
+
+        // New "after" body → recompute with fresh counts.
+        let after2 = "a\nb".to_string();
+        let third = cached_diff(&before, &after2);
+        assert_eq!((third.added, third.removed), (0, 0));
+    }
+
+    #[test]
+    fn cached_lowercase_keeps_two_bodies_warm() {
+        let raw = "ABC DEF".to_string();
+        let displayed = "GHI JKL".to_string();
+        let raw_lc = cached_lowercase(&raw);
+        let displayed_lc = cached_lowercase(&displayed);
+        assert_eq!(raw_lc.as_str(), "abc def");
+        assert_eq!(displayed_lc.as_str(), "ghi jkl");
+        // Alternating between the two (raw body for counting, folded
+        // display for scroll-to-match) must hit on both slots.
+        assert!(Rc::ptr_eq(&raw_lc, &cached_lowercase(&raw)));
+        assert!(Rc::ptr_eq(&displayed_lc, &cached_lowercase(&displayed)));
+    }
+
+    #[test]
+    fn count_case_insensitive_matches_is_correct_through_cache() {
+        let body = "Foo bar FOO baz foo".to_string();
+        assert_eq!(count_case_insensitive_matches(&body, "foo"), 3);
+        // Cache hit path returns the same answer.
+        assert_eq!(count_case_insensitive_matches(&body, "foo"), 3);
+        // Query change invalidates the count cache.
+        assert_eq!(count_case_insensitive_matches(&body, "bar"), 1);
+        assert_eq!(count_case_insensitive_matches(&body, ""), 0);
+        // Body change invalidates too.
+        let body2 = "foo".to_string();
+        assert_eq!(count_case_insensitive_matches(&body2, "foo"), 1);
     }
 }

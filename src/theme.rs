@@ -348,14 +348,18 @@ pub fn apply_style(ctx: &egui::Context, theme: Theme) {
     style.visuals.hyperlink_color = a;
     style.visuals.widgets.noninteractive.bg_fill = p.bg;
     style.visuals.widgets.noninteractive.weak_bg_fill = p.bg;
+    // `noninteractive.bg_stroke` doubles as the panel divider — keep it,
+    // it's load-bearing for panel separation.
     style.visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0_f32, p.border);
     style.visuals.widgets.noninteractive.fg_stroke = egui::Stroke::new(1.0_f32, p.text);
-    style.visuals.widgets.noninteractive.rounding = egui::Rounding::same(8.0);
+    style.visuals.widgets.noninteractive.rounding = egui::Rounding::same(5.0);
     style.visuals.widgets.inactive.bg_fill = p.elevated;
     style.visuals.widgets.inactive.weak_bg_fill = p.elevated;
-    style.visuals.widgets.inactive.bg_stroke =
-        egui::Stroke::new(1.0_f32, with_alpha(p.border, 120));
-    style.visuals.widgets.inactive.rounding = egui::Rounding::same(9.0);
+    // Flat surfaces — no border on resting widgets. Depth comes from the
+    // background-color steps (bg → panel_dark → elevated), not strokes;
+    // the border-on-everything look is what read as dated.
+    style.visuals.widgets.inactive.bg_stroke = egui::Stroke::NONE;
+    style.visuals.widgets.inactive.rounding = egui::Rounding::same(5.0);
     style.visuals.widgets.hovered.bg_fill = if matches!(theme, Theme::Dark) {
         egui::Color32::from_rgb(48, 54, 63)
     } else {
@@ -366,22 +370,38 @@ pub fn apply_style(ctx: &egui::Context, theme: Theme) {
     // right-edge (SidePanel resize zone) to cascade 1-pixel layout shifts
     // as the pointer moved, making the whole panel visibly "jitter".
     style.visuals.widgets.hovered.bg_stroke = egui::Stroke::NONE;
-    style.visuals.widgets.hovered.rounding = egui::Rounding::same(9.0);
+    style.visuals.widgets.hovered.rounding = egui::Rounding::same(5.0);
     style.visuals.widgets.active.bg_fill =
         with_alpha(a, if matches!(theme, Theme::Dark) { 56 } else { 28 });
     style.visuals.widgets.active.weak_bg_fill = style.visuals.widgets.active.bg_fill;
+    // Active keeps its accent stroke — the one border that earns its
+    // place, marking the pressed/focused widget.
     style.visuals.widgets.active.bg_stroke = egui::Stroke::new(1.0_f32, a);
-    style.visuals.widgets.active.rounding = egui::Rounding::same(9.0);
+    style.visuals.widgets.active.rounding = egui::Rounding::same(5.0);
     // `widgets.open.bg_fill` is what egui uses for the title-bar
     // band on open Windows. Previously set to `p.border` which made
     // the band darker than the window body — looked like a separate
     // "header section" in light mode. Keep it aligned with the
     // window body so the modal reads as a single surface.
     style.visuals.widgets.open.bg_fill = p.bg;
-    style.visuals.widgets.open.rounding = egui::Rounding::same(8.0);
-    style.visuals.menu_rounding = egui::Rounding::same(10.0);
-    style.visuals.window_rounding = egui::Rounding::same(12.0);
+    style.visuals.widgets.open.rounding = egui::Rounding::same(5.0);
+    // Radii on the Rerun scale — widgets 5px (set above), menus 6px,
+    // windows 8px. The previous 8–12px range read bubbly/dated.
+    style.visuals.menu_rounding = egui::Rounding::same(6.0);
+    style.visuals.window_rounding = egui::Rounding::same(8.0);
+    // 1px subtle window outline — kept; it defines floating surfaces.
     style.visuals.window_stroke = egui::Stroke::new(1.0_f32, p.border);
+    // One soft, low drop shadow for windows and popups alike — egui's
+    // defaults are heavier and differ per surface. Same across themes;
+    // ~25% black stays subtle on light surfaces without vanishing on dark.
+    let shadow = egui::epaint::Shadow {
+        offset: egui::vec2(0.0, 4.0),
+        blur: 16.0,
+        spread: 0.0,
+        color: egui::Color32::from_black_alpha(64),
+    };
+    style.visuals.window_shadow = shadow;
+    style.visuals.popup_shadow = shadow;
     // Light-based themes (Light, Postman) want dark widgets on a light
     // panel — flip `dark_mode` so egui's internal defaults pick sensible
     // colors for things we don't override (scroll thumbs, tooltips, etc).
@@ -391,8 +411,8 @@ pub fn apply_style(ctx: &egui::Context, theme: Theme) {
     // tab switches, etc. egui default is ~0.083s (snappy but abrupt).
     style.animation_time = 0.18;
 
-    style.spacing.item_spacing = egui::vec2(8.0, 7.0);
-    style.spacing.button_padding = egui::vec2(11.0, 6.0);
+    style.spacing.item_spacing = egui::vec2(8.0, 6.0);
+    style.spacing.button_padding = egui::vec2(10.0, 5.0);
     style.spacing.window_margin = egui::Margin::same(12.0);
     style.spacing.menu_margin = egui::Margin::same(6.0);
     // Floating scrollbar — overlays content semi-transparently, so:
@@ -448,7 +468,8 @@ pub fn apply_style(ctx: &egui::Context, theme: Theme) {
     let mut fonts = egui::FontDefinitions::default();
     egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
 
-    // Inter — Postman web uses Inter for its UI. We ship the `Light`
+    // Inter — the UI font for ALL themes (Dark, Light, Postman); egui's
+    // stock sans read visibly dated next to it. We ship the `Light`
     // (300) weight rather than `Regular` (400) because egui renders via
     // ab_glyph with grayscale antialiasing only — no hinting, no
     // subpixel rendering — which makes every TTF look ~1 weight-step
@@ -456,26 +477,24 @@ pub fn apply_style(ctx: &egui::Context, theme: Theme) {
     // browser, which is the weight Postman web actually shows.
     // PUA codepoints have been stripped from the bundled TTF so Inter
     // doesn't shadow phosphor's icon glyphs at U+E000–U+F8FF.
-    if matches!(theme, Theme::Postman) {
-        fonts.font_data.insert(
-            "Inter".to_owned(),
-            egui::FontData::from_static(include_bytes!("../assets/Inter-Light.ttf")),
-        );
-        let prop = fonts
-            .families
-            .entry(egui::FontFamily::Proportional)
-            .or_default();
-        prop.insert(0, "Inter".to_owned());
-        // egui_phosphor installs itself at index 1 of Proportional. With
-        // Inter now at index 0, phosphor gets pushed to index 2 — behind
-        // egui's default sans, which has a glyph at `U+E1FE` (phosphor's
-        // DOTS_THREE codepoint) that renders as a capital "M". Move
-        // phosphor back up to index 1 so its PUA icons win before the
-        // default sans ever gets a shot.
-        if let Some(pos) = prop.iter().position(|s| s == "phosphor") {
-            let phosphor = prop.remove(pos);
-            prop.insert(1, phosphor);
-        }
+    fonts.font_data.insert(
+        "Inter".to_owned(),
+        egui::FontData::from_static(include_bytes!("../assets/Inter-Light.ttf")),
+    );
+    let prop = fonts
+        .families
+        .entry(egui::FontFamily::Proportional)
+        .or_default();
+    prop.insert(0, "Inter".to_owned());
+    // egui_phosphor installs itself at index 1 of Proportional. With
+    // Inter now at index 0, phosphor gets pushed to index 2 — behind
+    // egui's default sans, which has a glyph at `U+E1FE` (phosphor's
+    // DOTS_THREE codepoint) that renders as a capital "M". Move
+    // phosphor back up to index 1 so its PUA icons win before the
+    // default sans ever gets a shot.
+    if let Some(pos) = prop.iter().position(|s| s == "phosphor") {
+        let phosphor = prop.remove(pos);
+        prop.insert(1, phosphor);
     }
     ctx.set_fonts(fonts);
 }

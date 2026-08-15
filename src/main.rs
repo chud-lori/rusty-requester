@@ -37,6 +37,13 @@ use model::*;
 struct InFlightRequest {
     handle: tokio::task::JoinHandle<()>,
     rx: std::sync::mpsc::Receiver<net::RequestUpdate>,
+    /// Identity of the request/tab that started this send. Updates are
+    /// routed back to this tab even if the user switches tabs mid-flight
+    /// — never to "whatever tab is active when the response lands".
+    request_id: String,
+    /// Folder path of the originating request at send time (empty =
+    /// draft). Used to look the request back up for history/extractors.
+    folder_path: Vec<String>,
 }
 
 struct InFlightCollectionRun {
@@ -263,6 +270,11 @@ struct ApiClient {
     /// e.g. "`data.json` was corrupted — backed up to …". Cleared
     /// after it fires.
     startup_warning: Option<String>,
+    /// True when startup found `data.json` unreadable AND couldn't
+    /// sideline it — saving is disabled so autosave never overwrites
+    /// the user's real data with a fresh empty workspace. Cleared by a
+    /// successful backup restore.
+    saving_disabled: bool,
     /// Background update-check receiver. Set on startup via
     /// `spawn_update_check`; drained on each `update()` frame.
     update_check_rx: Option<std::sync::mpsc::Receiver<UpdateCheckMessage>>,
@@ -444,23 +456,41 @@ impl Default for ApiClient {
         // A corrupted file has already been renamed to a `.broken.<ts>`
         // backup by `load_state`; we surface the path via
         // `startup_warning` so the user sees a toast on first frame.
+        let mut saving_disabled = false;
         let (state, startup_warning) = match Self::load_state(&storage_path) {
             LoadOutcome::Ok(s) => (*s, None),
             LoadOutcome::Fresh => (Self::fresh_state(), None),
             LoadOutcome::Corrupted { backup_path, error } => {
                 eprintln!(
-                    "rusty-requester: data.json was corrupted ({}). Backed up to {}.",
+                    "rusty-requester: data.json was unusable ({}). Backed up to {}.",
                     error,
                     backup_path.display()
                 );
                 (
                     Self::fresh_state(),
                     Some(format!(
-                        "data.json was corrupted — backed up to {}",
+                        "data.json was unusable — backed up to {}",
                         backup_path
                             .file_name()
                             .and_then(|s| s.to_str())
-                            .unwrap_or("a .broken.* file")
+                            .unwrap_or("a backup file")
+                    )),
+                )
+            }
+            LoadOutcome::Unreadable { error } => {
+                // File is still in place but we couldn't read it or
+                // move it aside. Never autosave over it — that would
+                // destroy the user's data.
+                eprintln!(
+                    "rusty-requester: data.json could not be read ({}); saving disabled.",
+                    error
+                );
+                saving_disabled = true;
+                (
+                    Self::fresh_state(),
+                    Some(format!(
+                        "data.json could not be read ({}) — saving disabled to protect your data",
+                        error
                     )),
                 )
             }
@@ -556,6 +586,7 @@ impl Default for ApiClient {
             pending_export_decision: None,
             pending_clipboard: None,
             startup_warning: None,
+            saving_disabled,
             update_check_rx: None,
             update_available: None,
             show_update_modal: false,
@@ -642,15 +673,86 @@ fn restored_active_tab(open_tabs: &[OpenTab], active_tab_id: Option<&str>) -> Op
     by_id.or_else(|| open_tabs.first().cloned())
 }
 
+/// Depth-first scan for a request id anywhere under `folder`, ignoring
+/// folder paths — fallback for when a stored path has gone stale (e.g.
+/// the request was moved while a send was in flight).
+fn find_request_by_id_anywhere(folder: &Folder, request_id: &str) -> Option<Request> {
+    if let Some(r) = folder.requests.iter().find(|r| r.id == request_id) {
+        return Some(r.clone());
+    }
+    folder
+        .subfolders
+        .iter()
+        .find_map(|f| find_request_by_id_anywhere(f, request_id))
+}
+
+/// Build a history entry from the originating request's identity and
+/// the terminal response. `time_ms` comes from the numeric `total_ms`
+/// — the display string ("123 ms", "123 ms · 7 events") is for humans
+/// and doesn't parse as a bare integer.
+fn history_entry_for(method: HttpMethod, url: String, r: &ResponseData) -> HistoryEntry {
+    let mut preview = r.body.clone();
+    if preview.len() > 256 {
+        // Walk back to the nearest UTF-8 char boundary ≤ 256 — a
+        // raw truncate(256) panics when byte 256 lands mid-codepoint
+        // (e.g. a response body with an emoji straddling the cut).
+        let mut cut = 256;
+        while !preview.is_char_boundary(cut) {
+            cut -= 1;
+        }
+        preview.truncate(cut);
+        preview.push('…');
+    }
+    HistoryEntry {
+        id: Uuid::new_v4().to_string(),
+        timestamp: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0),
+        method,
+        url,
+        status: r.status.clone(),
+        time_ms: r.total_ms,
+        response_preview: preview,
+    }
+}
+
+/// Evaluate a list of assertions row-by-row against a response.
+/// Disabled rows and the editor's trailing ghost row (empty expression
+/// AND empty expected) yield `None` so badge indices stay aligned.
+fn evaluate_assertion_rows(
+    assertions: &[ResponseAssertion],
+    status: &str,
+    body: &str,
+    headers: &[(String, String)],
+) -> Vec<Option<AssertionResult>> {
+    assertions
+        .iter()
+        .map(|a| {
+            if !a.enabled {
+                return None;
+            }
+            if a.expression.trim().is_empty() && a.expected.trim().is_empty() {
+                return None;
+            }
+            Some(assertion::evaluate(a, status, body, headers))
+        })
+        .collect()
+}
+
 /// Outcome of loading `data.json` at startup. `Fresh` means the file
 /// didn't exist yet (first launch); `Corrupted` means it existed but
-/// couldn't be parsed and has been sidelined to a backup file — the
-/// caller should surface the backup path so the user knows where
-/// their old data went.
+/// couldn't be read or parsed and has been sidelined to a backup file
+/// — the caller should surface the backup path so the user knows
+/// where their old data went. `Unreadable` means the file is still in
+/// place but unusable (read failed AND the sideline rename failed) —
+/// the caller must disable saving so autosave can never overwrite the
+/// user's real data with a fresh empty workspace.
 enum LoadOutcome {
     Ok(Box<AppState>),
     Fresh,
     Corrupted { backup_path: PathBuf, error: String },
+    Unreadable { error: String },
 }
 
 impl ApiClient {
@@ -679,27 +781,55 @@ impl ApiClient {
         }
     }
 
+    /// Move an unusable data file aside to a timestamped backup
+    /// (`data.json.<label>.<ts>`) so the next save can never silently
+    /// clobber the user's original bytes. Timestamped so repeated
+    /// failures don't overwrite each other. Returns the backup path,
+    /// or `None` if the rename itself failed (file still in place).
+    fn sideline_data_file(path: &Path, label: &str) -> Option<PathBuf> {
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let backup = path.with_extension(format!("json.{}.{}", label, ts));
+        fs::rename(path, &backup).ok().map(|_| backup)
+    }
+
     fn load_state(path: &PathBuf) -> LoadOutcome {
         let data = match fs::read_to_string(path) {
             Ok(d) => d,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return LoadOutcome::Fresh,
-            Err(_) => return LoadOutcome::Fresh, // treat other IO errors as fresh; worst case is an empty workspace
+            // Any other IO error (permissions, EBUSY, …) must NOT look
+            // like a first launch — going silently fresh would let the
+            // next autosave overwrite the user's real data with an
+            // empty workspace. Sideline the unreadable file like the
+            // corrupt-JSON path below; if even that fails, start with
+            // saving disabled.
+            Err(e) => {
+                return match Self::sideline_data_file(path, "unreadable") {
+                    Some(backup) => LoadOutcome::Corrupted {
+                        backup_path: backup,
+                        error: format!("could not read file: {}", e),
+                    },
+                    None => LoadOutcome::Unreadable {
+                        error: e.to_string(),
+                    },
+                };
+            }
         };
         match serde_json::from_str::<AppState>(&data) {
             Ok(state) => LoadOutcome::Ok(Box::new(state)),
             Err(e) => {
                 // Move the broken file aside so we never silently clobber
-                // the user's data on the next save. Timestamped so
-                // repeated corruptions don't overwrite each other.
-                let ts = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_secs())
-                    .unwrap_or(0);
-                let backup = path.with_extension(format!("json.broken.{}", ts));
-                let _ = fs::rename(path, &backup);
-                LoadOutcome::Corrupted {
-                    backup_path: backup,
-                    error: e.to_string(),
+                // the user's data on the next save.
+                match Self::sideline_data_file(path, "broken") {
+                    Some(backup) => LoadOutcome::Corrupted {
+                        backup_path: backup,
+                        error: e.to_string(),
+                    },
+                    None => LoadOutcome::Unreadable {
+                        error: e.to_string(),
+                    },
                 }
             }
         }
@@ -712,6 +842,12 @@ impl ApiClient {
     /// needs since `rename` there uses `MoveFileEx` with replace-existing.
     fn save_state(&mut self) {
         use std::io::Write;
+        // Startup found data.json unreadable and couldn't sideline it —
+        // writing now would overwrite the user's real data with this
+        // fresh empty workspace. The startup toast already explained.
+        if self.saving_disabled {
+            return;
+        }
         // Sync the active-tab id into state so the workspace restores to
         // this tab on next launch.
         self.state.active_tab_id = self.selected_request_id.clone();
@@ -722,11 +858,16 @@ impl ApiClient {
             return;
         };
         let tmp = self.storage_path.with_extension("json.tmp");
-        let Ok(mut f) = fs::File::create(&tmp) else {
-            return;
+        let mut f = match fs::File::create(&tmp) {
+            Ok(f) => f,
+            Err(e) => {
+                self.show_toast(format!("Save failed: {}", e));
+                return;
+            }
         };
-        if f.write_all(json.as_bytes()).is_err() {
+        if let Err(e) = f.write_all(json.as_bytes()) {
             let _ = fs::remove_file(&tmp);
+            self.show_toast(format!("Save failed: {}", e));
             return;
         }
         // fsync so the rename target's data is durable on disk before
@@ -734,7 +875,18 @@ impl ApiClient {
         // can still leave a zero-length file.
         let _ = f.sync_all();
         drop(f);
-        let _ = fs::rename(&tmp, &self.storage_path);
+        // A failed swap means data.json still holds the previous save —
+        // the user must know their latest changes never hit disk.
+        if let Err(e) = fs::rename(&tmp, &self.storage_path) {
+            eprintln!(
+                "rusty-requester: failed to swap {} into place: {}",
+                tmp.display(),
+                e
+            );
+            let _ = fs::remove_file(&tmp);
+            self.show_toast(format!("Save failed: {}", e));
+            return;
+        }
         self.export_file_backed_collections_silent();
     }
 
@@ -752,19 +904,40 @@ impl ApiClient {
 
     fn get_current_request(&self) -> Option<Request> {
         let req_id = self.selected_request_id.as_ref()?;
-        // Draft path: selected_folder_path is empty → look up in drafts
-        if self.selected_folder_path.is_empty() {
-            return self.state.drafts.iter().find(|r| &r.id == req_id).cloned();
+        self.find_request(&self.selected_folder_path, req_id)
+    }
+
+    /// Look up a request by folder path + id (empty path = drafts).
+    /// Falls back to a whole-tree scan by id so a response that was in
+    /// flight while its request moved folders still finds its owner.
+    fn find_request(&self, folder_path: &[String], request_id: &str) -> Option<Request> {
+        if folder_path.is_empty() {
+            if let Some(r) = self.state.drafts.iter().find(|r| r.id == request_id) {
+                return Some(r.clone());
+            }
+        } else if let Some(root) = self.state.folders.iter().find(|f| f.id == folder_path[0]) {
+            let mut folder = Some(root);
+            for id in &folder_path[1..] {
+                folder = folder.and_then(|f| f.subfolders.iter().find(|s| &s.id == id));
+            }
+            if let Some(r) =
+                folder.and_then(|f| f.requests.iter().find(|r| r.id == request_id).cloned())
+            {
+                return Some(r);
+            }
         }
-        let mut folder = self
-            .state
+        // Stale path — scan everything by id before giving up.
+        self.state
             .folders
             .iter()
-            .find(|f| f.id == self.selected_folder_path[0])?;
-        for id in &self.selected_folder_path[1..] {
-            folder = folder.subfolders.iter().find(|f| &f.id == id)?;
-        }
-        folder.requests.iter().find(|r| &r.id == req_id).cloned()
+            .find_map(|f| find_request_by_id_anywhere(f, request_id))
+            .or_else(|| {
+                self.state
+                    .drafts
+                    .iter()
+                    .find(|r| r.id == request_id)
+                    .cloned()
+            })
     }
 
     fn get_saved_request_by_id(&self, request_id: &str) -> Option<Request> {
@@ -866,8 +1039,13 @@ impl ApiClient {
 
     fn send_request(&mut self) {
         // Already sending — treat second Send as a no-op. Cancel has
-        // its own button; we don't want double-firing to abort.
-        if self.request_in_flight.is_some() {
+        // its own button; we don't want double-firing to abort. From a
+        // different tab there's no spinner explaining the no-op, so
+        // say why nothing happened.
+        if let Some(f) = &self.request_in_flight {
+            if self.selected_request_id.as_deref() != Some(f.request_id.as_str()) {
+                self.show_toast("Another request is still in flight");
+            }
             return;
         }
         self.commit_editing();
@@ -899,6 +1077,8 @@ impl ApiClient {
             // event and a Final at the end; non-SSE just sends one
             // Final.
             let tx_progress = tx.clone();
+            let origin_request_id = request.id.clone();
+            let origin_folder_path = self.selected_folder_path.clone();
             let handle = self.http_runtime.spawn(async move {
                 let r = net::execute_request_async(
                     client,
@@ -910,7 +1090,12 @@ impl ApiClient {
                 .await;
                 let _ = tx.send(net::RequestUpdate::Final(r));
             });
-            self.request_in_flight = Some(InFlightRequest { handle, rx });
+            self.request_in_flight = Some(InFlightRequest {
+                handle,
+                rx,
+                request_id: origin_request_id,
+                folder_path: origin_folder_path,
+            });
         }
     }
 
@@ -933,6 +1118,97 @@ impl ApiClient {
         self.response_total_ms = r.total_ms;
     }
 
+    /// Fold a response snapshot into `response_cache` for a tab that is
+    /// open but not active — preserves the SSE events accumulated so
+    /// far and the stashed diff snapshot for that tab.
+    fn cache_response_snapshot(
+        &mut self,
+        request_id: &str,
+        r: &ResponseData,
+        new_events: Vec<crate::sse::SseEvent>,
+    ) {
+        let (previous_text, mut streaming_events, assertion_results) =
+            match self.response_cache.remove(request_id) {
+                Some(prior) => (
+                    prior.previous_text,
+                    prior.streaming_events,
+                    prior.assertion_results,
+                ),
+                None => (None, Vec::new(), Vec::new()),
+            };
+        streaming_events.extend(new_events);
+        self.response_cache.insert(
+            request_id.to_string(),
+            CachedResponse {
+                text: r.body.clone(),
+                status: r.status.clone(),
+                time: r.time.clone(),
+                headers: r.headers.clone(),
+                headers_bytes: r.response_headers_bytes,
+                body_bytes: r.response_body_bytes,
+                prepare_ms: r.prepare_ms,
+                waiting_ms: r.waiting_ms,
+                download_ms: r.download_ms,
+                total_ms: r.total_ms,
+                previous_text,
+                streaming_events,
+                assertion_results,
+            },
+        );
+    }
+
+    /// Route a terminal response back to the tab that started the send.
+    /// The user may have switched tabs (apply to the originating tab's
+    /// cache, not the live view) or closed it entirely (drop the
+    /// response). History and extractors always use the ORIGINATING
+    /// request — never whatever tab is active when the response lands.
+    fn finish_in_flight_request(
+        &mut self,
+        origin_id: String,
+        origin_path: Vec<String>,
+        r: ResponseData,
+    ) {
+        let origin_open = self
+            .state
+            .open_tabs
+            .iter()
+            .any(|t| t.request_id == origin_id);
+        if !origin_open {
+            // Tab closed mid-flight — the user discarded this request;
+            // its response has nowhere to go. No history, no extractor
+            // writes, no cache entry.
+            self.response_cache.remove(&origin_id);
+            return;
+        }
+        let req = self.find_request(&origin_path, &origin_id);
+        let is_active = self.selected_request_id.as_deref() == Some(origin_id.as_str());
+        if is_active {
+            self.apply_response_snapshot(&r);
+            self.is_loading = false;
+        } else {
+            // Background tab: land the response in its cache slot so
+            // switching back shows it — live fields belong to the
+            // active tab.
+            self.cache_response_snapshot(&origin_id, &r, Vec::new());
+            if let Some(req) = &req {
+                let rows = evaluate_assertion_rows(&req.assertions, &r.status, &r.body, &r.headers);
+                if let Some(snap) = self.response_cache.get_mut(&origin_id) {
+                    snap.assertion_results = rows;
+                }
+            }
+        }
+        self.merge_cookies_into_env(r.set_cookies.clone());
+        if let Some(req) = &req {
+            self.push_history_entry(req, &r);
+            self.apply_response_extractors(req, &r);
+        }
+        if is_active {
+            // Assertions on the active tab evaluate the live editor
+            // rows (uncommitted edits included), exactly as before.
+            self.apply_response_assertions();
+        }
+    }
+
     /// Abort the in-flight request (if any). Drops the tokio task so
     /// the hyper/TCP connection unwinds immediately; surfaces a
     /// "Cancelled" status so the user sees their click took effect.
@@ -940,10 +1216,20 @@ impl ApiClient {
         if let Some(f) = self.request_in_flight.take() {
             f.handle.abort();
             self.is_loading = false;
-            self.response_status = "Cancelled".to_string();
-            self.response_text = "Request was cancelled by the user.".to_string();
-            self.folded_response_lines.clear();
-            self.response_time = String::new();
+            // Only clobber the live response fields if the view is
+            // showing the request being cancelled — cancelling a send
+            // that started on another tab must not touch the active
+            // tab's response.
+            if self.selected_request_id.as_deref() == Some(f.request_id.as_str()) {
+                self.response_status = "Cancelled".to_string();
+                self.response_text = "Request was cancelled by the user.".to_string();
+                self.folded_response_lines.clear();
+                self.response_time = String::new();
+            } else {
+                // Drop the stashed "Loading..." snapshot so the origin
+                // tab doesn't restore to a phantom in-flight view.
+                self.response_cache.remove(&f.request_id);
+            }
             self.show_toast("Request cancelled");
         }
     }
@@ -1098,10 +1384,11 @@ impl ApiClient {
         self.save_state();
     }
 
-    fn apply_response_extractors(&mut self) {
-        let Some(req) = self.get_current_request() else {
-            return;
-        };
+    /// Run the ORIGINATING request's extractors against its own
+    /// response — takes both explicitly so a response landing after a
+    /// tab switch never runs the new tab's extractors against a
+    /// foreign body (which would pollute environment variables).
+    fn apply_response_extractors(&mut self, req: &Request, r: &ResponseData) {
         if req.extractors.is_empty() {
             return;
         }
@@ -1109,9 +1396,9 @@ impl ApiClient {
             return;
         };
 
-        let body = self.response_text.clone();
-        let headers = self.response_headers.clone();
-        let status = self.response_status.clone();
+        let body = &r.body;
+        let headers = &r.headers;
+        let status = &r.status;
 
         let mut writes: Vec<(String, String)> = Vec::new();
         let mut missed: Vec<String> = Vec::new();
@@ -1124,7 +1411,7 @@ impl ApiClient {
                 continue;
             }
             let value = match ex.source {
-                ExtractorSource::Body => extract::eval_body_path(&body, ex.expression.trim()),
+                ExtractorSource::Body => extract::eval_body_path(body, ex.expression.trim()),
                 ExtractorSource::Header => headers
                     .iter()
                     .find(|(k, _)| k.eq_ignore_ascii_case(ex.expression.trim()))
@@ -1135,7 +1422,7 @@ impl ApiClient {
                     status
                         .split_whitespace()
                         .next()
-                        .unwrap_or(&status)
+                        .unwrap_or(status)
                         .to_string(),
                 ),
             };
@@ -1180,22 +1467,11 @@ impl ApiClient {
         let body = self.response_text.clone();
         let headers = self.response_headers.clone();
 
-        self.assertion_results = self
-            .editing_assertions
-            .iter()
-            .map(|a| {
-                if !a.enabled {
-                    return None;
-                }
-                // Skip the trailing ghost row the editor auto-appends so
-                // users can type a new assertion — empty expression AND
-                // empty expected means "not configured yet".
-                if a.expression.trim().is_empty() && a.expected.trim().is_empty() {
-                    return None;
-                }
-                Some(assertion::evaluate(a, &status, &body, &headers))
-            })
-            .collect();
+        // Ghost-row / disabled-row skipping lives in
+        // `evaluate_assertion_rows`, shared with the background-tab
+        // path in `finish_in_flight_request`.
+        self.assertion_results =
+            evaluate_assertion_rows(&self.editing_assertions, &status, &body, &headers);
 
         let (_pass, fail, err) = self
             .assertion_results
@@ -1220,39 +1496,10 @@ impl ApiClient {
         }
     }
 
-    fn push_history_entry(&mut self) {
-        let Some(req) = self.get_current_request() else {
-            return;
-        };
-        let mut preview = self.response_text.clone();
-        if preview.len() > 256 {
-            // Walk back to the nearest UTF-8 char boundary ≤ 256 — a
-            // raw truncate(256) panics when byte 256 lands mid-codepoint
-            // (e.g. a response body with an emoji straddling the cut).
-            let mut cut = 256;
-            while !preview.is_char_boundary(cut) {
-                cut -= 1;
-            }
-            preview.truncate(cut);
-            preview.push('…');
-        }
-        let time_ms = self
-            .response_time
-            .trim_end_matches("ms")
-            .parse::<u64>()
-            .unwrap_or(0);
-        let entry = HistoryEntry {
-            id: Uuid::new_v4().to_string(),
-            timestamp: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs() as i64)
-                .unwrap_or(0),
-            method: req.method,
-            url: req.url,
-            status: self.response_status.clone(),
-            time_ms,
-            response_preview: preview,
-        };
+    /// Record a history entry for the ORIGINATING request + its own
+    /// response — never the tab that happens to be active on arrival.
+    fn push_history_entry(&mut self, req: &Request, r: &ResponseData) {
+        let entry = history_entry_for(req.method.clone(), req.url.clone(), r);
         self.state.history.insert(0, entry);
         const MAX: usize = 200;
         if self.state.history.len() > MAX {
@@ -1526,9 +1773,16 @@ impl ApiClient {
     /// request id, or clear everything if there's no cached entry.
     fn restore_response_for(&mut self, request_id: Option<&str>) {
         let Some(id) = request_id else {
+            self.is_loading = false;
             self.clear_response_fields();
             return;
         };
+        // The spinner tracks the in-flight ORIGIN, not the previous
+        // tab — switching away hides it, switching back restores it.
+        self.is_loading = self
+            .request_in_flight
+            .as_ref()
+            .is_some_and(|f| f.request_id == id);
         if let Some(snap) = self.response_cache.get(id).cloned() {
             self.response_text = snap.text;
             self.folded_response_lines.clear();
@@ -1611,6 +1865,9 @@ impl ApiClient {
         // Closed tab's cached response is no longer reachable — drop
         // it so the cache doesn't leak memory across long sessions.
         self.response_cache.remove(&closing.request_id);
+        // If this tab's request is still in flight, abort it — the
+        // response has nowhere to land anymore.
+        self.abort_in_flight_if_tab_closed();
         if was_active {
             if self.state.open_tabs.is_empty() {
                 self.clear_selection();
@@ -1623,6 +1880,28 @@ impl ApiClient {
                 let new_id = self.selected_request_id.clone();
                 self.restore_response_for(new_id.as_deref());
             }
+        }
+    }
+
+    /// Abort the in-flight send if its originating tab is no longer
+    /// open — a closed tab's response has nowhere to land, so keeping
+    /// the connection alive only wastes time and bytes. Called after
+    /// any bulk tab-close mutation.
+    fn abort_in_flight_if_tab_closed(&mut self) {
+        let origin_open = match &self.request_in_flight {
+            Some(f) => self
+                .state
+                .open_tabs
+                .iter()
+                .any(|t| t.request_id == f.request_id),
+            None => return,
+        };
+        if !origin_open {
+            if let Some(f) = self.request_in_flight.take() {
+                f.handle.abort();
+                self.response_cache.remove(&f.request_id);
+            }
+            self.is_loading = false;
         }
     }
 
@@ -1659,6 +1938,7 @@ impl ApiClient {
             self.selected_request_id = Some(keep.request_id);
             self.load_request_for_editing();
         }
+        self.abort_in_flight_if_tab_closed();
     }
 
     fn close_all_tabs(&mut self) {
@@ -1682,6 +1962,7 @@ impl ApiClient {
             self.selected_request_id = Some(first.request_id);
             self.load_request_for_editing();
         }
+        self.abort_in_flight_if_tab_closed();
     }
 
     /// Flattened list of `(folder_path, request_id)` for every
@@ -1888,6 +2169,7 @@ impl ApiClient {
                 }
             }
         }
+        self.abort_in_flight_if_tab_closed();
     }
 
     fn clear_selection(&mut self) {
@@ -2011,10 +2293,13 @@ impl ApiClient {
                     }
                     self.confirm_restore_backup_path = None;
                     self.show_backup_modal = false;
+                    // A good restore replaces whatever startup couldn't
+                    // read — safe to save again.
+                    self.saving_disabled = false;
                     self.show_toast("Workspace restored");
                 }
                 LoadOutcome::Fresh => self.show_toast("Restore produced an empty workspace"),
-                LoadOutcome::Corrupted { error, .. } => {
+                LoadOutcome::Corrupted { error, .. } | LoadOutcome::Unreadable { error } => {
                     self.show_toast(format!("Restore failed: {}", error));
                 }
             },
@@ -2532,21 +2817,30 @@ impl eframe::App for ApiClient {
                     snapshot,
                     new_events,
                 }) => {
-                    self.apply_response_snapshot(&snapshot);
-                    self.streaming_events.extend(new_events);
+                    let origin_id = f.request_id.clone();
+                    if self.selected_request_id.as_deref() == Some(origin_id.as_str()) {
+                        self.apply_response_snapshot(&snapshot);
+                        self.streaming_events.extend(new_events);
+                    } else if self
+                        .state
+                        .open_tabs
+                        .iter()
+                        .any(|t| t.request_id == origin_id)
+                    {
+                        // Originating tab is open in the background —
+                        // fold the stream into its cache slot so
+                        // switching back shows the events so far.
+                        self.cache_response_snapshot(&origin_id, &snapshot, new_events);
+                    }
                     // Keep animating; don't clear is_loading — the
                     // stream is still live.
                     ctx.request_repaint();
                 }
                 Ok(net::RequestUpdate::Final(r)) => {
-                    self.apply_response_snapshot(&r);
-                    self.is_loading = false;
-                    let cookies_to_merge = r.set_cookies.clone();
+                    let origin_id = f.request_id.clone();
+                    let origin_path = f.folder_path.clone();
                     self.request_in_flight = None;
-                    self.merge_cookies_into_env(cookies_to_merge);
-                    self.push_history_entry();
-                    self.apply_response_extractors();
-                    self.apply_response_assertions();
+                    self.finish_in_flight_request(origin_id, origin_path, r);
                     break;
                 }
                 Err(std::sync::mpsc::TryRecvError::Empty) => {
@@ -3262,5 +3556,179 @@ mod tests {
             latest_tag_from_json(&json, "Update metadata").unwrap(),
             "v0.27.2"
         );
+    }
+
+    fn sample_response(status: &str, body: &str, time: &str, total_ms: u64) -> ResponseData {
+        ResponseData {
+            body: body.to_string(),
+            status: status.to_string(),
+            time: time.to_string(),
+            headers: vec![],
+            set_cookies: vec![],
+            response_headers_bytes: 0,
+            response_body_bytes: 0,
+            request_headers_bytes: 0,
+            request_body_bytes: 0,
+            prepare_ms: 0,
+            waiting_ms: 0,
+            download_ms: 0,
+            total_ms,
+        }
+    }
+
+    #[test]
+    fn history_entry_time_ms_comes_from_numeric_total_not_display_string() {
+        // Non-SSE display is "123 ms" (with a space) and SSE is
+        // "456 ms · 7 events" — neither parses as a bare integer,
+        // which is why time_ms must come from the numeric total_ms.
+        let plain = sample_response("200 OK", "hi", "123 ms", 123);
+        let e = history_entry_for(HttpMethod::GET, "http://x.test".to_string(), &plain);
+        assert_eq!(e.time_ms, 123);
+        assert_eq!(e.url, "http://x.test");
+        assert_eq!(e.status, "200 OK");
+
+        let sse = sample_response("200 OK", "data", "456 ms · 7 events", 456);
+        let e = history_entry_for(HttpMethod::GET, "http://x.test".to_string(), &sse);
+        assert_eq!(e.time_ms, 456);
+    }
+
+    #[test]
+    fn history_entry_preview_truncates_on_char_boundary() {
+        // 400 bytes of 2-byte chars — byte 256 lands mid-codepoint.
+        let body = "é".repeat(200);
+        let r = sample_response("200 OK", &body, "1 ms", 1);
+        let e = history_entry_for(HttpMethod::GET, String::new(), &r);
+        assert!(e.response_preview.ends_with('…'));
+        assert!(e.response_preview.len() <= 256 + '…'.len_utf8());
+    }
+
+    fn temp_data_path() -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("rusty-requester-test-{}", Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        dir.join("data.json")
+    }
+
+    #[test]
+    fn load_state_missing_file_is_fresh() {
+        let path = temp_data_path();
+        assert!(matches!(ApiClient::load_state(&path), LoadOutcome::Fresh));
+    }
+
+    #[test]
+    fn load_state_sidelines_corrupt_json_instead_of_going_fresh() {
+        let path = temp_data_path();
+        fs::write(&path, "{ not json").unwrap();
+        match ApiClient::load_state(&path) {
+            LoadOutcome::Corrupted { backup_path, .. } => {
+                assert!(!path.exists(), "broken file must be renamed aside");
+                assert!(backup_path.exists(), "backup must hold the original bytes");
+            }
+            _ => panic!("expected Corrupted for unparseable JSON"),
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn load_state_io_error_never_goes_fresh() {
+        use std::os::unix::fs::PermissionsExt;
+        let path = temp_data_path();
+        fs::write(&path, "{}").unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o000)).unwrap();
+        // Running as root ignores permission bits — nothing to test then.
+        if fs::read_to_string(&path).is_ok() {
+            return;
+        }
+        match ApiClient::load_state(&path) {
+            // Sidelined: original moved to a timestamped backup.
+            LoadOutcome::Corrupted { backup_path, .. } => {
+                assert!(!path.exists());
+                assert!(backup_path.exists());
+            }
+            // Rename also failed — saving gets disabled, but the file
+            // stays put. Either way it must NEVER present as Fresh,
+            // which would let autosave clobber the user's data.
+            LoadOutcome::Unreadable { .. } => {}
+            LoadOutcome::Fresh => panic!("IO error must not present as a fresh first launch"),
+            LoadOutcome::Ok(_) => panic!("unreadable file cannot parse"),
+        }
+    }
+
+    fn sample_request(id: &str) -> Request {
+        Request {
+            id: id.to_string(),
+            name: id.to_string(),
+            description: String::new(),
+            method: HttpMethod::GET,
+            url: "http://example.test".to_string(),
+            query_params: vec![],
+            path_params: vec![],
+            headers: vec![],
+            cookies: vec![],
+            body: String::new(),
+            body_ext: None,
+            auth: Auth::default(),
+            extractors: vec![],
+            assertions: vec![],
+            source: None,
+        }
+    }
+
+    #[test]
+    fn find_request_by_id_anywhere_reaches_nested_subfolders() {
+        let folder = Folder {
+            id: "root".to_string(),
+            name: "root".to_string(),
+            requests: vec![sample_request("top")],
+            subfolders: vec![Folder {
+                id: "sub".to_string(),
+                name: "sub".to_string(),
+                requests: vec![sample_request("nested")],
+                subfolders: vec![],
+                description: String::new(),
+                sync: SyncConfig::default(),
+            }],
+            description: String::new(),
+            sync: SyncConfig::default(),
+        };
+        assert_eq!(
+            find_request_by_id_anywhere(&folder, "nested").map(|r| r.id),
+            Some("nested".to_string())
+        );
+        assert!(find_request_by_id_anywhere(&folder, "missing").is_none());
+    }
+
+    #[test]
+    fn assertion_rows_skip_disabled_and_ghost_rows() {
+        let rows = vec![
+            // Real assertion: status equals 200 — passes.
+            ResponseAssertion {
+                enabled: true,
+                source: AssertionSource::Status,
+                expression: String::new(),
+                op: AssertionOp::Equals,
+                expected: "200".to_string(),
+            },
+            // Disabled — skipped.
+            ResponseAssertion {
+                enabled: false,
+                source: AssertionSource::Status,
+                expression: String::new(),
+                op: AssertionOp::Equals,
+                expected: "500".to_string(),
+            },
+            // Trailing ghost row — skipped.
+            ResponseAssertion {
+                enabled: true,
+                source: AssertionSource::Body,
+                expression: String::new(),
+                op: AssertionOp::Equals,
+                expected: String::new(),
+            },
+        ];
+        let results = evaluate_assertion_rows(&rows, "200 OK", "{}", &[]);
+        assert_eq!(results.len(), 3);
+        assert_eq!(results[0], Some(AssertionResult::Pass));
+        assert_eq!(results[1], None);
+        assert_eq!(results[2], None);
     }
 }
