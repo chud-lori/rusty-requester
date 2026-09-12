@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Rusty Requester — a native, offline, low-RAM API client</title>
-<meta name="description" content="A Postman alternative that doesn't chew through hundreds of MB of RAM. Native Rust + egui, offline collections, cURL import, response inspector, and a data-driven Collection Runner." />
+<title>Rusty Requester</title>
+<meta name="description" content="Rusty Requester is a native, offline API client built with Rust and egui. Install instructions, keyboard shortcuts, actions palette, settings reference, and file locations." />
 <link rel="icon" type="image/svg+xml" href="./icon.svg" />
 
-<meta property="og:title" content="Rusty Requester — native, offline, low-RAM API client" />
-<meta property="og:description" content="Postman alternative without the Electron tax. Native Rust + egui, offline collections, cURL import, response inspector, and data-driven runner reports." />
+<meta property="og:title" content="Rusty Requester" />
+<meta property="og:description" content="A native, offline API client built with Rust and egui. Install instructions and a reference for shortcuts, actions, settings, and file locations." />
 <meta property="og:type" content="website" />
 <meta property="og:url" content="https://chud-lori.github.io/rusty-requester/" />
 <meta property="og:image" content="https://chud-lori.github.io/rusty-requester/social-card.png" />
@@ -18,420 +18,998 @@
 <meta name="twitter:image" content="https://chud-lori.github.io/rusty-requester/social-card.png" />
 
 <style>
+/* ---------------------------------------------------------------
+   Palette: lifted from the application's own theme module so the
+   site and the app read as one product.
+     dark  -> src/theme.rs:11-21, accent src/theme.rs:28
+     light -> src/theme.rs:207-212, accent src/theme.rs:29
+   One deliberate deviation, recorded in DESIGN.md: light --muted is
+   darkened from the app's #6B7280 (4.35:1 on this canvas, below AA)
+   to #5C6472 (5.37:1). The app paints muted text on white panels,
+   a web page cannot assume that.
+   --on-accent differs per theme because white on the dark accent
+   measures 3.6:1 and fails AA for normal text.
+   --------------------------------------------------------------- */
 :root {
-  --bg: #0b0b0d;
-  --surface: #15151a;
-  --surface-2: #1c1c22;
-  --border: #2a2a32;
-  --text: #e8e8e8;
-  --muted: #8b8b95;
-  --accent: #d97a4e;
-  --accent-dim: #b56235;
-  --good: #6fbf6a;
-  --bad: #e06464;
+  --canvas: #121316;
+  --surface: #1B1D22;
+  --raised: #272B32;
+  --border: #404652;
+  --text: #F4F7FB;
+  --muted: #A4ACB9;
+  --accent: #E25C3E;
+  --on-accent: #121316;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", "Helvetica Neue", Arial, sans-serif;
+  --measure: 68ch;
+  --radius-s: 4px;
+  --radius-m: 8px;
+  color-scheme: dark;
+}
+/* Light tokens are declared twice on purpose: once for a visitor whose
+   system asks for light and who has made no choice here (so the page is
+   correct before any script runs, and correct with scripting off), and
+   once for an explicit choice, which must win in both directions. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --canvas: #F1F3F6;
+    --surface: #FFFFFF;
+    --raised: #F6F8FB;
+    --border: #DADFE6;
+    --text: #1F2937;
+    --muted: #5C6472;
+    --accent: #C43C28;
+    --on-accent: #FFFFFF;
+    color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --canvas: #F1F3F6;
+  --surface: #FFFFFF;
+  --raised: #F6F8FB;
+  --border: #DADFE6;
+  --text: #1F2937;
+  --muted: #5C6472;
+  --accent: #C43C28;
+  --on-accent: #FFFFFF;
+  color-scheme: light;
 }
 
 * { box-sizing: border-box; }
-html, body { margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+
 body {
-  background: var(--bg);
+  margin: 0;
+  background: var(--canvas);
   color: var(--text);
   font-family: var(--sans);
   font-size: 16px;
-  line-height: 1.55;
+  line-height: 1.6;
   -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
 }
-a { color: var(--accent); text-decoration: none; }
-a:hover { text-decoration: underline; }
-h1, h2, h3 { line-height: 1.2; font-weight: 600; letter-spacing: -0.01em; }
-h2 { font-size: 1.7rem; margin: 0 0 1rem; }
-h3 { font-size: 1.05rem; margin: 0 0 0.4rem; }
-p { margin: 0 0 1rem; color: var(--text); }
-.muted { color: var(--muted); }
-code, pre { font-family: var(--mono); }
-.container { max-width: 960px; margin: 0 auto; padding: 0 24px; }
 
-/* HERO */
-.hero {
-  padding: 96px 0 64px;
-  text-align: center;
-  border-bottom: 1px solid var(--border);
-}
-.hero img { width: 96px; height: 96px; display: block; margin: 0 auto 24px; }
-.hero h1 {
-  font-size: clamp(2.4rem, 5vw, 3.6rem);
-  margin: 0 0 12px;
-  letter-spacing: -0.02em;
-}
-.hero .tagline {
-  font-size: clamp(1.05rem, 2vw, 1.25rem);
-  color: var(--muted);
-  max-width: 620px;
-  margin: 0 auto 28px;
-}
-.hero .tagline b { color: var(--text); font-weight: 600; }
+a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+a:hover { text-decoration-thickness: 2px; }
 
-.cta-row { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-bottom: 12px; }
-.btn {
-  display: inline-block;
-  padding: 10px 18px;
-  border-radius: 6px;
-  font-weight: 500;
-  font-size: 0.95rem;
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+code, pre, kbd, .mono { font-family: var(--mono); }
+code {
+  font-size: 0.9em;
+  background: var(--raised);
   border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  padding: 0.05em 0.35em;
+  /* Short identifiers like --version read badly when a line break lands
+     on their internal hyphen, so inline code holds together by default.
+     Anything long enough to outrun a phone column opts back out. */
+  white-space: nowrap;
+}
+code.brk { white-space: normal; overflow-wrap: anywhere; }
+
+.wrap { max-width: 1000px; margin: 0 auto; padding-inline: 20px; }
+.prose { max-width: var(--measure); }
+
+.skip {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  background: var(--accent);
+  color: var(--on-accent);
+  padding: 12px 18px;
+  z-index: 10;
+  text-decoration: none;
+  font-weight: 600;
+}
+.skip:focus { left: 0; }
+
+/* --- Masthead ------------------------------------------------- */
+.masthead {
+  border-bottom: 1px solid var(--border);
+  padding-block: 28px 22px;
+}
+.masthead-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.masthead img { width: 52px; height: 52px; flex-shrink: 0; }
+.masthead-id { flex: 1 1 320px; min-width: 0; }
+.masthead h1 {
+  font-size: clamp(1.75rem, 4.5vw, 2.3rem);
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  margin: 0 0 4px;
+  font-weight: 650;
+}
+.masthead .lede {
+  margin: 0;
+  color: var(--muted);
+  max-width: 56ch;
+}
+.version {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: var(--text);
+  background: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  padding: 2px 8px;
+  margin-top: 10px;
+}
+
+.theme-btn {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 16px;
   background: var(--surface);
   color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+  font: inherit;
+  font-size: 0.88rem;
   cursor: pointer;
 }
-.btn:hover { border-color: var(--accent); text-decoration: none; }
-.btn-primary {
-  background: var(--accent);
-  color: #fff;
-  border-color: var(--accent);
-}
-.btn-primary:hover { background: var(--accent-dim); border-color: var(--accent-dim); }
+.theme-btn:hover { border-color: var(--accent); }
 
-.install-block {
-  margin: 28px auto 0;
-  max-width: 720px;
-  text-align: left;
+/* --- Nav ------------------------------------------------------- */
+.nav {
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--canvas);
+  z-index: 5;
 }
-.install-block .label {
-  font-size: 0.78rem;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  margin-bottom: 6px;
+.nav ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
 }
-.cmd-box {
+.nav a {
   display: flex;
   align-items: center;
+  min-height: 44px;
+  padding: 0 12px;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 0.9rem;
+  border-bottom: 2px solid transparent;
+}
+.nav a:hover { color: var(--text); border-bottom-color: var(--accent); }
+.nav .ext { margin-left: auto; }
+.nav .ext a { color: var(--accent); }
+
+/* --- Sections -------------------------------------------------- */
+section { padding-block: 44px; border-bottom: 1px solid var(--border); }
+section:last-of-type { border-bottom: none; }
+h2 {
+  font-size: 1.45rem;
+  line-height: 1.2;
+  letter-spacing: -0.015em;
+  margin: 0 0 6px;
+  font-weight: 620;
+  scroll-margin-top: 60px;
+}
+/* Identity motif: the short slab under every section heading is the
+   strike plate from the app mark (docs/icon.svg:47). Repeated once
+   per section, it is the only decorative use of the accent. */
+h2 + .plate {
+  width: 56px;
+  height: 3px;
+  border-radius: 1.5px;
+  background: var(--accent);
+  margin-bottom: 20px;
+}
+h3 {
+  font-size: 1.02rem;
+  margin: 28px 0 8px;
+  font-weight: 620;
+  letter-spacing: -0.005em;
+}
+p { margin: 0 0 14px; }
+.muted { color: var(--muted); }
+.note {
+  color: var(--muted);
+  font-size: 0.9rem;
+  max-width: var(--measure);
+}
+
+/* --- Command block --------------------------------------------- */
+.cmd {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 12px 14px;
-  font-family: var(--mono);
-  font-size: 0.86rem;
-  gap: 12px;
+  border-radius: var(--radius-m);
+  margin: 0 0 12px;
   overflow: hidden;
 }
-.cmd-box code {
-  flex: 1;
-  color: var(--text);
-  white-space: nowrap;
-  overflow-x: auto;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
+.cmd-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--raised);
 }
-.cmd-box code::-webkit-scrollbar { display: none; }
-.copy-btn {
-  flex-shrink: 0;
-  background: transparent;
-  border: 1px solid var(--border);
-  color: var(--muted);
-  padding: 4px 10px;
-  border-radius: 4px;
-  font-family: var(--sans);
+.cmd-head .what {
   font-size: 0.78rem;
+  color: var(--muted);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.cmd-body {
+  padding: 12px;
+  overflow-x: auto;
+}
+.cmd-body code {
+  background: none;
+  border: 0;
+  padding: 0;
+  white-space: pre;
+  font-size: 0.85rem;
+  color: var(--text);
+}
+.copy {
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 0 14px;
+  background: var(--accent);
+  color: var(--on-accent);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-s);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
   cursor: pointer;
 }
-.copy-btn:hover { color: var(--accent); border-color: var(--accent); }
-.copy-btn.copied { color: var(--good); border-color: var(--good); }
-
-/* STATS */
-.stats {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 24px;
-  padding: 48px 0;
-  border-bottom: 1px solid var(--border);
-  text-align: center;
-}
-.stat .num {
-  font-size: 1.6rem;
-  font-weight: 600;
-  color: var(--accent);
-  font-family: var(--mono);
-  letter-spacing: -0.02em;
-}
-.stat .lbl {
-  font-size: 0.85rem;
-  color: var(--muted);
-  margin-top: 4px;
+.copy:hover { filter: brightness(1.08); }
+.copy[data-state="working"] { opacity: 0.7; cursor: progress; }
+.copy[data-state="failed"] {
+  background: transparent;
+  color: var(--text);
+  border-color: var(--border);
 }
 
-/* SECTIONS */
-section.pad { padding: 64px 0; border-bottom: 1px solid var(--border); }
-section.pad:last-of-type { border-bottom: none; }
-
-/* COMPARISON */
-.compare {
-  width: 100%;
-  border-collapse: collapse;
-  margin-top: 1rem;
-  font-size: 0.9rem;
-}
-.compare th, .compare td {
-  padding: 10px 12px;
-  text-align: left;
-  border-bottom: 1px solid var(--border);
-}
-.compare th {
-  color: var(--muted);
-  font-weight: 500;
-  font-size: 0.8rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-.compare td.us { color: var(--accent); font-weight: 500; }
-.compare-wrap { overflow-x: auto; }
-
-/* FEATURES */
-.features {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 20px;
-  margin-top: 1.5rem;
-}
-.feat {
-  background: var(--surface);
+/* --- Tables ---------------------------------------------------- */
+.table-wrap {
+  overflow-x: auto;
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 18px 20px;
+  border-radius: var(--radius-m);
+  background: var(--surface);
+  margin-bottom: 8px;
 }
-.feat h3 { color: var(--text); }
-.feat p { color: var(--muted); margin: 0; font-size: 0.92rem; }
-
-/* INSTALL */
-.install-details ul { padding-left: 1.2rem; color: var(--muted); }
-.install-details li { margin-bottom: 0.4rem; }
-.install-details li b { color: var(--text); font-weight: 500; }
-
-/* FOOTER */
-footer {
-  padding: 32px 0 40px;
-  text-align: center;
+table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+th, td {
+  text-align: left;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+tbody tr:last-child td { border-bottom: 0; }
+th {
   color: var(--muted);
-  font-size: 0.85rem;
+  font-weight: 600;
+  font-size: 0.78rem;
+  white-space: nowrap;
 }
-footer a { color: var(--muted); }
-footer a:hover { color: var(--accent); }
+td.k { white-space: nowrap; }
+kbd {
+  display: inline-block;
+  background: var(--raised);
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: var(--radius-s);
+  padding: 1px 6px;
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+.def { color: var(--muted); font-size: 0.85rem; }
 
-/* RESPONSIVE */
+/* --- Reference filter ------------------------------------------ */
+.filter-bar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+.filter-bar label { font-size: 0.85rem; color: var(--muted); }
+#ref-filter {
+  flex: 1 1 240px;
+  min-height: 44px;
+  padding: 0 12px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+  font: inherit;
+  font-size: 0.92rem;
+}
+#ref-filter::placeholder { color: var(--muted); }
+#ref-clear {
+  min-height: 44px;
+  padding: 0 14px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+#ref-clear:hover { border-color: var(--accent); }
+#ref-count { font-size: 0.85rem; color: var(--muted); }
+.ref-group[hidden] { display: none; }
+tr[hidden] { display: none; }
+#ref-nothing {
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-m);
+  padding: 20px;
+  color: var(--muted);
+  max-width: var(--measure);
+}
+
+/* --- Two-column detail list ------------------------------------ */
+.detail {
+  display: grid;
+  grid-template-columns: minmax(120px, 180px) 1fr;
+  gap: 2px 20px;
+  margin: 0 0 18px;
+  font-size: 0.93rem;
+}
+.detail dt { font-weight: 600; padding: 7px 0; }
+.detail dd { margin: 0; padding: 7px 0; color: var(--muted); }
+.detail dd + dt,
+.detail dt + dd { border-top: 1px solid var(--border); }
+.detail dt:first-of-type, .detail dt:first-of-type + dd { border-top: 0; }
+
+ul.plain { padding-left: 20px; max-width: var(--measure); }
+ul.plain li { margin-bottom: 8px; color: var(--muted); }
+ul.plain li b, ul.plain li strong { color: var(--text); font-weight: 600; }
+
+footer {
+  padding-block: 28px 40px;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+footer p { margin: 0 0 6px; }
+
 @media (max-width: 640px) {
-  .hero { padding: 64px 0 48px; }
-  .stats { grid-template-columns: repeat(2, 1fr); gap: 32px 16px; }
-  .features { grid-template-columns: 1fr; }
-  section.pad { padding: 48px 0; }
-  h2 { font-size: 1.4rem; }
-  .cmd-box { font-size: 0.78rem; }
+  section { padding-block: 34px; }
+  h2 { font-size: 1.25rem; }
+  .detail { grid-template-columns: 1fr; gap: 0; }
+  .detail dd { padding-top: 0; border-top: 0; }
+  .detail dt { border-top: 1px solid var(--border); }
+  .detail dt:first-of-type { border-top: 0; }
+  .nav .ext { margin-left: 0; }
 }
 </style>
 </head>
 <body>
 
-<header class="hero">
-  <div class="container">
-    <img src="./icon.svg" alt="Rusty Requester icon" />
-    <h1>Rusty Requester</h1>
-    <p class="tagline">
-      A <b>native, offline, lightweight</b> API client built with Rust and <code>egui</code> —
-      a Postman alternative that doesn't chew through hundreds of MB of RAM
-      just to send HTTP requests, run collections, and inspect responses.
-    </p>
-    <div class="cta-row">
-      <a class="btn btn-primary" href="#install">Install</a>
-      <a class="btn" href="./usage.html">Docs</a>
-      <a class="btn" href="https://github.com/chud-lori/rusty-requester">View on GitHub</a>
-      <a class="btn" href="https://github.com/chud-lori/rusty-requester/releases/latest">Releases</a>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="masthead">
+  <div class="wrap masthead-top">
+    <img src="./icon.svg" alt="" />
+    <div class="masthead-id">
+      <h1>Rusty Requester</h1>
+      <p class="lede">A native, offline API client built with Rust and <code>egui</code>. One binary, no bundled browser, no account.</p>
+      <span class="version mono">Documented at v0.28.4</span>
     </div>
-    <div class="install-block">
-      <div class="label">One-line install (macOS &amp; Linux)</div>
-      <div class="cmd-box">
-        <code id="install-cmd">curl -fsSL https://raw.githubusercontent.com/chud-lori/rusty-requester/main/install.sh | bash</code>
-        <button class="copy-btn" type="button" onclick="copyInstall(this)">Copy</button>
-      </div>
-    </div>
+    <button class="theme-btn" type="button" id="theme-toggle">
+      <span id="theme-label">Switch theme</span>
+    </button>
   </div>
 </header>
 
-<section class="container">
-  <div class="stats">
-    <div class="stat"><div class="num">~15 MB</div><div class="lbl">binary</div></div>
-    <div class="stat"><div class="num">~30 MB</div><div class="lbl">idle RAM</div></div>
-    <div class="stat"><div class="num">&lt;100 ms</div><div class="lbl">cold start</div></div>
-    <div class="stat"><div class="num">0</div><div class="lbl">accounts · telemetry · webview</div></div>
+<nav class="nav" aria-label="Sections">
+  <div class="wrap">
+    <ul>
+      <li><a href="#what">What it is</a></li>
+      <li><a href="#install">Install</a></li>
+      <li><a href="#reference">Reference</a></li>
+      <li><a href="#platforms">Platforms</a></li>
+      <li><a href="#security">Security</a></li>
+      <li class="ext"><a href="./usage.html">Full guide</a></li>
+      <li><a href="https://github.com/chud-lori/rusty-requester">Source</a></li>
+    </ul>
+  </div>
+</nav>
+
+<main id="main">
+
+<section id="what">
+  <div class="wrap">
+    <h2>What it is</h2>
+    <div class="plate"></div>
+    <div class="prose">
+      <p>
+        Rusty Requester builds, sends, and inspects HTTP requests. It is a desktop
+        application written in Rust on the <code>egui</code> immediate-mode toolkit,
+        so it draws its own interface instead of shipping a browser engine to draw
+        it. There is no account, no sign-in, and no background sync. Your workspace
+        is one JSON file on your own disk.
+      </p>
+      <p>
+        The name is a double meaning. Rust the language, and rust as in older
+        hardware that still does the job: the readme states that developers on
+        older or low-spec machines are who this is built for first.
+      </p>
+      <p>
+        It is a graphical application, not a command-line tool. The binary accepts
+        exactly one flag, <code>--version</code>, and everything else happens in the
+        window. If you were looking for a scriptable HTTP client, <code>curl</code>
+        is still the right answer, and this app will paste your <code>curl</code>
+        commands in and hand them back as redacted snippets.
+      </p>
+      <p>
+        This page covers installation and the reference tables you will want at hand.
+        The task-by-task guide, covering the request builder, environments, auth,
+        the collection runner, imports, exports, backups, and troubleshooting, lives
+        in the <a href="./usage.html">full guide</a>.
+      </p>
+    </div>
   </div>
 </section>
 
-<section class="pad">
-  <div class="container">
-    <h2>Why Rusty Requester?</h2>
-    <p class="muted">
-      Most API clients today are Electron apps — Chromium + Node wrapped
-      around a form builder. That buys cross-platform consistency at the
-      cost of hundreds of MB of RAM and a supply chain of thousands of
-      npm packages. Rusty Requester is a single ~15 MB native binary:
-      Rust + egui, no webview, no Node, no account.
-    </p>
-    <p class="muted">
-      Plenty of developers are on older / low-spec machines that can't
-      stomach a 500 MB Electron app idling at half a gig of RAM. This is
-      built for them first — that's what the "Rusty" name encodes.
-    </p>
-  </div>
-</section>
+<section id="install">
+  <div class="wrap">
+    <h2>Install</h2>
+    <div class="plate"></div>
 
-<section class="pad">
-  <div class="container">
-    <h2>vs Postman / Insomnia / Bruno</h2>
-    <div class="compare-wrap">
-      <table class="compare">
+    <div class="cmd">
+      <div class="cmd-head">
+        <span class="what">macOS and Linux, resolves the current release automatically</span>
+        <button class="copy" type="button" data-copy="curl -fsSL https://raw.githubusercontent.com/chud-lori/rusty-requester/main/install.sh | bash">Copy command</button>
+      </div>
+      <div class="cmd-body"><code>curl -fsSL https://raw.githubusercontent.com/chud-lori/rusty-requester/main/install.sh | bash</code></div>
+    </div>
+    <p class="note">
+      The installer asks <a href="./latest.json">latest.json</a> on this site which
+      release is current, and falls back to the GitHub Releases API if that file
+      cannot be reached. Pin a version with <code>VERSION=</code> instead.
+    </p>
+
+    <h3>What the installer does</h3>
+    <dl class="detail">
+      <dt>macOS</dt>
+      <dd>
+        Downloads <code class="brk">RustyRequester-vX.Y.Z-macos-universal.dmg</code>, mounts it,
+        copies <code>RustyRequester.app</code> into <code>/Applications</code>
+        (or <code>~/Applications</code> when the system folder is not writable),
+        quits a running instance, removes the Gatekeeper quarantine attribute,
+        re-registers the bundle with Launch Services, and prints the installed
+        binary's SHA-256.
+      </dd>
+      <dt>Linux</dt>
+      <dd>
+        Downloads <code class="brk">RustyRequester-vX.Y.Z-linux-x86_64.tar.gz</code>, extracts it,
+        and runs the bundled <code>install-local.sh</code>, which puts the binary in
+        <code>~/.local/bin</code> and registers a <code>.desktop</code> entry. No
+        <code>sudo</code>. If <code>~/.local/bin</code> is not on your
+        <code>PATH</code>, the script says so and prints the line to add.
+      </dd>
+    </dl>
+
+    <h3>Installer environment variables</h3>
+    <div class="table-wrap">
+      <table>
+        <caption class="def" style="caption-side: bottom; padding: 8px 12px; text-align: left;">Read from install.sh. Prefix them before <code>bash</code>, for example <code>| VERSION=v0.28.0 bash</code>.</caption>
         <thead>
-          <tr><th></th><th>Postman</th><th>Insomnia</th><th>Bruno</th><th>Rusty Requester</th></tr>
+          <tr><th scope="col">Variable</th><th scope="col">Effect</th></tr>
         </thead>
         <tbody>
-          <tr><td>Runtime</td><td>Electron</td><td>Electron</td><td>Electron</td><td class="us">Rust + egui (native)</td></tr>
-          <tr><td>Download size</td><td>~500 MB</td><td>~200 MB</td><td>~200 MB</td><td class="us">~15 MB</td></tr>
-          <tr><td>Idle RAM</td><td>400–800 MB</td><td>300–500 MB</td><td>200–400 MB</td><td class="us">~30 MB</td></tr>
-          <tr><td>Cold start</td><td>2–5 s</td><td>1–3 s</td><td>1–2 s</td><td class="us">&lt;100 ms</td></tr>
-          <tr><td>Account required</td><td>yes</td><td>yes (since 2023)</td><td>no</td><td class="us">no</td></tr>
-          <tr><td>Telemetry</td><td>yes</td><td>yes</td><td>off by default</td><td class="us">none</td></tr>
-          <tr><td>Storage</td><td>cloud-first</td><td>cloud or local</td><td>git-native files</td><td class="us">local + .rr files</td></tr>
-          <tr><td>Supply chain</td><td>~1000+ npm</td><td>~1000+ npm</td><td>~800 npm</td><td class="us">~150 Rust crates</td></tr>
+          <tr><td class="k"><code>VERSION</code></td><td>Install a specific release tag instead of the current one.</td></tr>
+          <tr><td class="k"><code>UNINSTALL=1</code></td><td>Remove the installed app. Keeps your data.</td></tr>
+          <tr><td class="k"><code>PURGE=1</code></td><td>With <code>UNINSTALL=1</code>, also delete the data directory.</td></tr>
+          <tr><td class="k"><code>SKIP_QUARANTINE_STRIP=1</code></td><td>macOS only. Leave Gatekeeper's quarantine attribute in place, so you confirm the first launch yourself.</td></tr>
+          <tr><td class="k"><code>RUSTY_REPO</code></td><td>Pull release assets from another <code>owner/name</code> repository.</td></tr>
+          <tr><td class="k"><code>RUSTY_LATEST_JSON_URL</code></td><td>Point version resolution at a different metadata URL.</td></tr>
         </tbody>
       </table>
     </div>
-    <p class="muted" style="margin-top: 1rem;">
-      Bruno is the closest match in spirit (offline, file-based, OSS) —
-      it's a good product. The differentiator is runtime: it still
-      ships Chromium.
+
+    <h3>Uninstall</h3>
+    <div class="cmd">
+      <div class="cmd-head">
+        <span class="what">Removes the app, keeps your workspace</span>
+        <button class="copy" type="button" data-copy="curl -fsSL https://raw.githubusercontent.com/chud-lori/rusty-requester/main/install.sh | UNINSTALL=1 bash">Copy command</button>
+      </div>
+      <div class="cmd-body"><code>curl -fsSL https://raw.githubusercontent.com/chud-lori/rusty-requester/main/install.sh | UNINSTALL=1 bash</code></div>
+    </div>
+    <p class="note">Add <code>PURGE=1</code> to delete the data directory as well.</p>
+
+    <h3>Build from source</h3>
+    <div class="cmd">
+      <div class="cmd-head">
+        <span class="what">Requires Rust 1.73 or newer</span>
+        <button class="copy" type="button" data-copy="git clone https://github.com/chud-lori/rusty-requester
+cd rusty-requester
+make release">Copy commands</button>
+      </div>
+      <div class="cmd-body"><code>git clone https://github.com/chud-lori/rusty-requester
+cd rusty-requester
+make release</code></div>
+    </div>
+    <p class="note">
+      <code>make run</code> builds and runs a debug build, <code>make app</code> builds
+      a macOS bundle, <code>make app-install</code> builds it and copies it to
+      <code>/Applications</code>, and <code>make help</code> lists every target.
+      Plain Cargo works too.
+    </p>
+
+    <h3>First launch on macOS</h3>
+    <p class="note">
+      The app is not notarised by Apple, so a manually installed copy triggers the
+      "cannot be opened because Apple cannot check it" dialog once. Right-click the
+      app and choose Open, or approve it under System Settings, Privacy and Security.
+      The one-line installer removes the quarantine attribute for you, so it does not
+      hit this at all unless you set <code>SKIP_QUARANTINE_STRIP=1</code>.
     </p>
   </div>
 </section>
 
-<section class="pad">
-  <div class="container">
-    <h2>What's inside</h2>
-    <div class="features">
-      <div class="feat">
-        <h3>Tabbed request editor</h3>
-        <p>Multiple in-flight requests, drag to reorder, double-click to rename, pin tabs that survive restart.</p>
+<section id="reference">
+  <div class="wrap">
+    <h2>Reference</h2>
+    <div class="plate"></div>
+    <p class="note" style="margin-bottom: 18px;">
+      Every row below is read out of the source of v0.28.4. Filter across all six
+      tables at once.
+    </p>
+
+    <div class="filter-bar">
+      <label for="ref-filter">Filter the reference</label>
+      <input id="ref-filter" type="search" autocomplete="off" spellcheck="false"
+             placeholder="palette, timeout, proxy, data.json" />
+      <button id="ref-clear" type="button">Clear</button>
+      <span id="ref-count" role="status" aria-live="polite"></span>
+    </div>
+
+    <div id="ref-nothing" hidden>
+      <p style="margin:0 0 8px;"><b>Nothing in the reference matches that.</b></p>
+      <p style="margin:0;">The filter searches every cell of the six tables below. Try a shorter word, or clear the filter to see all of it. If what you are after is a task rather than a setting, the <a href="./usage.html">full guide</a> is organised by task.</p>
+    </div>
+
+    <div class="ref-group">
+      <h3 id="shortcuts">Keyboard shortcuts</h3>
+      <p class="def" style="max-width: var(--measure);">
+        <kbd>Cmd</kbd> on macOS, <kbd>Ctrl</kbd> on Linux and Windows. One binding
+        covers both, because egui maps them to the same modifier.
+      </p>
+      <div class="table-wrap">
+        <table data-ref>
+          <thead><tr><th scope="col">Keys</th><th scope="col">Action</th></tr></thead>
+          <tbody>
+            <tr><td class="k"><kbd>Cmd</kbd> <kbd>Enter</kbd></td><td>Send the active request. Ignored while a send is already in flight.</td></tr>
+            <tr><td class="k"><kbd>Cmd</kbd> <kbd>N</kbd></td><td>New draft request.</td></tr>
+            <tr><td class="k"><kbd>Cmd</kbd> <kbd>W</kbd></td><td>Close the active tab.</td></tr>
+            <tr><td class="k"><kbd>Cmd</kbd> <kbd>D</kbd></td><td>Duplicate the active tab.</td></tr>
+            <tr><td class="k"><kbd>Cmd</kbd> <kbd>S</kbd></td><td>Save. A draft opens the save-to-folder dialog, a saved request writes and clears its unsaved marker.</td></tr>
+            <tr><td class="k"><kbd>Cmd</kbd> <kbd>F</kbd></td><td>Find in the response body. Switches to the Body tab and focuses the search field.</td></tr>
+            <tr><td class="k"><kbd>Cmd</kbd> <kbd>K</kbd></td><td>Focus the sidebar search field.</td></tr>
+            <tr><td class="k"><kbd>Cmd</kbd> <kbd>P</kbd></td><td>Request finder. Fuzzy-search requests across every collection.</td></tr>
+            <tr><td class="k"><kbd>Shift</kbd> <kbd>Cmd</kbd> <kbd>P</kbd></td><td>Actions palette. Every command in the table below, by name.</td></tr>
+            <tr><td class="k"><kbd>F2</kbd></td><td>Rename the active request.</td></tr>
+            <tr><td class="k"><kbd>Up</kbd> <kbd>Down</kbd></td><td>Step through the sidebar request list. Only while no text field has focus and no dialog is open, so typing is never hijacked.</td></tr>
+            <tr><td class="k"><kbd>Esc</kbd></td><td>Close the open dialog, palette, or inline search bar.</td></tr>
+            <tr><td class="k"><kbd>Cmd</kbd> <kbd>,</kbd></td><td>Preferences. macOS only, through the native menu bar.</td></tr>
+            <tr><td class="k"><kbd>Cmd</kbd> <kbd>O</kbd></td><td>Import a collection file. macOS only, through the native menu bar.</td></tr>
+            <tr><td class="k"><kbd>Shift</kbd> <kbd>Cmd</kbd> <kbd>C</kbd></td><td>Toggle the code snippet panel. macOS only, through the native menu bar.</td></tr>
+          </tbody>
+        </table>
       </div>
-      <div class="feat">
-        <h3>Environment variables</h3>
-        <p>Per-environment substitution in URL, headers, body, auth. Cookie jar persists across runs.</p>
+      <p class="def">
+        The last three are accelerators on the macOS <code>NSMenu</code> bar, which
+        Linux does not get. On Linux, reach those three through the actions palette.
+      </p>
+    </div>
+
+    <div class="ref-group">
+      <h3 id="actions">Actions palette</h3>
+      <p class="def" style="max-width: var(--measure);">
+        Open with <kbd>Shift</kbd> <kbd>Cmd</kbd> <kbd>P</kbd> and type. The palette
+        matches on the name and on the extra search words listed here, so you do not
+        have to remember the exact wording.
+      </p>
+      <div class="table-wrap">
+        <table data-ref>
+          <thead><tr><th scope="col">Action</th><th scope="col">Also matches</th><th scope="col">Keys</th></tr></thead>
+          <tbody>
+            <tr><td>New request</td><td class="def">create add tab</td><td class="k"><kbd>Cmd</kbd> <kbd>N</kbd></td></tr>
+            <tr><td>Duplicate tab</td><td class="def">clone copy tab</td><td class="k"><kbd>Cmd</kbd> <kbd>D</kbd></td></tr>
+            <tr><td>Close tab</td><td class="def">close window</td><td class="k"><kbd>Cmd</kbd> <kbd>W</kbd></td></tr>
+            <tr><td>Toggle pin tab</td><td class="def">pin unpin sticky</td><td class="k"></td></tr>
+            <tr><td>Save draft to folder</td><td class="def">save persist folder collection</td><td class="k"><kbd>Cmd</kbd> <kbd>S</kbd></td></tr>
+            <tr><td>Copy as cURL</td><td class="def">curl command line shell</td><td class="k"></td></tr>
+            <tr><td>Toggle code snippet panel</td><td class="def">code panel side python javascript fetch httpie</td><td class="k"><kbd>Shift</kbd> <kbd>Cmd</kbd> <kbd>C</kbd></td></tr>
+            <tr><td>Open environments</td><td class="def">env variables vars</td><td class="k"></td></tr>
+            <tr><td>Open settings</td><td class="def">preferences timeout proxy tls</td><td class="k"><kbd>Cmd</kbd> <kbd>,</kbd></td></tr>
+            <tr><td>Paste cURL command</td><td class="def">curl import clipboard</td><td class="k"></td></tr>
+            <tr><td>Collection Runner</td><td class="def">runner collection run batch data rows csv json report</td><td class="k"></td></tr>
+            <tr><td>Workspace Sync</td><td class="def">sync git workspace openapi refresh import export</td><td class="k"></td></tr>
+            <tr><td>Import collection file</td><td class="def">import postman json yaml</td><td class="k"></td></tr>
+            <tr><td>Create workspace backup</td><td class="def">snapshot restore data safety</td><td class="k"></td></tr>
+            <tr><td>Backups</td><td class="def">restore snapshot data safety location</td><td class="k"></td></tr>
+            <tr><td>Export all as JSON</td><td class="def">export backup json</td><td class="k"></td></tr>
+            <tr><td>Export all as YAML</td><td class="def">export backup yaml</td><td class="k"></td></tr>
+            <tr><td>Clear history</td><td class="def">delete wipe log</td><td class="k"></td></tr>
+            <tr><td>Toggle sidebar History and Collections view</td><td class="def">switch toggle sidebar history collections</td><td class="k"></td></tr>
+            <tr><td>About Rusty Requester</td><td class="def">about version credit help</td><td class="k"></td></tr>
+          </tbody>
+        </table>
       </div>
-      <div class="feat">
-        <h3>JSON / Tree / HTML / SSE views</h3>
-        <p>Syntax-highlighted JSON with Postman-style fold chevrons on every <code>{</code> / <code>[</code>. Server-Sent Events streaming for LLM APIs.</p>
+    </div>
+
+    <div class="ref-group">
+      <h3 id="settings">Settings</h3>
+      <p class="def" style="max-width: var(--measure);">
+        Everything the Settings dialog exposes, with the value you get if you never
+        open it. Settings are stored per workspace in <code>data.json</code>.
+      </p>
+      <div class="table-wrap">
+        <table data-ref>
+          <thead><tr><th scope="col">Setting</th><th scope="col">Default</th><th scope="col">Range and meaning</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>Request timeout</td>
+              <td class="k"><code>60 s</code></td>
+              <td>0 to 3600 seconds. 0 disables the timeout, so a request can hang until you cancel it.</td>
+            </tr>
+            <tr>
+              <td>Max response body</td>
+              <td class="k"><code>50 MB</code></td>
+              <td>0 to 2048 MB. Anything past the cap is discarded and the response shows a truncation banner. 0 removes the cap, and a large enough payload can then exhaust memory.</td>
+            </tr>
+            <tr>
+              <td>Proxy URL</td>
+              <td class="k">empty</td>
+              <td>HTTP, HTTPS, or SOCKS5, for example <code>http://proxy:8080</code>. Empty means connect directly.</td>
+            </tr>
+            <tr>
+              <td>Verify TLS certificates</td>
+              <td class="k">on</td>
+              <td>Turning it off accepts self-signed and expired certificates. Useful against an internal dev API, dangerous on the public internet.</td>
+            </tr>
+            <tr>
+              <td>Theme</td>
+              <td class="k">Dark</td>
+              <td>Dark, Light, or Postman. Method colors and status pills are retuned per theme. The dialog previews the change before you save it.</td>
+            </tr>
+            <tr>
+              <td>Enable Workspace Sync</td>
+              <td class="k">off</td>
+              <td>Opt-in local workflow for Git workspace import and export and OpenAPI refresh. While it is off, the app never reads or writes a Git workspace, and nothing runs in the background.</td>
+            </tr>
+            <tr>
+              <td>Check for updates on launch</td>
+              <td class="k">on</td>
+              <td>One silent GET to the public <code>latest.json</code> per launch. Turn it off for zero outbound traffic at startup.</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
-      <div class="feat">
-        <h3>Collection Runner</h3>
-        <p>Run all collections or a selected folder with optional CSV/JSON data rows, live progress, saved presets, detail drilldowns, assertions, extractors, and safe reports.</p>
+    </div>
+
+    <div class="ref-group">
+      <h3 id="snippets">Code snippet languages</h3>
+      <p class="def" style="max-width: var(--measure);">
+        The snippet panel renders the active request in each of these. Snippets are
+        redacted by default, so obvious secrets are masked while the request shape
+        stays intact. Copying the raw version is a separate, explicit action.
+      </p>
+      <div class="table-wrap">
+        <table data-ref>
+          <thead><tr><th scope="col">Language</th><th scope="col">Form</th></tr></thead>
+          <tbody>
+            <tr><td>cURL</td><td class="def">Shell command</td></tr>
+            <tr><td>Python</td><td class="def">The <code>requests</code> library</td></tr>
+            <tr><td>JavaScript</td><td class="def"><code>fetch</code></td></tr>
+            <tr><td>HTTPie</td><td class="def">Shell command</td></tr>
+          </tbody>
+        </table>
       </div>
-      <div class="feat">
-        <h3>Paste-as-cURL</h3>
-        <p>Paste any <code>curl</code> command — method, headers, body, auth, cookies parse automatically. Including bash ANSI-C quoting (<code>$'…'</code>).</p>
+    </div>
+
+    <div class="ref-group">
+      <h3 id="files">Files on disk</h3>
+      <div class="table-wrap">
+        <table data-ref>
+          <thead><tr><th scope="col">Platform</th><th scope="col">Workspace file</th></tr></thead>
+          <tbody>
+            <tr><td>macOS</td><td class="k"><code>~/Library/Application Support/rusty-requester/data.json</code></td></tr>
+            <tr><td>Linux</td><td class="k"><code>~/.local/share/rusty-requester/data.json</code></td></tr>
+            <tr><td>Windows</td><td class="k"><code>%LOCALAPPDATA%\rusty-requester\data.json</code></td></tr>
+          </tbody>
+        </table>
       </div>
-      <div class="feat">
-        <h3>Response diff</h3>
-        <p>Compare current send against any previous response of the same request. Highlights additions, deletions, and value changes.</p>
+      <p class="def" style="max-width: var(--measure);">
+        One plaintext JSON file holds collections, history, settings, and any token or
+        password you typed into Auth or an environment variable. The app relies on
+        your home directory's permissions to protect it. Do not commit it. A panic
+        log and the update log are written beside it. If the file is ever unreadable
+        at startup, the app sidelines it with a timestamped name rather than
+        overwriting it, and tells you where it went.
+      </p>
+    </div>
+
+    <div class="ref-group">
+      <h3 id="cli">Command line</h3>
+      <div class="table-wrap">
+        <table data-ref>
+          <thead><tr><th scope="col">Flag</th><th scope="col">Effect</th></tr></thead>
+          <tbody>
+            <tr><td class="k"><code>--version</code>, <code>-V</code></td><td>Print the version and exit without opening the window. Useful for confirming which build is actually on disk when Launch Services has cached an old one.</td></tr>
+          </tbody>
+        </table>
       </div>
-      <div class="feat">
-        <h3>Theme preview</h3>
-        <p>Switch Dark, Light, or Postman in Settings and preview the full app immediately before saving or cancelling the change.</p>
-      </div>
-      <div class="feat">
-        <h3>Request and action palettes</h3>
-        <p>Fuzzy-find any request across all collections, or run any action by name. Use Cmd on macOS and Ctrl on Linux/Windows.</p>
-      </div>
-      <div class="feat">
-        <h3>One-click in-app update</h3>
-        <p>When a new version ships, click <b>Update now</b>. The installer runs in the background, the app relaunches itself.</p>
-      </div>
-      <div class="feat">
-        <h3>Safe sharing by default</h3>
-        <p>Redacted cURL and code snippets preserve request shape while masking obvious auth, cookie, query, and body secrets. Raw copy stays explicit.</p>
-      </div>
-      <div class="feat">
-        <h3>Collection Git sync</h3>
-        <p>Link a collection to a folder or Git repo, keep readable .rr request files current as you edit, inspect status/diff, pull, commit, and push through local Git credentials. Private repos work without storing provider tokens.</p>
-      </div>
+      <p class="def">That is the whole command-line surface. Every other flag is ignored.</p>
     </div>
   </div>
 </section>
 
-<section class="pad">
-  <div class="container">
-    <h2>Security &amp; trust</h2>
-    <p class="muted">
-      An API client lives on a trust boundary — you type a URL, a
-      stranger's server sends bytes back. The headline guarantees:
-    </p>
-    <ul class="install-details" style="font-size: 0.95rem;">
-      <li><b>No code execution on response content.</b> HTML renders as markup (no DOM, no JS engine); <code>&lt;script&gt;</code> tags display as text.</li>
-      <li><b>No memory-corruption path.</b> TLS + HTTP via <code>reqwest</code> / <code>hyper</code> / <code>rustls</code>, all safe Rust.</li>
-      <li><b>No shell execution on cURL paste.</b> Flags parse as data, never <code>exec</code>'d.</li>
-      <li><b>Secret-safe runner reports.</b> Reports omit response bodies, headers, cookies, extracted values, and redact URL query strings / fragments.</li>
-      <li><b>Secret-aware exports and snippets.</b> Collection exports can be scanned/redacted locally, and shared snippets are redacted by default.</li>
-      <li><b>No telemetry, no analytics, no account.</b> The only network calls are the ones you make and an optional update check that reads public release metadata.</li>
+<section id="platforms">
+  <div class="wrap">
+    <h2>Platforms</h2>
+    <div class="plate"></div>
+    <div class="prose">
+      <p>Two release artifacts are built, and nothing else is published:</p>
+    </div>
+    <dl class="detail">
+      <dt>macOS</dt>
+      <dd>A universal disk image covering Apple Silicon and Intel, built on the GitHub <code>macos-latest</code> runner.</dd>
+      <dt>Linux</dt>
+      <dd>An <code>x86_64</code> tarball, built on Ubuntu 22.04 so it links against glibc 2.35. That covers Ubuntu 22.04 and newer, Debian 12, Fedora 36 and newer, and RHEL 9. The build is pinned to 22.04 on purpose, because a binary built on a newer runner needs a newer glibc than many desktops have.</dd>
+      <dt>Linux on ARM</dt>
+      <dd>Not built. The installer refuses any Linux architecture other than <code>x86_64</code> and tells you to build from source.</dd>
+      <dt>Windows</dt>
+      <dd>No release is published and the installer refuses to run. The source carries Windows branches and the app reads a Windows workspace path, so a local <code>cargo build</code> is the only route today. Whether Windows becomes a supported target is an open question, not a promise.</dd>
+    </dl>
+
+    <h3>What the release contains</h3>
+    <ul class="plain">
+      <li><b>One binary.</b> No bundled browser engine, no Node runtime, no separate helper processes. The interface is drawn by <code>egui</code>.</li>
+      <li><b>Built for size.</b> The release profile uses <code>opt-level = "z"</code>, link-time optimisation, a single codegen unit, and strips symbols. Actual artifact sizes are listed on each release, so read them from there rather than from a marketing number here.</li>
+      <li><b>561 package entries in <code>Cargo.lock</code>.</b> Count it yourself with <code class="brk">grep -c '^\[\[package\]\]' Cargo.lock</code>. That includes the app itself and every platform-specific and build-time dependency, so it is an upper bound on what any one target compiles.</li>
+      <li><b>Versioned with semver, pre-1.0.</b> <code>data.json</code> reads forward through <code>serde</code> defaults, but a minor release can still change field shapes. The 1.0 line is where the on-disk schema, install paths, and export formats get locked.</li>
     </ul>
-    <p class="muted" style="margin-top: 1rem; font-size: 0.9rem;">
-      Full threat model in
+  </div>
+</section>
+
+<section id="security">
+  <div class="wrap">
+    <h2>Security</h2>
+    <div class="plate"></div>
+    <div class="prose">
+      <p>
+        An API client sits on a trust boundary. You type a URL and a stranger's
+        server sends bytes back. What the app guarantees about those bytes:
+      </p>
+    </div>
+    <ul class="plain">
+      <li><b>Response content is never executed.</b> HTML renders as markup through <code>egui</code>, with no DOM and no JavaScript engine. A <code>&lt;script&gt;</code> tag is displayed as text.</li>
+      <li><b>Pasting a cURL command never runs a shell.</b> The flags are parsed as data.</li>
+      <li><b>TLS and HTTP go through <code>reqwest</code>, <code>hyper</code>, and <code>rustls</code></b>, in safe Rust, which rules out the buffer-overflow class of bug a C client has to defend against.</li>
+      <li><b>Runner reports leave secrets out.</b> Exported reports omit response bodies, headers, cookies, and extracted values, and redact query strings and fragments from URLs.</li>
+      <li><b>Sharing is redacted by default.</b> Code snippets mask obvious secrets, and collection exports can be scanned and redacted locally before anything is written. Copying the raw version is always a separate, deliberate action.</li>
+      <li><b>No telemetry, no analytics, no account.</b> The only outbound traffic is the requests you send, plus one optional update check that reads public release metadata. That check is a single switch in Settings.</li>
+    </ul>
+    <p class="note">
+      What you still own: requests you aim at your own machine or internal network,
+      files you save and then open in something else, and the fact that
+      <code>data.json</code> and any exported collection folder are plaintext on your
+      disk. A private Git repository is access control, not encryption. The full
+      threat model and how to report a vulnerability are in
       <a href="https://github.com/chud-lori/rusty-requester/blob/main/SECURITY.md">SECURITY.md</a>.
     </p>
   </div>
 </section>
 
-<section class="pad" id="install">
-  <div class="container">
-    <h2>Install</h2>
-    <p class="muted">One command on macOS or Linux:</p>
-    <div class="cmd-box" style="margin-bottom: 1.5rem;">
-      <code>curl -fsSL https://raw.githubusercontent.com/chud-lori/rusty-requester/main/install.sh | bash</code>
-      <button class="copy-btn" type="button" onclick="copyInstall(this)">Copy</button>
-    </div>
-    <div class="install-details">
-      <ul>
-        <li><b>macOS</b> — universal (Apple Silicon + Intel) DMG. Installs into <code>/Applications</code>, strips Gatekeeper quarantine, registers with Launch Services.</li>
-        <li><b>Linux</b> — x86_64 glibc 2.35+ (Ubuntu 22.04 / Debian 12 / Fedora 36+ / RHEL 9). Installs to <code>~/.local/bin</code>, drops a <code>.desktop</code> entry. No sudo.</li>
-        <li><b>Updates</b> — the app checks a static <a href="./latest.json">latest.json</a> file on GitHub Pages first, avoiding unauthenticated GitHub API rate limits.</li>
-        <li><b>Manual install</b> — grab the DMG or tarball from the <a href="https://github.com/chud-lori/rusty-requester/releases/latest">Releases page</a>.</li>
-        <li><b>Build from source</b> — <code>git clone</code> + <code>cargo build --release</code>. Requires Rust 1.73+.</li>
-        <li><b>Uninstall</b> — same one-liner with <code>UNINSTALL=1</code> prepended. Add <code>PURGE=1</code> to wipe data too.</li>
-      </ul>
-    </div>
-  </div>
-</section>
+</main>
 
 <footer>
-  <div class="container">
+  <div class="wrap">
+    <p>MIT licensed. Built by <a href="https://github.com/chud-lori">chud-lori</a>.</p>
     <p>
-      MIT licensed · made by <a href="https://github.com/chud-lori">@chud-lori</a> ·
-      <a href="https://github.com/chud-lori/rusty-requester">source</a> ·
-      <a href="./usage.html">docs</a> ·
-      <a href="https://github.com/chud-lori/rusty-requester/blob/main/CHANGELOG.md">changelog</a>
+      <a href="./usage.html">Full guide</a> ·
+      <a href="https://github.com/chud-lori/rusty-requester">Source</a> ·
+      <a href="https://github.com/chud-lori/rusty-requester/releases/latest">Releases</a> ·
+      <a href="https://github.com/chud-lori/rusty-requester/blob/main/CHANGELOG.md">Changelog</a> ·
+      <a href="https://github.com/chud-lori/rusty-requester/issues/new">Report an issue</a>
     </p>
   </div>
 </footer>
 
 <script>
-function copyInstall(btn) {
-  var cmd = "curl -fsSL https://raw.githubusercontent.com/chud-lori/rusty-requester/main/install.sh | bash";
-  navigator.clipboard.writeText(cmd).then(function () {
-    var original = btn.textContent;
-    btn.textContent = "Copied";
-    btn.classList.add("copied");
-    setTimeout(function () {
-      btn.textContent = original;
-      btn.classList.remove("copied");
-    }, 1500);
+(function () {
+  "use strict";
+
+  /* --- Theme -------------------------------------------------------
+     Two complete themes. Default follows the operating system; an
+     explicit choice is remembered. Storage can throw in a private
+     window, so every access is guarded and the page still works. */
+  var root = document.documentElement;
+  var toggle = document.getElementById("theme-toggle");
+  var label = document.getElementById("theme-label");
+
+  function readStored() {
+    try { return localStorage.getItem("rr-theme"); } catch (e) { return null; }
+  }
+  function store(value) {
+    try { localStorage.setItem("rr-theme", value); } catch (e) { /* private mode */ }
+  }
+  function systemPrefersLight() {
+    return window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches;
+  }
+  /* What the visitor is looking at right now: their recorded choice if
+     there is one, otherwise whatever the stylesheet is already showing
+     for their system preference. */
+  function showing() {
+    var attr = root.getAttribute("data-theme");
+    if (attr === "light" || attr === "dark") return attr;
+    return systemPrefersLight() ? "light" : "dark";
+  }
+
+  function describe(theme) {
+    label.textContent = theme === "light" ? "Dark theme" : "Light theme";
+    toggle.setAttribute(
+      "aria-label",
+      theme === "light" ? "Switch to the dark theme" : "Switch to the light theme"
+    );
+  }
+
+  /* Nothing is written to the DOM until there is a real choice to record:
+     with no attribute set, the stylesheet already follows the system. */
+  var stored = readStored();
+  if (stored === "light" || stored === "dark") root.setAttribute("data-theme", stored);
+  describe(showing());
+
+  toggle.addEventListener("click", function () {
+    var next = showing() === "light" ? "dark" : "light";
+    root.setAttribute("data-theme", next);
+    describe(next);
+    store(next);
   });
-}
+
+  /* --- Copy buttons ------------------------------------------------
+     Three visible states: idle, working, and either copied or failed.
+     The failure path matters, because the Clipboard API is blocked
+     outright over plain HTTP and in some embedded browsers. When it
+     fails the button says so and selects the text instead, so there
+     is always a way to get the command. */
+  function selectCode(button) {
+    var block = button.closest(".cmd");
+    var code = block && block.querySelector("code");
+    if (!code || !window.getSelection || !document.createRange) return;
+    var range = document.createRange();
+    range.selectNodeContents(code);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
+
+  function flash(button, text, state, original) {
+    button.textContent = text;
+    button.setAttribute("data-state", state);
+    window.setTimeout(function () {
+      button.textContent = original;
+      button.removeAttribute("data-state");
+    }, 2200);
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll(".copy"), function (button) {
+    button.addEventListener("click", function () {
+      var original = button.getAttribute("data-original") || button.textContent;
+      button.setAttribute("data-original", original);
+      var payload = button.getAttribute("data-copy") || "";
+
+      if (!navigator.clipboard || !navigator.clipboard.writeText) {
+        selectCode(button);
+        flash(button, "Copy it manually", "failed", original);
+        return;
+      }
+
+      button.textContent = "Copying";
+      button.setAttribute("data-state", "working");
+
+      navigator.clipboard.writeText(payload).then(function () {
+        flash(button, "Copied", "done", original);
+      }, function () {
+        selectCode(button);
+        flash(button, "Copy it manually", "failed", original);
+      });
+    });
+  });
+
+  /* --- Reference filter --------------------------------------------
+     Filters every reference table at once. Three states: unfiltered,
+     filtered with hits, and filtered with none, which gets its own
+     message rather than a silently empty page. */
+  var input = document.getElementById("ref-filter");
+  var clear = document.getElementById("ref-clear");
+  var count = document.getElementById("ref-count");
+  var nothing = document.getElementById("ref-nothing");
+  var groups = Array.prototype.slice.call(document.querySelectorAll(".ref-group"));
+  var total = 0;
+
+  groups.forEach(function (group) {
+    var rows = group.querySelectorAll("table[data-ref] tbody tr");
+    total += rows.length;
+    Array.prototype.forEach.call(rows, function (row) {
+      row.setAttribute("data-hay", row.textContent.toLowerCase().replace(/\s+/g, " "));
+    });
+  });
+
+  function run() {
+    var query = input.value.trim().toLowerCase();
+    var shown = 0;
+
+    groups.forEach(function (group) {
+      var groupShown = 0;
+      var rows = group.querySelectorAll("table[data-ref] tbody tr");
+      Array.prototype.forEach.call(rows, function (row) {
+        var hit = !query || row.getAttribute("data-hay").indexOf(query) !== -1;
+        row.hidden = !hit;
+        if (hit) groupShown++;
+      });
+      group.hidden = query !== "" && groupShown === 0;
+      shown += groupShown;
+    });
+
+    nothing.hidden = !(query !== "" && shown === 0);
+
+    if (!query) {
+      count.textContent = total + " entries";
+    } else {
+      count.textContent = shown + " of " + total + " entries match";
+    }
+  }
+
+  input.addEventListener("input", run);
+  input.addEventListener("keydown", function (event) {
+    if (event.key === "Escape" && input.value !== "") {
+      event.preventDefault();
+      input.value = "";
+      run();
+    }
+  });
+  clear.addEventListener("click", function () {
+    input.value = "";
+    run();
+    input.focus();
+  });
+  run();
+})();
 </script>
 
 </body>
