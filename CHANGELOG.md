@@ -26,7 +26,7 @@ upgrades read old files cleanly.
 - **Sidebar menus.** Right-click and overflow menus now use full-width rows
   with icons and hover states, and Delete reads as a destructive action.
   Rename boxes are vertically centered with a softer border.
-- Dependency bumps for RUSTSEC advisories (`h2`, `webbrowser`).
+- Dependency bumps for RUSTSEC advisories (`h2`, `webbrowser`, `rustls`).
 
 ## [0.28.4] — 2026-08-09
 
