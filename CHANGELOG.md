@@ -11,6 +11,23 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Fixed
+- **Sidebar remembers your tree.** Collapsed collections and folders stay
+  collapsed across restarts instead of all reopening on every launch. The
+  open/closed state now lives in `data.json`; searching still opens folders
+  temporarily without overwriting your layout.
+- **Rename focus.** The inline rename field grabs keyboard focus immediately.
+  Folder rename never requested focus at all, and request rename raced the
+  closing context menu on Linux and lost.
+
+### Changed
+- **Sidebar menus.** Right-click and overflow menus now use full-width rows
+  with icons and hover states, and Delete reads as a destructive action.
+  Rename boxes are vertically centered with a softer border.
+- Dependency bumps for RUSTSEC advisories (`h2`, `webbrowser`).
+
 ## [0.28.4] — 2026-08-09
 
 ### Fixed
