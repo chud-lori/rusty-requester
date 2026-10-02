@@ -11,6 +11,12 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Fixed
+- **rustls bumped to 0.23.45** for RUSTSEC-2026-0285 (TLS 1.3 handshake
+  messages incorrectly accepted across encryption level boundaries).
+
 ## [0.28.5] — 2026-10-02
 
 ### Fixed
@@ -26,7 +32,7 @@ upgrades read old files cleanly.
 - **Sidebar menus.** Right-click and overflow menus now use full-width rows
   with icons and hover states, and Delete reads as a destructive action.
   Rename boxes are vertically centered with a softer border.
-- Dependency bumps for RUSTSEC advisories (`h2`, `webbrowser`, `rustls`).
+- Dependency bumps for RUSTSEC advisories (`h2`, `webbrowser`).
 
 ## [0.28.4] — 2026-08-09
 
