@@ -650,6 +650,9 @@ impl ApiClient {
             // call below — its center sits at rect.left() + 24).
             "      ".to_string()
         };
+        // Open state lives in `state.collapsed_folders`, not egui memory —
+        // egui memory is per-session, which reopened every collection on launch.
+        let persisted_open = !self.state.collapsed_folders.contains(&folder.id);
         let mut header = egui::CollapsingHeader::new(
             egui::RichText::new(format!("{}{}", name_prefix, header_text))
                 .size(13.0)
@@ -657,7 +660,7 @@ impl ApiClient {
                 .strong(),
         )
         .id_salt(&folder.id)
-        .default_open(true)
+        .open(Some(persisted_open))
         .icon(paint_folder_chevron);
         if searching {
             header = header.open(Some(true));
@@ -846,11 +849,11 @@ impl ApiClient {
                     );
                     // Visible background + accent border so the input is obvious.
                     ui.painter()
-                        .rect_filled(edit_rect, egui::Rounding::same(6.0), elevated());
+                        .rect_filled(edit_rect, egui::Rounding::same(5.0), elevated());
                     ui.painter().rect_stroke(
                         edit_rect,
-                        egui::Rounding::same(6.0),
-                        egui::Stroke::new(1.0_f32, accent()),
+                        egui::Rounding::same(5.0),
+                        egui::Stroke::new(1.0_f32, with_alpha(accent(), 200)),
                     );
                     // Keep the clickable area of the input flush with the
                     // painted box (only a 2px visual gutter), so clicking
@@ -864,11 +867,17 @@ impl ApiClient {
                             .desired_width(inner.width())
                             .frame(false)
                             .text_color(text())
+                            .vertical_align(egui::Align::Center)
                             .font(egui::FontId::new(12.5, egui::FontFamily::Proportional)),
                     );
+                    // Hold the flag until focus lands — a one-shot request can
+                    // fire while the context menu is closing and be dropped (Linux).
                     if self.request_rename_focus_pending {
-                        self.request_rename_focus_pending = false;
-                        edit_resp.request_focus();
+                        if edit_resp.has_focus() {
+                            self.request_rename_focus_pending = false;
+                        } else {
+                            edit_resp.request_focus();
+                        }
                     }
                     let escape = ui.input(|i| i.key_pressed(egui::Key::Escape));
                     // Commit on `lost_focus()`: egui's singleline TextEdit
@@ -916,18 +925,20 @@ impl ApiClient {
                     let req_id_for_menu = req.id.clone();
                     let req_name_for_menu = req.name.clone();
                     resp.context_menu(|ui| {
-                        if ui.button("Rename").clicked() {
+                        ui.set_min_width(170.0);
+                        if menu_item(ui, egui_phosphor::regular::PENCIL_SIMPLE, "Rename").clicked()
+                        {
                             self.renaming_request_id = Some(req_id_for_menu.clone());
                             self.rename_request_text = req_name_for_menu.clone();
                             self.request_rename_focus_pending = true;
                             ui.close_menu();
                         }
-                        if ui.button("Duplicate").clicked() {
+                        if menu_item(ui, egui_phosphor::regular::COPY, "Duplicate").clicked() {
                             to_duplicate = Some(req_id_for_menu.clone());
                             ui.close_menu();
                         }
                         ui.separator();
-                        if ui.button("Delete").clicked() {
+                        if menu_item_danger(ui, egui_phosphor::regular::TRASH, "Delete").clicked() {
                             to_delete = Some(req_id_for_menu.clone());
                             ui.close_menu();
                         }
@@ -976,6 +987,21 @@ impl ApiClient {
             }
         });
 
+        // Flip persisted state on header click; skip while search/reveal
+        // force folders open or the rename overlay owns the click.
+        if header_response.header_response.clicked()
+            && !searching
+            && self.reveal_in_sidebar_pending.is_none()
+            && !is_renaming
+        {
+            if persisted_open {
+                self.state.collapsed_folders.insert(folder.id.clone());
+            } else {
+                self.state.collapsed_folders.remove(&folder.id);
+            }
+            self.save_state();
+        }
+
         // For nested folders, paint a small folder glyph in the leading
         // space we reserved at the front of the header label. The icon
         // goes right after the chevron (~16px wide) and the 6-char
@@ -1012,11 +1038,11 @@ impl ApiClient {
                 elevated()
             };
             ui.painter()
-                .rect_filled(rename_rect.expand(1.0), egui::Rounding::same(7.0), bg);
+                .rect_filled(rename_rect.expand(1.0), egui::Rounding::same(5.0), bg);
             ui.painter().rect_stroke(
                 rename_rect.expand(1.0),
-                egui::Rounding::same(7.0),
-                egui::Stroke::new(1.2_f32, accent()),
+                egui::Rounding::same(5.0),
+                egui::Stroke::new(1.0_f32, with_alpha(accent(), 200)),
             );
             let mut child_ui = ui.new_child(
                 egui::UiBuilder::new().max_rect(rename_rect.shrink2(egui::vec2(6.0, 1.0))),
@@ -1031,8 +1057,17 @@ impl ApiClient {
                         .desired_width(edit_width)
                         .font(egui::TextStyle::Body)
                         .text_color(text())
+                        .vertical_align(egui::Align::Center)
                         .frame(false),
                 );
+                // Same held-until-focused handoff as the request rename.
+                if self.folder_rename_focus_pending {
+                    if response.has_focus() {
+                        self.folder_rename_focus_pending = false;
+                    } else {
+                        response.request_focus();
+                    }
+                }
                 let (enter, escape) = ui.input(|i| {
                     (
                         i.key_pressed(egui::Key::Enter),
@@ -1140,36 +1175,46 @@ impl ApiClient {
                 egui::PopupCloseBehavior::CloseOnClick,
                 |ui| {
                     ui.set_min_width(180.0);
-                    if ui.button("Open overview").clicked() {
+                    if menu_item(ui, egui_phosphor::regular::INFO, "Open overview").clicked() {
                         open_overview = true;
                     }
-                    if depth == 0 && ui.button("Collection settings...").clicked() {
+                    if depth == 0
+                        && menu_item(ui, egui_phosphor::regular::GEAR, "Collection settings...")
+                            .clicked()
+                    {
                         open_collection_settings = true;
                     }
                     ui.separator();
-                    if ui.button("Add request").clicked() {
+                    if menu_item(ui, egui_phosphor::regular::PLUS, "Add request").clicked() {
                         action_add_request = true;
                     }
-                    if ui
-                        .button(format!(
-                            "Add {}",
-                            if depth == 0 { "folder" } else { "subfolder" }
-                        ))
-                        .clicked()
+                    if menu_item(
+                        ui,
+                        egui_phosphor::regular::FOLDER_SIMPLE_PLUS,
+                        if depth == 0 {
+                            "Add folder"
+                        } else {
+                            "Add subfolder"
+                        },
+                    )
+                    .clicked()
                     {
                         add_subfolder = true;
                     }
                     ui.separator();
-                    if ui.button("Rename").clicked() {
+                    if menu_item(ui, egui_phosphor::regular::PENCIL_SIMPLE, "Rename").clicked() {
                         start_rename = true;
                     }
-                    if ui.button("Duplicate").clicked() {
+                    if menu_item(ui, egui_phosphor::regular::COPY, "Duplicate").clicked() {
                         duplicate_folder = true;
                     }
                     ui.separator();
-                    if ui
-                        .button(egui::RichText::new(format!("Delete {}", noun)).color(C_RED))
-                        .clicked()
+                    if menu_item_danger(
+                        ui,
+                        egui_phosphor::regular::TRASH,
+                        &format!("Delete {}", noun),
+                    )
+                    .clicked()
                     {
                         delete_folder = true;
                     }
@@ -1178,42 +1223,53 @@ impl ApiClient {
 
             // Keep the right-click context menu in sync.
             header_response.header_response.context_menu(|ui| {
-                if ui.button("Open overview").clicked() {
+                ui.set_min_width(180.0);
+                if menu_item(ui, egui_phosphor::regular::INFO, "Open overview").clicked() {
                     open_overview = true;
                     ui.close_menu();
                 }
-                if depth == 0 && ui.button("Collection settings...").clicked() {
+                if depth == 0
+                    && menu_item(ui, egui_phosphor::regular::GEAR, "Collection settings...")
+                        .clicked()
+                {
                     open_collection_settings = true;
                     ui.close_menu();
                 }
                 ui.separator();
-                if ui.button("Add request").clicked() {
+                if menu_item(ui, egui_phosphor::regular::PLUS, "Add request").clicked() {
                     action_add_request = true;
                     ui.close_menu();
                 }
-                if ui
-                    .button(format!(
-                        "Add {}",
-                        if depth == 0 { "folder" } else { "subfolder" }
-                    ))
-                    .clicked()
+                if menu_item(
+                    ui,
+                    egui_phosphor::regular::FOLDER_SIMPLE_PLUS,
+                    if depth == 0 {
+                        "Add folder"
+                    } else {
+                        "Add subfolder"
+                    },
+                )
+                .clicked()
                 {
                     add_subfolder = true;
                     ui.close_menu();
                 }
                 ui.separator();
-                if ui.button("Rename").clicked() {
+                if menu_item(ui, egui_phosphor::regular::PENCIL_SIMPLE, "Rename").clicked() {
                     start_rename = true;
                     ui.close_menu();
                 }
-                if ui.button("Duplicate").clicked() {
+                if menu_item(ui, egui_phosphor::regular::COPY, "Duplicate").clicked() {
                     duplicate_folder = true;
                     ui.close_menu();
                 }
                 ui.separator();
-                if ui
-                    .button(egui::RichText::new(format!("Delete {}", noun)).color(C_RED))
-                    .clicked()
+                if menu_item_danger(
+                    ui,
+                    egui_phosphor::regular::TRASH,
+                    &format!("Delete {}", noun),
+                )
+                .clicked()
                 {
                     delete_folder = true;
                     ui.close_menu();
@@ -1252,6 +1308,7 @@ impl ApiClient {
             if start_rename {
                 self.renaming_folder_id = Some(folder_id.clone());
                 self.rename_folder_text = folder_name;
+                self.folder_rename_focus_pending = true;
             }
             if add_subfolder {
                 self.selected_folder_path = path.clone();

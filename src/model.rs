@@ -438,6 +438,10 @@ pub struct AppState {
     /// options; no Git credentials, access tokens, or request secrets.
     #[serde(default)]
     pub sync: SyncConfig,
+    /// Folder ids collapsed in the sidebar, restored on relaunch. Storing the
+    /// collapsed side keeps old data.json fully expanded; BTreeSet for stable order.
+    #[serde(default)]
+    pub collapsed_folders: std::collections::BTreeSet<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
@@ -764,6 +768,27 @@ mod tests {
     fn app_state_loads_without_runner_presets() {
         let state: AppState = serde_json::from_str(r#"{"folders":[]}"#).unwrap();
         assert!(state.runner_presets.is_empty());
+    }
+
+    #[test]
+    fn app_state_loads_without_collapsed_folders() {
+        // Old data.json has no `collapsed_folders` — everything stays expanded.
+        let state: AppState = serde_json::from_str(r#"{"folders":[]}"#).unwrap();
+        assert!(state.collapsed_folders.is_empty());
+    }
+
+    #[test]
+    fn collapsed_folders_round_trip() {
+        let mut state: AppState = serde_json::from_str(r#"{"folders":[]}"#).unwrap();
+        state.collapsed_folders.insert("folder-b".to_string());
+        state.collapsed_folders.insert("folder-a".to_string());
+
+        let json = serde_json::to_string(&state).unwrap();
+        let reloaded: AppState = serde_json::from_str(&json).unwrap();
+
+        assert!(reloaded.collapsed_folders.contains("folder-a"));
+        assert!(reloaded.collapsed_folders.contains("folder-b"));
+        assert_eq!(reloaded.collapsed_folders.len(), 2);
     }
 
     #[test]
