@@ -278,24 +278,15 @@ pub fn render_kv_table(
         // Keep the trailing ghost row neutral. It is an affordance for
         // typing the next key/value pair, not a selected/warning row.
         // Focus below adds a thin accent line when the user enters it.
-        let bg = if is_last_blank {
-            egui::Color32::TRANSPARENT
-        } else if i % 2 == 1 {
-            if is_light() {
-                with_alpha(border(), 46)
-            } else {
-                with_alpha(elevated(), 54)
-            }
-        } else {
-            egui::Color32::TRANSPARENT
-        };
+        // No zebra — the per-row separators already pair key↔value, and
+        // stripes on top of them read as double row structure.
         let row_frame = egui::Frame::none()
-            .fill(bg)
-            .rounding(egui::Rounding::same(7.0))
+            .fill(egui::Color32::TRANSPARENT)
+            .rounding(egui::Rounding::same(5.0))
             .inner_margin(egui::Margin::symmetric(5.0, 3.0));
         egui::Frame::none()
             .fill(egui::Color32::TRANSPARENT)
-            .rounding(egui::Rounding::same(7.0))
+            .rounding(egui::Rounding::same(5.0))
             .inner_margin(egui::Margin::symmetric(0.0, 0.0))
             .show(ui, |ui| {
                 let row_inner = row_frame.show(ui, |ui| {
@@ -311,9 +302,9 @@ pub fn render_kv_table(
                             };
                             let toggle_resp = ui
                                 .add_sized(
-                                    [18.0, 18.0],
+                                    [16.0, 16.0],
                                     egui::Button::new(
-                                        egui::RichText::new(toggle_label).size(9.5).color(text()),
+                                        egui::RichText::new(toggle_label).size(9.0).color(accent()),
                                     )
                                     .fill(if row.enabled {
                                         with_alpha(accent(), if is_light() { 14 } else { 22 })
@@ -321,14 +312,14 @@ pub fn render_kv_table(
                                         egui::Color32::TRANSPARENT
                                     })
                                     .stroke(egui::Stroke::new(
-                                        if row.enabled { 1.2_f32 } else { 1.0_f32 },
+                                        1.0_f32,
                                         if row.enabled {
                                             with_alpha(accent(), 165)
                                         } else {
                                             border()
                                         },
                                     ))
-                                    .rounding(egui::Rounding::same(4.0)),
+                                    .rounding(egui::Rounding::same(3.0)),
                                 )
                                 .on_hover_cursor(egui::CursorIcon::PointingHand)
                                 .on_hover_text(if row.enabled {
@@ -437,17 +428,23 @@ pub fn render_kv_table(
                 let row_resp = row_inner.response;
                 let row_has_focus = row_inner.inner;
                 let row_hovered = ui.rect_contains_pointer(row_resp.rect);
-                if ui.is_rect_visible(row_resp.rect) && (row_hovered || row_has_focus) {
-                    let stroke_color = if row_has_focus {
-                        accent().linear_multiply(0.8)
-                    } else {
-                        with_alpha(border(), if is_light() { 190 } else { 150 })
-                    };
-                    ui.painter().rect_stroke(
-                        row_resp.rect.expand(0.5),
-                        egui::Rounding::same(7.0),
-                        egui::Stroke::new(1.0_f32, stroke_color),
-                    );
+                if ui.is_rect_visible(row_resp.rect) {
+                    // Focus keeps its accent stroke (the one border that
+                    // earns its place); plain hover is a quiet fill, per the
+                    // flat-theme rule — no box around every hovered row.
+                    if row_has_focus {
+                        ui.painter().rect_stroke(
+                            row_resp.rect.expand(0.5),
+                            egui::Rounding::same(5.0),
+                            egui::Stroke::new(1.0_f32, accent().linear_multiply(0.8)),
+                        );
+                    } else if row_hovered {
+                        ui.painter().rect_filled(
+                            row_resp.rect,
+                            egui::Rounding::same(5.0),
+                            with_alpha(text(), 8),
+                        );
+                    }
                 }
             });
         // Thin separator below each row so short values stay visually
@@ -584,23 +581,15 @@ pub fn render_single_tab(
         // In a dense developer tool, selection should be obvious without
         // turning the whole tab into an accent block.
         let tab_bg = if is_active {
-            if is_light() {
-                egui::Color32::from_rgb(248, 250, 253)
-            } else {
-                egui::Color32::from_rgb(22, 25, 31)
-            }
+            sunken()
         } else if resp.hovered() {
-            if is_light() {
-                egui::Color32::from_rgb(242, 245, 249)
-            } else {
-                egui::Color32::from_rgb(33, 37, 44)
-            }
+            ui.visuals().widgets.hovered.bg_fill
         } else {
             egui::Color32::TRANSPARENT
         };
         let rounding = egui::Rounding {
-            nw: 9.0,
-            ne: 9.0,
+            nw: 6.0,
+            ne: 6.0,
             sw: 0.0,
             se: 0.0,
         };
@@ -929,21 +918,23 @@ fn menu_item_impl(ui: &mut egui::Ui, icon: &str, label: &str, danger: bool) -> e
     if ui.is_rect_visible(rect) {
         if resp.hovered() {
             let fill = if danger {
-                with_alpha(C_RED, if is_light() { 22 } else { 36 })
+                with_alpha(danger_red(), if is_light() { 22 } else { 36 })
             } else {
-                elevated()
+                // The theme's tuned hover step — elevated() goes the wrong
+                // way (lighter than the popup bg) on the Light theme.
+                ui.visuals().widgets.hovered.bg_fill
             };
             ui.painter()
                 .rect_filled(rect, egui::Rounding::same(4.0), fill);
         }
         let icon_color = if danger {
-            C_RED
+            danger_red()
         } else if resp.hovered() {
             text()
         } else {
             muted()
         };
-        let label_color = if danger { C_RED } else { text() };
+        let label_color = if danger { danger_red() } else { text() };
         ui.painter().text(
             egui::pos2(rect.left() + 10.0, rect.center().y),
             egui::Align2::LEFT_CENTER,
@@ -1185,7 +1176,14 @@ fn short_path(p: &str) -> String {
     if p.len() <= MAX {
         p.to_string()
     } else {
-        format!("…{}", &p[p.len() - (MAX - 1)..])
+        // Byte offset `len - (MAX - 1)` can land inside a multibyte
+        // char (CJK/emoji keys) — walk forward to the next boundary
+        // so the slice can't panic.
+        let mut cut = p.len() - (MAX - 1);
+        while !p.is_char_boundary(cut) {
+            cut += 1;
+        }
+        format!("…{}", &p[cut..])
     }
 }
 
@@ -1328,13 +1326,7 @@ pub fn render_time_breakdown(
         waiting_ms,
         egui::Color32::from_rgb(74, 129, 232),
     );
-    row(
-        ui,
-        "Download",
-        download_start,
-        download_ms,
-        egui::Color32::from_rgb(130, 200, 120),
-    );
+    row(ui, "Download", download_start, download_ms, success_green());
 
     ui.add_space(2.0);
     ui.separator();
@@ -1476,4 +1468,27 @@ pub fn sanitize_filename(name: &str) -> Option<String> {
 /// Mask a secret token for display.
 pub fn mask_token(token: &str) -> String {
     mask_secret_value(token)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::short_path;
+
+    #[test]
+    fn short_path_leaves_short_paths_alone() {
+        assert_eq!(short_path("data.items[0].name"), "data.items[0].name");
+    }
+
+    #[test]
+    fn short_path_truncates_multibyte_on_char_boundary() {
+        // 61 bytes; the naive cut at len-47 = 14 lands mid-char
+        // ('字' is 3 bytes, boundaries at 1, 4, 7, …).
+        let p = format!("x{}", "字".repeat(20));
+        assert!(p.len() > 48);
+        let s = short_path(&p);
+        assert!(s.starts_with('…'));
+        // Suffix after the ellipsis is a real tail of the original.
+        assert!(p.ends_with(&s['…'.len_utf8()..]));
+        assert!(s.len() <= '…'.len_utf8() + 47);
+    }
 }

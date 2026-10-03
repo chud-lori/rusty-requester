@@ -308,14 +308,9 @@ fn apply_search_highlight(
 
     for sec in sections {
         let slice = &text[sec.byte_range.clone()];
-        let slice_lc = slice.to_lowercase();
         let mut cursor = 0;
         // Find every match in this section, split accordingly.
-        loop {
-            let rest = &slice_lc[cursor..];
-            let Some(rel) = rest.find(query) else { break };
-            let match_start = cursor + rel;
-            let match_end = match_start + query.len();
+        while let Some((match_start, match_end)) = find_ci_from(slice, cursor, query) {
             if match_start > cursor {
                 append_section(job, &slice[cursor..match_start], &sec.format, None);
             }
@@ -332,13 +327,55 @@ fn apply_search_highlight(
             );
             seen += 1;
             cursor = match_end;
-            if cursor >= slice_lc.len() {
-                break;
-            }
         }
         if cursor < slice.len() {
             append_section(job, &slice[cursor..], &sec.format, None);
         }
+    }
+}
+
+/// Case-insensitive substring search returning byte offsets into the
+/// ORIGINAL haystack, starting at or after byte offset `from`.
+/// `query_lc` must already be lowercased. We can't search a
+/// `to_lowercase()` copy and reuse its offsets: case folding changes
+/// byte lengths ('İ' U+0130 is 2 bytes, its lowercase form "i\u{307}"
+/// is 3), so copied offsets drift and slicing the original panics.
+/// O(n·m) worst case — fine for a render layouter.
+fn find_ci_from(haystack: &str, from: usize, query_lc: &str) -> Option<(usize, usize)> {
+    if query_lc.is_empty() {
+        return None;
+    }
+    haystack[from..]
+        .char_indices()
+        .map(|(off, _)| from + off)
+        .find_map(|start| match_ci_at(haystack, start, query_lc).map(|end| (start, end)))
+}
+
+/// If the text at byte offset `start` (a char boundary) matches
+/// `query_lc` case-insensitively, return the end byte offset — always
+/// a char boundary of the original. A query ending inside a
+/// multi-char case fold still matches; the whole source char is
+/// included in the range.
+fn match_ci_at(haystack: &str, start: usize, query_lc: &str) -> Option<usize> {
+    let mut q = query_lc.chars();
+    let mut next_q = q.next();
+    for (off, c) in haystack[start..].char_indices() {
+        if next_q.is_none() {
+            return Some(start + off);
+        }
+        for folded in c.to_lowercase() {
+            match next_q {
+                Some(expect) if expect == folded => next_q = q.next(),
+                Some(_) => return None,
+                // Query exhausted mid-fold — accept, keep the char whole.
+                None => break,
+            }
+        }
+    }
+    if next_q.is_none() {
+        Some(haystack.len())
+    } else {
+        None
     }
 }
 
@@ -823,5 +860,45 @@ mod tests {
         assert!(s.contains("--auth='ada:<redacted>'"));
         assert!(s.contains("\\\"password\\\": \\\"<redacted>\\\""));
         assert!(!s.contains("secret"));
+    }
+
+    #[test]
+    fn find_ci_reports_original_offsets_past_length_changing_folds() {
+        // "İstanbul" starts with 'İ' (U+0130, 2 bytes) whose lowercase
+        // form "i\u{307}" is 3 bytes — offsets found in a lowercased
+        // copy drift by one byte per 'İ' and used to panic the slicer.
+        let text = "İstanbul istanbul";
+        let (start, end) = find_ci_from(text, 0, "istanbul").expect("match");
+        assert_eq!(&text[start..end], "istanbul");
+        assert!(text.is_char_boundary(start) && text.is_char_boundary(end));
+        assert!(find_ci_from(text, end, "istanbul").is_none());
+    }
+
+    #[test]
+    fn find_ci_match_ending_mid_fold_stays_on_char_boundary() {
+        // Query "i" against 'İ' exhausts inside the two-char fold —
+        // the range must still end on a boundary of the original.
+        let text = "İx";
+        let (start, end) = find_ci_from(text, 0, "i").expect("match");
+        assert_eq!((start, end), (0, 'İ'.len_utf8()));
+        assert!(text.is_char_boundary(end));
+    }
+
+    #[test]
+    fn search_highlight_survives_length_changing_folds() {
+        // With the old lowercased-copy offsets this sliced past the
+        // end of the original text and panicked the render layouter.
+        let text = "İİİ istanbul";
+        let mut job = LayoutJob::default();
+        job.append(text, 0.0, TextFormat::default());
+        apply_search_highlight(&mut job, text, "istanbul", None);
+        assert_eq!(job.text, text);
+        let matched: Vec<&str> = job
+            .sections
+            .iter()
+            .filter(|s| s.format.background != Color32::TRANSPARENT)
+            .map(|s| &job.text[s.byte_range.clone()])
+            .collect();
+        assert_eq!(matched, vec!["istanbul"]);
     }
 }

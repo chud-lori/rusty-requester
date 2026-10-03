@@ -1010,7 +1010,7 @@ impl ApiClient {
                         [gutter_w, 17.0],
                         egui::Label::new(
                             egui::RichText::new(format!("{:>3}", i))
-                                .color(egui::Color32::from_rgb(100, 105, 115))
+                                .color(hint_color())
                                 .font(egui::FontId::monospace(12.5)),
                         ),
                     );
@@ -1728,8 +1728,8 @@ impl ApiClient {
                     ui.allocate_exact_size(egui::vec2(dot_w, row_h), egui::Sense::hover());
                 if !is_ghost && asr.enabled {
                     let color = match &result {
-                        Some(AssertionResult::Pass) => egui::Color32::from_rgb(130, 200, 120),
-                        Some(AssertionResult::Fail(_)) => C_RED,
+                        Some(AssertionResult::Pass) => success_green(),
+                        Some(AssertionResult::Fail(_)) => danger_red(),
                         Some(AssertionResult::Error(_)) => C_ORANGE,
                         None => border(),
                     };
