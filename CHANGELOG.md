@@ -11,6 +11,32 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Fixed
+- **Crash fixes on hostile or non-ASCII data.** Find-in-body highlighting,
+  Tree-view path labels, and the HTML preview no longer panic on responses
+  containing accented/CJK/emoji text; drag-reorder can drop a request at the
+  last position in a folder.
+- **Responses land on the tab that sent them.** Switching or closing a tab
+  mid-request no longer applies the response — or history, extractors, and
+  cookies — to whatever tab is now active.
+- **`data.json` can no longer be silently wiped.** An unreadable file is
+  sidelined with saving disabled instead of being overwritten by the next
+  autosave; failed saves surface as a toast instead of vanishing.
+- **Cookie jar hardening.** `Set-Cookie` domains must cover the responding
+  host, `Domain=com`-style wildcards no longer match, and `Secure` cookies
+  stay off plain-http requests. Multibyte characters survive SSE/body chunk
+  boundaries intact.
+- History entries record real response times instead of 0 ms.
+
+### Changed
+- **UI pass with the restyle.** Inter is the UI font everywhere, surfaces are
+  flatter with fewer borders, menus and tables sit on a tighter radius scale,
+  and selected/hover/search/tab fills now come from per-theme tokens — the
+  Postman theme no longer swallows selection and input fields. Big response
+  diffs and JSON views no longer re-parse every frame.
+
 ## [0.28.7] — 2026-10-03
 
 ### Changed
