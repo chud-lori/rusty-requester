@@ -11,6 +11,15 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Changed
+- **Inline rename reads as editing the row, not a box dropped on it.** The
+  method badge stays visible while renaming, the field covers only the name
+  column, the accent border is toned way down, and the whole name is
+  pre-selected on focus — type to replace, click or arrow to refine, the
+  way Finder and VS Code do it.
+
 ## [0.28.6] — 2026-10-02
 
 ### Fixed
