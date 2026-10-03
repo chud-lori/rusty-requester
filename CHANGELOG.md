@@ -11,7 +11,7 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
-## Unreleased
+## [0.28.7] — 2026-10-03
 
 ### Changed
 - **Inline rename reads as editing the row, not a box dropped on it.** The
