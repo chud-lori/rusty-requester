@@ -81,6 +81,46 @@ const C_PINK_LIGHT: egui::Color32 = egui::Color32::from_rgb(147, 55, 18); //  #9
 const C_RED_LIGHT: egui::Color32 = egui::Color32::from_rgb(168, 31, 31); //  #A81F1F
 const C_PURPLE_LIGHT: egui::Color32 = egui::Color32::from_rgb(130, 82, 40); //  #825228
 
+/// Selected-surface fill — one step above hover so resting < hover <
+/// selected holds on all three themes (the old hardcodes inverted it on
+/// dark and vanished on Postman).
+pub fn selection_fill() -> egui::Color32 {
+    match current_theme() {
+        Theme::Dark => egui::Color32::from_rgb(45, 50, 58),
+        Theme::Light => egui::Color32::from_rgb(233, 237, 243),
+        Theme::Postman => egui::Color32::from_rgb(237, 237, 238),
+    }
+}
+
+/// Sunken input surface (search field, active tab wells): below the panel
+/// on dark, visibly grey on both light themes — Postman needs its own step
+/// because its panels are lighter than Light's.
+pub fn sunken() -> egui::Color32 {
+    match current_theme() {
+        Theme::Dark => egui::Color32::from_rgb(22, 25, 31),
+        Theme::Light => egui::Color32::from_rgb(243, 245, 248),
+        Theme::Postman => egui::Color32::from_rgb(240, 240, 241),
+    }
+}
+
+/// Destructive-action red readable on the active theme's surfaces.
+pub fn danger_red() -> egui::Color32 {
+    if matches!(current_theme(), Theme::Dark) {
+        C_RED
+    } else {
+        C_RED_LIGHT
+    }
+}
+
+/// Success green readable on the active theme (pass badges, valid states).
+pub fn success_green() -> egui::Color32 {
+    if matches!(current_theme(), Theme::Dark) {
+        C_GREEN
+    } else {
+        C_GREEN_LIGHT
+    }
+}
+
 pub fn method_color(m: &HttpMethod) -> egui::Color32 {
     // Both Light and Postman render on pale surfaces and need the
     // darker, WCAG-readable variants; only the Dark theme keeps the

@@ -360,13 +360,9 @@ impl ApiClient {
                 ui.add_space(10.0);
 
                 egui::Frame::none()
-                    .fill(if is_light() {
-                        egui::Color32::from_rgb(245, 247, 250)
-                    } else {
-                        egui::Color32::from_rgb(22, 25, 31)
-                    })
+                    .fill(sunken())
                     .stroke(egui::Stroke::new(1.0_f32, with_alpha(border(), 185)))
-                    .rounding(egui::Rounding::same(9.0))
+                    .rounding(egui::Rounding::same(6.0))
                     .inner_margin(egui::Margin::symmetric(10.0, 4.0))
                     .show(ui, |ui| {
                         ui.horizontal(|ui| {
@@ -761,18 +757,27 @@ impl ApiClient {
                         egui::Stroke::new(1.5_f32, accent()),
                     );
                 }
-                // While *another* row is being dragged and the pointer
-                // is over us, draw the drop indicator (a thin accent
-                // line above this row) and on release, perform the
-                // reorder.
+                // While *another* row is being dragged and the pointer is
+                // over us, draw the drop indicator and on release, reorder.
+                // Final-position semantics: dragging DOWN lands the row
+                // below the hovered one, so the line goes on the bottom
+                // edge there — a top line would point one slot too high.
                 if resp.hovered() && egui::DragAndDrop::has_payload_of_type::<DragPayload>(ui.ctx())
                 {
                     let any_dragged = ui.ctx().input(|i| i.pointer.any_down());
                     if any_dragged {
+                        let moving_down = egui::DragAndDrop::payload::<DragPayload>(ui.ctx())
+                            .map(|p| p.folder_path == path && p.from_index < i)
+                            .unwrap_or(false);
+                        let y = if moving_down {
+                            rect.bottom() - 1.0
+                        } else {
+                            rect.top() + 1.0
+                        };
                         ui.painter().line_segment(
                             [
-                                egui::pos2(rect.left() + 4.0, rect.top() + 1.0),
-                                egui::pos2(rect.right() - 4.0, rect.top() + 1.0),
+                                egui::pos2(rect.left() + 4.0, y),
+                                egui::pos2(rect.right() - 4.0, y),
                             ],
                             egui::Stroke::new(2.0_f32, accent()),
                         );
@@ -786,11 +791,7 @@ impl ApiClient {
 
                 if ui.is_rect_visible(rect) {
                     let bg = if is_selected {
-                        if is_light() {
-                            egui::Color32::from_rgb(242, 245, 249)
-                        } else {
-                            egui::Color32::from_rgb(24, 28, 35)
-                        }
+                        selection_fill()
                     } else if resp.hovered() {
                         elevated()
                     } else {
@@ -852,7 +853,7 @@ impl ApiClient {
                     ui.painter().rect_stroke(
                         edit_rect,
                         egui::Rounding::same(4.0),
-                        egui::Stroke::new(1.0_f32, with_alpha(accent(), 110)),
+                        egui::Stroke::new(1.0_f32, with_alpha(accent(), 140)),
                     );
                     // Keep the clickable area of the input flush with the
                     // painted box (only a 2px visual gutter), so clicking
@@ -1032,17 +1033,13 @@ impl ApiClient {
                 egui::pos2(header_rect.left() + 25.0, header_rect.top()),
                 egui::pos2(right_edge - 4.0, header_rect.bottom()),
             );
-            let bg = if is_light() {
-                egui::Color32::from_rgb(248, 250, 253)
-            } else {
-                elevated()
-            };
+            let bg = elevated();
             ui.painter()
                 .rect_filled(rename_rect.expand(1.0), egui::Rounding::same(4.0), bg);
             ui.painter().rect_stroke(
                 rename_rect.expand(1.0),
                 egui::Rounding::same(4.0),
-                egui::Stroke::new(1.0_f32, with_alpha(accent(), 110)),
+                egui::Stroke::new(1.0_f32, with_alpha(accent(), 140)),
             );
             let mut child_ui = ui.new_child(
                 egui::UiBuilder::new().max_rect(rename_rect.shrink2(egui::vec2(6.0, 1.0))),

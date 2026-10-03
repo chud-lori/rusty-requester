@@ -513,13 +513,9 @@ impl ApiClient {
                     egui::Layout::left_to_right(egui::Align::Center),
                     |ui| {
                         egui::Frame::none()
-                            .fill(if is_light() {
-                                egui::Color32::from_rgb(245, 247, 250)
-                            } else {
-                                egui::Color32::from_rgb(22, 25, 31)
-                            })
+                            .fill(sunken())
                             .stroke(egui::Stroke::new(1.0_f32, with_alpha(border(), 185)))
-                            .rounding(egui::Rounding::same(9.0))
+                            .rounding(egui::Rounding::same(6.0))
                             .inner_margin(egui::Margin::symmetric(horizontal_margin, 4.0))
                             .show(ui, |ui| {
                                 ui.set_min_width(content_w);
@@ -1154,10 +1150,15 @@ fn body_fingerprint(text: &str) -> BodyFingerprint {
     let bytes = text.as_bytes();
     let mut h = std::collections::hash_map::DefaultHasher::new();
     bytes.len().hash(&mut h);
-    if bytes.len() <= EDGE * 2 {
+    if bytes.len() <= EDGE * 3 {
         bytes.hash(&mut h);
     } else {
+        // Middle window too — ptr can't be trusted as a tiebreaker: the
+        // allocator may hand a freed buffer's address to a new body of
+        // the same length, and fixed-shape JSON differs only mid-body.
+        let mid = bytes.len() / 2 - EDGE / 2;
         bytes[..EDGE].hash(&mut h);
+        bytes[mid..mid + EDGE].hash(&mut h);
         bytes[bytes.len() - EDGE..].hash(&mut h);
     }
     BodyFingerprint {
@@ -2264,6 +2265,21 @@ mod tests {
         let fp1 = body_fingerprint(&s);
         s.truncate(n - 1);
         s.push('b');
+        let fp2 = body_fingerprint(&s);
+        assert_eq!(fp1.ptr, fp2.ptr);
+        assert_eq!(fp1.len, fp2.len);
+        assert_ne!(fp1.edge_hash, fp2.edge_hash);
+    }
+
+    #[test]
+    fn body_fingerprint_detects_middle_change_same_edges() {
+        // Same len, same first/last 4 KB, difference only mid-body —
+        // the recycled-allocation case where ptr+len+edges all collide
+        // (fixed-shape JSON re-polled with one middle field changed).
+        let n = 40_000;
+        let mut s = "x".repeat(n);
+        let fp1 = body_fingerprint(&s);
+        s.replace_range(n / 2..n / 2 + 1, "y");
         let fp2 = body_fingerprint(&s);
         assert_eq!(fp1.ptr, fp2.ptr);
         assert_eq!(fp1.len, fp2.len);
