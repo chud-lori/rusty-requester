@@ -19,3 +19,6 @@ SKILL.md
 # macOS Finder metadata — never tracked.
 .DS_Store
 **/.DS_Store
+
+# Local Claude Code config
+.claude/

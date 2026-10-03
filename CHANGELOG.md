@@ -11,6 +11,38 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## [0.28.7] — 2026-10-03
+
+### Changed
+- **Inline rename reads as editing the row, not a box dropped on it.** The
+  method badge stays visible while renaming, the field covers only the name
+  column, the accent border is toned way down, and the whole name is
+  pre-selected on focus — type to replace, click or arrow to refine, the
+  way Finder and VS Code do it.
+
+## [0.28.6] — 2026-10-02
+
+### Fixed
+- **rustls bumped to 0.23.45** for RUSTSEC-2026-0285 (TLS 1.3 handshake
+  messages incorrectly accepted across encryption level boundaries).
+
+## [0.28.5] — 2026-10-02
+
+### Fixed
+- **Sidebar remembers your tree.** Collapsed collections and folders stay
+  collapsed across restarts instead of all reopening on every launch. The
+  open/closed state now lives in `data.json`; searching still opens folders
+  temporarily without overwriting your layout.
+- **Rename focus.** The inline rename field grabs keyboard focus immediately.
+  Folder rename never requested focus at all, and request rename raced the
+  closing context menu on Linux and lost.
+
+### Changed
+- **Sidebar menus.** Right-click and overflow menus now use full-width rows
+  with icons and hover states, and Delete reads as a destructive action.
+  Rename boxes are vertically centered with a softer border.
+- Dependency bumps for RUSTSEC advisories (`h2`, `webbrowser`).
+
 ## [0.28.4] — 2026-08-09
 
 ### Fixed

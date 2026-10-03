@@ -899,6 +899,69 @@ pub fn icon_btn(ui: &mut egui::Ui, icon: &str, hover_text: &str) -> egui::Respon
         .on_hover_text(hover_text)
 }
 
+/// Select a TextEdit's whole contents — the Finder-style rename start,
+/// where typing replaces the old name and Arrow/click refines it.
+pub fn select_all_text(ctx: &egui::Context, id: egui::Id, text: &str) {
+    if let Some(mut state) = egui::text_edit::TextEditState::load(ctx, id) {
+        state
+            .cursor
+            .set_char_range(Some(egui::text::CCursorRange::two(
+                egui::text::CCursor::new(0),
+                egui::text::CCursor::new(text.chars().count()),
+            )));
+        state.store(ctx, id);
+    }
+}
+
+/// Context-menu row: icon + label, full menu width, hover fill.
+pub fn menu_item(ui: &mut egui::Ui, icon: &str, label: &str) -> egui::Response {
+    menu_item_impl(ui, icon, label, false)
+}
+
+/// Destructive variant — red label and icon, red-tinted hover fill.
+pub fn menu_item_danger(ui: &mut egui::Ui, icon: &str, label: &str) -> egui::Response {
+    menu_item_impl(ui, icon, label, true)
+}
+
+fn menu_item_impl(ui: &mut egui::Ui, icon: &str, label: &str, danger: bool) -> egui::Response {
+    let width = ui.available_width().max(160.0);
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, 26.0), egui::Sense::click());
+    if ui.is_rect_visible(rect) {
+        if resp.hovered() {
+            let fill = if danger {
+                with_alpha(C_RED, if is_light() { 22 } else { 36 })
+            } else {
+                elevated()
+            };
+            ui.painter()
+                .rect_filled(rect, egui::Rounding::same(4.0), fill);
+        }
+        let icon_color = if danger {
+            C_RED
+        } else if resp.hovered() {
+            text()
+        } else {
+            muted()
+        };
+        let label_color = if danger { C_RED } else { text() };
+        ui.painter().text(
+            egui::pos2(rect.left() + 10.0, rect.center().y),
+            egui::Align2::LEFT_CENTER,
+            icon,
+            egui::FontId::proportional(14.0),
+            icon_color,
+        );
+        ui.painter().text(
+            egui::pos2(rect.left() + 32.0, rect.center().y),
+            egui::Align2::LEFT_CENTER,
+            label,
+            egui::FontId::proportional(13.0),
+            label_color,
+        );
+    }
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
 pub fn folder_matches(folder: &Folder, q: &str) -> bool {
     if q.is_empty() {
         return true;

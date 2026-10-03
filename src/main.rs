@@ -181,6 +181,9 @@ struct ApiClient {
 
     renaming_folder_id: Option<String>,
     rename_folder_text: String,
+    /// Held until the rename TextEdit actually gains focus — a one-shot
+    /// request can land while the context menu is closing and be dropped (Linux).
+    folder_rename_focus_pending: bool,
 
     request_tab: RequestTab,
     response_tab: ResponseTab,
@@ -535,6 +538,7 @@ impl Default for ApiClient {
             streaming_events: Vec::new(),
             renaming_folder_id: None,
             rename_folder_text: String::new(),
+            folder_rename_focus_pending: false,
             request_tab: RequestTab::Params,
             response_tab: ResponseTab::Body,
             show_paste_modal: false,
@@ -778,6 +782,7 @@ impl ApiClient {
             settings: AppSettings::default(),
             runner_presets: vec![],
             sync: SyncConfig::default(),
+            collapsed_folders: Default::default(),
         }
     }
 
