@@ -899,6 +899,20 @@ pub fn icon_btn(ui: &mut egui::Ui, icon: &str, hover_text: &str) -> egui::Respon
         .on_hover_text(hover_text)
 }
 
+/// Select a TextEdit's whole contents — the Finder-style rename start,
+/// where typing replaces the old name and Arrow/click refines it.
+pub fn select_all_text(ctx: &egui::Context, id: egui::Id, text: &str) {
+    if let Some(mut state) = egui::text_edit::TextEditState::load(ctx, id) {
+        state
+            .cursor
+            .set_char_range(Some(egui::text::CCursorRange::two(
+                egui::text::CCursor::new(0),
+                egui::text::CCursor::new(text.chars().count()),
+            )));
+        state.store(ctx, id);
+    }
+}
+
 /// Context-menu row: icon + label, full menu width, hover fill.
 pub fn menu_item(ui: &mut egui::Ui, icon: &str, label: &str) -> egui::Response {
     menu_item_impl(ui, icon, label, false)

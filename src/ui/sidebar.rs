@@ -811,18 +811,17 @@ impl ApiClient {
                     // regardless of method length (GET vs OPTIONS).
                     let method_slot_w = 46.0;
                     let method_left = rect.left() + 10.0;
-                    // Hidden while renaming: the rename input takes the whole
-                    // row so there is no gap left where a click could miss the
-                    // input and cancel the rename.
+                    // Method badge stays while renaming — the row keeps its
+                    // identity and the field reads as editing the name slot,
+                    // not as a foreign box dropped on the row.
+                    ui.painter().text(
+                        egui::pos2(method_left, rect.center().y),
+                        egui::Align2::LEFT_CENTER,
+                        format!("{}", req.method),
+                        egui::FontId::new(10.0, egui::FontFamily::Proportional),
+                        mc,
+                    );
                     if !is_renaming {
-                        ui.painter().text(
-                            egui::pos2(method_left, rect.center().y),
-                            egui::Align2::LEFT_CENTER,
-                            format!("{}", req.method),
-                            egui::FontId::new(10.0, egui::FontFamily::Proportional),
-                            mc,
-                        );
-
                         let name_x = method_left + method_slot_w;
                         let name_pos = egui::pos2(name_x, rect.center().y);
                         let font = egui::FontId::new(12.5, egui::FontFamily::Proportional);
@@ -838,22 +837,22 @@ impl ApiClient {
                     }
                 }
 
-                // Inline rename TextEdit overlay (clearly visible against the row)
+                // Inline rename TextEdit over the name slot only
                 if is_renaming {
-                    // Full-row input: any click on the row lands in the text
-                    // field and places the caret at that character, instead of
-                    // hitting bare row and dismissing the rename.
+                    // Field covers the name column, not the method badge; the
+                    // row underneath senses nothing (see row_sense above), so
+                    // a click on the badge area is inert rather than a cancel.
                     let edit_rect = egui::Rect::from_min_max(
-                        egui::pos2(rect.left() + 4.0, rect.top() + 2.0),
+                        egui::pos2(rect.left() + 10.0 + 46.0 - 6.0, rect.top() + 2.0),
                         egui::pos2(rect.right() - 6.0, rect.bottom() - 2.0),
                     );
-                    // Visible background + accent border so the input is obvious.
+                    // Quiet treatment: elevated fill + low-alpha accent ring.
                     ui.painter()
-                        .rect_filled(edit_rect, egui::Rounding::same(5.0), elevated());
+                        .rect_filled(edit_rect, egui::Rounding::same(4.0), elevated());
                     ui.painter().rect_stroke(
                         edit_rect,
-                        egui::Rounding::same(5.0),
-                        egui::Stroke::new(1.0_f32, with_alpha(accent(), 200)),
+                        egui::Rounding::same(4.0),
+                        egui::Stroke::new(1.0_f32, with_alpha(accent(), 110)),
                     );
                     // Keep the clickable area of the input flush with the
                     // painted box (only a 2px visual gutter), so clicking
@@ -874,6 +873,7 @@ impl ApiClient {
                     // fire while the context menu is closing and be dropped (Linux).
                     if self.request_rename_focus_pending {
                         if edit_resp.has_focus() {
+                            select_all_text(ui.ctx(), edit_resp.id, &self.rename_request_text);
                             self.request_rename_focus_pending = false;
                         } else {
                             edit_resp.request_focus();
@@ -1038,11 +1038,11 @@ impl ApiClient {
                 elevated()
             };
             ui.painter()
-                .rect_filled(rename_rect.expand(1.0), egui::Rounding::same(5.0), bg);
+                .rect_filled(rename_rect.expand(1.0), egui::Rounding::same(4.0), bg);
             ui.painter().rect_stroke(
                 rename_rect.expand(1.0),
-                egui::Rounding::same(5.0),
-                egui::Stroke::new(1.0_f32, with_alpha(accent(), 200)),
+                egui::Rounding::same(4.0),
+                egui::Stroke::new(1.0_f32, with_alpha(accent(), 110)),
             );
             let mut child_ui = ui.new_child(
                 egui::UiBuilder::new().max_rect(rename_rect.shrink2(egui::vec2(6.0, 1.0))),
@@ -1063,6 +1063,7 @@ impl ApiClient {
                 // Same held-until-focused handoff as the request rename.
                 if self.folder_rename_focus_pending {
                     if response.has_focus() {
+                        select_all_text(ui.ctx(), response.id, &self.rename_folder_text);
                         self.folder_rename_focus_pending = false;
                     } else {
                         response.request_focus();
