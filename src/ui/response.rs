@@ -1202,10 +1202,6 @@ struct ResponseRenderCaches {
     parse: Option<(BodyFingerprint, Option<Rc<serde_json::Value>>)>,
     fold: Option<(BodyFingerprint, u64, Rc<FoldedDisplay>)>,
     diff: Option<(BodyFingerprint, BodyFingerprint, Rc<CachedDiff>)>,
-    /// Two slots: the raw body (match counting) and the folded display
-    /// text (scroll-to-match) are both lowercased in the same frame,
-    /// so a single entry would thrash between them.
-    lowercase: Vec<(BodyFingerprint, Rc<String>)>,
     match_count: Option<(BodyFingerprint, String, usize)>,
 }
 
@@ -1287,31 +1283,6 @@ fn cached_diff(before: &str, after: &str) -> Rc<CachedDiff> {
     })
 }
 
-/// Lowercased copy of `text`, allocated once per body instead of once
-/// per frame while the find bar is open.
-fn cached_lowercase(text: &str) -> Rc<String> {
-    let fp = body_fingerprint(text);
-    if let Some(hit) = RENDER_CACHES.with(|caches| {
-        let mut caches = caches.borrow_mut();
-        if let Some(pos) = caches.lowercase.iter().position(|(f, _)| *f == fp) {
-            let entry = caches.lowercase.remove(pos);
-            let value = entry.1.clone();
-            caches.lowercase.insert(0, entry);
-            return Some(value);
-        }
-        None
-    }) {
-        return hit;
-    }
-    let value = Rc::new(text.to_lowercase());
-    RENDER_CACHES.with(|caches| {
-        let mut caches = caches.borrow_mut();
-        caches.lowercase.insert(0, (fp, value.clone()));
-        caches.lowercase.truncate(2);
-    });
-    value
-}
-
 fn render_response_metric(ui: &mut egui::Ui, value: &str) -> egui::Response {
     ui.add_space(2.0);
     ui.label(egui::RichText::new("·").size(12.0).color(muted()));
@@ -1387,19 +1358,19 @@ fn response_find_active_match_line(text: &str, query: &str, active_match: usize)
         return None;
     }
 
-    let text_lc = cached_lowercase(text);
+    // Same fold-aware matcher as the highlight layouter — the three
+    // consumers (count, active line, painted ranges) must agree or the
+    // counter points at matches the view never painted (issue #84).
     let query_lc = query.to_lowercase();
     let mut cursor = 0usize;
     let mut seen = 0usize;
 
-    while cursor <= text_lc.len() {
-        let rel = text_lc[cursor..].find(&query_lc)?;
-        let start = cursor + rel;
+    while let Some((start, end)) = crate::snippet::find_ci_from(text, cursor, &query_lc) {
         if seen == active_match {
-            return Some(text_lc[..start].bytes().filter(|b| *b == b'\n').count());
+            return Some(text[..start].bytes().filter(|b| *b == b'\n').count());
         }
         seen += 1;
-        cursor = start + query_lc.len();
+        cursor = end;
     }
 
     None
@@ -1409,9 +1380,8 @@ fn count_case_insensitive_matches(text: &str, query: &str) -> usize {
     if query.is_empty() {
         return 0;
     }
-    // This runs every frame while the find bar is open — both the
-    // lowercased body and the resulting count are cached so a frame
-    // with an unchanged body + query does no O(body) work.
+    // This runs every frame while the find bar is open — the count is
+    // cached so a frame with an unchanged body + query does no O(body) work.
     let fp = body_fingerprint(text);
     let cached = RENDER_CACHES.with(|caches| match &caches.borrow().match_count {
         Some((cfp, cq, count)) if *cfp == fp && cq == query => Some(*count),
@@ -1420,9 +1390,13 @@ fn count_case_insensitive_matches(text: &str, query: &str) -> usize {
     if let Some(count) = cached {
         return count;
     }
-    let text_lc = cached_lowercase(text);
     let query_lc = query.to_lowercase();
-    let count = text_lc.match_indices(&query_lc).count();
+    let mut count = 0usize;
+    let mut cursor = 0usize;
+    while let Some((_, end)) = crate::snippet::find_ci_from(text, cursor, &query_lc) {
+        count += 1;
+        cursor = end;
+    }
     RENDER_CACHES.with(|caches| {
         caches.borrow_mut().match_count = Some((fp, query.to_string(), count));
     });
@@ -2373,20 +2347,6 @@ mod tests {
         let after2 = "a\nb".to_string();
         let third = cached_diff(&before, &after2);
         assert_eq!((third.added, third.removed), (0, 0));
-    }
-
-    #[test]
-    fn cached_lowercase_keeps_two_bodies_warm() {
-        let raw = "ABC DEF".to_string();
-        let displayed = "GHI JKL".to_string();
-        let raw_lc = cached_lowercase(&raw);
-        let displayed_lc = cached_lowercase(&displayed);
-        assert_eq!(raw_lc.as_str(), "abc def");
-        assert_eq!(displayed_lc.as_str(), "ghi jkl");
-        // Alternating between the two (raw body for counting, folded
-        // display for scroll-to-match) must hit on both slots.
-        assert!(Rc::ptr_eq(&raw_lc, &cached_lowercase(&raw)));
-        assert!(Rc::ptr_eq(&displayed_lc, &cached_lowercase(&displayed)));
     }
 
     #[test]
