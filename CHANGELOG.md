@@ -11,6 +11,16 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Fixed
+- **Search highlight no longer skips matches.** In the JSON response view,
+  a search term crossing a syntax-token boundary (a quote, a colon, a
+  key/value edge) was counted by the find bar but never painted, and
+  Enter-navigation could point at an unpainted match. Matching now runs
+  over the whole body once, and the counter, the active-match scroll, and
+  the painted highlights share one matcher. (#84)
+
 ## [0.29.0] — 2026-10-03
 
 ### Fixed

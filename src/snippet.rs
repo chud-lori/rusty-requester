@@ -299,37 +299,60 @@ fn apply_search_highlight(
     query: &str,
     active_match: Option<usize>,
 ) {
+    // Match against the WHOLE text first, then intersect with sections.
+    // Syntax highlighting splits a line into many small sections (key,
+    // colon, value…), so matching per-section silently drops any match
+    // that spans a token boundary — while the find-bar counter, which
+    // scans the whole body, still counts it (issue #84).
+    let mut matches: Vec<(usize, usize)> = Vec::new();
+    let mut cursor = 0;
+    while let Some(range) = find_ci_from(&job.text, cursor, query) {
+        cursor = range.1;
+        matches.push(range);
+    }
+    if matches.is_empty() {
+        return;
+    }
+
     let sections = std::mem::take(&mut job.sections);
     let text = job.text.clone();
     job.text.clear();
     let bg = Color32::from_rgba_unmultiplied(206, 66, 43, 120); // rust-orange highlight
     let active_bg = Color32::from_rgba_unmultiplied(239, 106, 69, 210);
-    let mut seen = 0usize;
 
+    // Sections and matches are both in text order — sweep with one
+    // persistent match index instead of rescanning matches per section.
+    let mut mi = 0usize;
     for sec in sections {
-        let slice = &text[sec.byte_range.clone()];
-        let mut cursor = 0;
-        // Find every match in this section, split accordingly.
-        while let Some((match_start, match_end)) = find_ci_from(slice, cursor, query) {
-            if match_start > cursor {
-                append_section(job, &slice[cursor..match_start], &sec.format, None);
+        let (sec_start, sec_end) = (sec.byte_range.start, sec.byte_range.end);
+        let mut cursor = sec_start;
+        while mi < matches.len() && matches[mi].1 <= sec_start {
+            mi += 1;
+        }
+        let mut i = mi;
+        while i < matches.len() && matches[i].0 < sec_end {
+            let (m_start, m_end) = matches[i];
+            let start = m_start.max(sec_start);
+            let end = m_end.min(sec_end);
+            if start > cursor {
+                append_section(job, &text[cursor..start], &sec.format, None);
             }
-            let match_bg = if active_match == Some(seen) {
+            let match_bg = if active_match == Some(i) {
                 active_bg
             } else {
                 bg
             };
-            append_section(
-                job,
-                &slice[match_start..match_end],
-                &sec.format,
-                Some(match_bg),
-            );
-            seen += 1;
-            cursor = match_end;
+            append_section(job, &text[start..end], &sec.format, Some(match_bg));
+            cursor = end;
+            if m_end <= sec_end {
+                i += 1;
+            } else {
+                // Match continues into the next section — keep it current.
+                break;
+            }
         }
-        if cursor < slice.len() {
-            append_section(job, &slice[cursor..], &sec.format, None);
+        if cursor < sec_end {
+            append_section(job, &text[cursor..sec_end], &sec.format, None);
         }
     }
 }
@@ -341,7 +364,7 @@ fn apply_search_highlight(
 /// byte lengths ('İ' U+0130 is 2 bytes, its lowercase form "i\u{307}"
 /// is 3), so copied offsets drift and slicing the original panics.
 /// O(n·m) worst case — fine for a render layouter.
-fn find_ci_from(haystack: &str, from: usize, query_lc: &str) -> Option<(usize, usize)> {
+pub(crate) fn find_ci_from(haystack: &str, from: usize, query_lc: &str) -> Option<(usize, usize)> {
     if query_lc.is_empty() {
         return None;
     }
@@ -882,6 +905,46 @@ mod tests {
         let (start, end) = find_ci_from(text, 0, "i").expect("match");
         assert_eq!((start, end), (0, 'İ'.len_utf8()));
         assert!(text.is_char_boundary(end));
+    }
+
+    #[test]
+    fn search_highlight_paints_match_spanning_sections() {
+        // Syntax highlighting splits `{"name": 1}` into several token
+        // sections; a query crossing those boundaries used to be counted
+        // by the find bar but never painted (issue #84).
+        let text = "{\"name\": 1}";
+        let job = build_json_layout_job_content_only_with_search(text, "ame\": 1");
+        let matched: String = job
+            .sections
+            .iter()
+            .filter(|s| s.format.background != Color32::TRANSPARENT)
+            .map(|s| &job.text[s.byte_range.clone()])
+            .collect();
+        assert_eq!(matched, "ame\": 1");
+    }
+
+    #[test]
+    fn search_highlight_active_index_counts_globally() {
+        // Active-match index must follow global text order, matching the
+        // find bar's counter — not per-section discovery order.
+        let text = "{\"a\": \"xx\", \"b\": \"xx\"}";
+        let job = build_json_layout_job_content_only_with_search_active(text, "xx", Some(1));
+        let active = Color32::from_rgba_unmultiplied(239, 106, 69, 210);
+        let active_text: String = job
+            .sections
+            .iter()
+            .filter(|s| s.format.background == active)
+            .map(|s| &job.text[s.byte_range.clone()])
+            .collect();
+        assert_eq!(active_text, "xx");
+        // The second occurrence is the active one — it sits after "b".
+        let active_start = job
+            .sections
+            .iter()
+            .find(|s| s.format.background == active)
+            .map(|s| s.byte_range.start)
+            .unwrap();
+        assert!(job.text[..active_start].contains("\"b\""));
     }
 
     #[test]
