@@ -11,6 +11,20 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Fixed
+- **Rename cursor shows up, for real.** Renaming a request that was also
+  open as a tab started two rename fields at once, one in the sidebar and
+  one in the tab bar, and the tab-bar one quietly took keyboard focus. You
+  typed into the sidebar box but the cursor blinked in the tab bar. Now only
+  the field you started the rename from appears. F2 renames in the tab bar,
+  which is always visible. (#87)
+
+### Changed
+- **Rename no longer highlights the whole name.** The cursor sits at the end
+  of the name, ready to edit.
+
 ## [0.29.3] — 2026-10-12
 
 ### Fixed
