@@ -11,7 +11,7 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
-## Unreleased
+## [0.29.4] — 2026-10-12
 
 ### Fixed
 - **Rename cursor shows up, for real.** Renaming a request that was also
