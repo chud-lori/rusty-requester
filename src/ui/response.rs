@@ -921,13 +921,15 @@ impl ApiClient {
                                             text_w.min(ui.available_width().max(0.0)),
                                             ui.available_height().max(120.0),
                                         );
-                                        let text_resp = ui.add_sized(
+                                        let text_resp = link_aware_text(
+                                            ui,
                                             editor_size,
                                             egui::TextEdit::multiline(&mut buf)
                                                 .frame(false)
                                                 .desired_width(f32::INFINITY)
                                                 .font(egui::TextStyle::Monospace)
                                                 .layouter(&mut layouter),
+                                            displayed_text,
                                         );
                                         if self.body_search_scroll_pending {
                                             if let Some(line_idx) = response_find_active_match_line(
@@ -1013,13 +1015,15 @@ impl ApiClient {
                                         ui.available_width().max(0.0),
                                         ui.available_height().max(120.0),
                                     );
-                                    let text_resp = ui.add_sized(
+                                    let text_resp = link_aware_text(
+                                        ui,
                                         editor_size,
                                         egui::TextEdit::multiline(&mut buf)
                                             .frame(false)
                                             .desired_width(f32::INFINITY)
                                             .font(egui::TextStyle::Monospace)
                                             .layouter(&mut layouter),
+                                        &self.response_text,
                                     );
                                     if self.body_search_scroll_pending {
                                         if let Some(line_idx) = response_find_active_match_line(
@@ -1112,6 +1116,59 @@ impl ApiClient {
                     });
             });
         let _ = remaining_height;
+
+        if let Some(click) = take_link_click(ui.ctx()) {
+            self.response_link_menu = Some(click);
+        }
+        self.render_response_link_menu(ui.ctx());
+    }
+
+    /// Actions for a link clicked in the response body.
+    fn render_response_link_menu(&mut self, ctx: &egui::Context) {
+        let Some(link) = self.response_link_menu.clone() else {
+            return;
+        };
+        let mut close = ctx.input(|i| i.key_pressed(egui::Key::Escape));
+        let area = egui::Area::new(egui::Id::new("response_link_menu"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(link.pos + egui::vec2(0.0, 6.0))
+            .show(ctx, |ui| {
+                egui::Frame::menu(ui.style()).show(ui, |ui| {
+                    ui.set_min_width(220.0);
+                    ui.label(
+                        egui::RichText::new(truncate_link_label(&link.url))
+                            .size(11.0)
+                            .color(muted()),
+                    );
+                    ui.separator();
+                    if menu_item(ui, egui_phosphor::regular::GLOBE, "Open in browser").clicked() {
+                        if let Err(e) = crate::webbrowser_open(&link.url) {
+                            self.show_toast(format!("Could not open browser: {}", e));
+                        }
+                        close = true;
+                    }
+                    if menu_item(ui, egui_phosphor::regular::PLUS, "Open as new request").clicked()
+                    {
+                        self.new_draft_request_with_url(link.url.clone());
+                        close = true;
+                    }
+                    if menu_item(ui, egui_phosphor::regular::COPY, "Copy link").clicked() {
+                        ui.ctx().copy_text(link.url.clone());
+                        self.show_toast("Link copied");
+                        close = true;
+                    }
+                });
+            });
+        // A click elsewhere dismisses it — but not the click that opened it.
+        let clicked_outside = ctx.input(|i| i.pointer.any_click())
+            && !ctx
+                .pointer_interact_pos()
+                .map(|p| area.response.rect.contains(p))
+                .unwrap_or(false)
+            && ctx.pointer_interact_pos() != Some(link.pos);
+        if close || clicked_outside {
+            self.response_link_menu = None;
+        }
     }
 }
 
@@ -1281,6 +1338,28 @@ fn cached_diff(before: &str, after: &str) -> Rc<CachedDiff> {
         caches.diff = Some((before_fp, after_fp, diff.clone()));
         diff
     })
+}
+
+/// A real Cloudflare bot challenge, not merely a Cloudflare-fronted page
+/// (those often load its email-obfuscation script and mention "cloudflare").
+fn is_cloudflare_challenge(headers: &[(String, String)], body: &str) -> bool {
+    let mitigated = headers.iter().any(|(k, v)| {
+        k.eq_ignore_ascii_case("cf-mitigated") && v.to_ascii_lowercase().contains("challenge")
+    });
+    if mitigated {
+        return true;
+    }
+    let lower = body.to_ascii_lowercase();
+    lower.contains("/cdn-cgi/challenge-platform/") || lower.contains("cf_chl_opt")
+}
+
+fn truncate_link_label(url: &str) -> String {
+    const MAX: usize = 60;
+    if url.chars().count() <= MAX {
+        url.to_string()
+    } else {
+        format!("{}…", url.chars().take(MAX - 1).collect::<String>())
+    }
 }
 
 fn render_response_metric(ui: &mut egui::Ui, value: &str) -> egui::Response {
@@ -1778,10 +1857,7 @@ fn classify_response_summary(
         return None;
     }
 
-    let lower_body = body.to_ascii_lowercase();
-    let looks_like_cloudflare = lower_body.contains("cloudflare")
-        || lower_body.contains("challenge-platform")
-        || lower_body.contains("just a moment");
+    let looks_like_cloudflare = is_cloudflare_challenge(headers, body);
     let tint = if is_error {
         status_color(status)
     } else if is_html {
@@ -2085,6 +2161,32 @@ mod tests {
             BodyView::Json,
         );
         assert!(summary.is_none());
+    }
+
+    #[test]
+    fn cloudflare_fronted_page_is_not_a_challenge() {
+        // jsonplaceholder's docs page: served via Cloudflare and loading
+        // its email-obfuscation script, but a normal 200 HTML page.
+        let summary = classify_response_summary(
+            "200 OK",
+            &[
+                ("content-type".to_string(), "text/html".to_string()),
+                ("server".to_string(), "cloudflare".to_string()),
+            ],
+            "<!DOCTYPE html><html><head><title>JSONPlaceholder</title></head><body>\
+             <script src=\"/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js\"></script>\
+             </body></html>",
+            false,
+            BodyView::Raw,
+        )
+        .unwrap();
+        assert_eq!(summary.headline, "HTML response detected");
+    }
+
+    #[test]
+    fn cf_mitigated_header_marks_a_challenge() {
+        let headers = [("cf-mitigated".to_string(), "challenge".to_string())];
+        assert!(is_cloudflare_challenge(&headers, "<html></html>"));
     }
 
     #[test]

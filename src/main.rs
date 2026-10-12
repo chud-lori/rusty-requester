@@ -248,6 +248,8 @@ struct ApiClient {
     /// The rename started from the tab bar, not the sidebar. Only one field
     /// may render: both shared the focus flag and the tab one stole focus.
     rename_in_tab: bool,
+    /// Link clicked in the response body; its action menu is open.
+    response_link_menu: Option<crate::widgets::LinkClick>,
     /// (request_id, timestamp_secs) of the last click on a request row.
     /// Used for hand-rolled double-click detection — egui's `double_clicked()`
     /// doesn't fire reliably in this setup because the first click mutates
@@ -587,6 +589,7 @@ impl Default for ApiClient {
             rename_request_text: String::new(),
             request_rename_focus_pending: false,
             rename_in_tab: false,
+            response_link_menu: None,
             last_request_click: None,
             reveal_in_sidebar_pending: None,
             scroll_active_tab_into_view: false,
@@ -2509,7 +2512,7 @@ impl ApiClient {
 /// Report an issue, and the OAuth "Get New Token" flow. Shells out
 /// to the platform's native URL handler instead of pulling in the
 /// `webbrowser` crate.
-fn webbrowser_open(url: &str) -> Result<(), std::io::Error> {
+pub(crate) fn webbrowser_open(url: &str) -> Result<(), std::io::Error> {
     #[cfg(target_os = "macos")]
     {
         std::process::Command::new("open")
@@ -2526,11 +2529,10 @@ fn webbrowser_open(url: &str) -> Result<(), std::io::Error> {
     }
     #[cfg(target_os = "windows")]
     {
-        // `cmd /c start ""` — the empty "" is the window title
-        // placeholder; without it `start` consumes the URL as the
-        // title and the actual URL becomes the command.
-        std::process::Command::new("cmd")
-            .args(["/c", "start", "", url])
+        // Not `cmd /c start`: cmd re-parses `&`, `|` and `^` in the URL,
+        // and response-body links are server-controlled.
+        std::process::Command::new("rundll32")
+            .args(["url.dll,FileProtocolHandler", url])
             .spawn()
             .map(|_| ())
     }
