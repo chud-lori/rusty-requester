@@ -385,6 +385,8 @@ pub fn apply_style(ctx: &egui::Context, theme: Theme) {
     style.visuals.selection.bg_fill =
         with_alpha(a, if matches!(theme, Theme::Dark) { 92 } else { 46 });
     style.visuals.selection.stroke = egui::Stroke::new(1.0_f32, a);
+    // egui's default caret is a dark-mode light blue, invisible on light fields.
+    style.visuals.text_cursor.stroke = egui::Stroke::new(2.0_f32, a);
     style.visuals.hyperlink_color = a;
     style.visuals.widgets.noninteractive.bg_fill = p.bg;
     style.visuals.widgets.noninteractive.weak_bg_fill = p.bg;

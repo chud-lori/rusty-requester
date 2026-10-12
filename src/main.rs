@@ -1547,9 +1547,10 @@ impl ApiClient {
     /// The runner:
     /// 1. Appends a `### STARTED …` banner to `update.log`.
     /// 2. Pipes `install.sh | bash` into the log (stdout + stderr).
-    /// 3. On success — writes `update.status` with `ok\n<version>` and
-    ///    relaunches the app (`open -a RustyRequester` on macOS,
-    ///    `rusty-requester &` on Linux).
+    /// 3. On success — writes `update.status` with `ok\n<version>`, waits
+    ///    for this process to exit (the app closes itself on seeing `ok`;
+    ///    TERM after 10 s if it is still our binary), then relaunches
+    ///    (`open -a RustyRequester` on macOS, `rusty-requester &` on Linux).
     /// 4. On failure — writes `update.status` with `fail\n<reason>`.
     ///
     /// Caller is responsible for closing the existing update modal
@@ -1607,7 +1608,9 @@ impl ApiClient {
                  echo ''\n\
                  echo \"### DONE_OK $(date '+%Y-%m-%d %H:%M:%S')\"\n\
                  printf 'ok\\n{target}\\n' > '{status}'\n\
-                 sleep 1\n\
+                 for _ in $(seq 1 50); do kill -0 {pid} 2>/dev/null || break; sleep 0.2; done\n\
+                 if kill -0 {pid} 2>/dev/null && ps -p {pid} -o comm= | grep -qi 'rusty'; then kill -TERM {pid}; fi\n\
+                 for _ in $(seq 1 25); do kill -0 {pid} 2>/dev/null || break; sleep 0.2; done\n\
                  {relaunch}\n\
              else\n\
                  echo ''\n\
@@ -1619,6 +1622,7 @@ impl ApiClient {
             current = current,
             target = target_version,
             relaunch = relaunch_cmd,
+            pid = std::process::id(),
         );
 
         if let Err(e) = std::fs::write(&runner_path, &script) {
@@ -1684,7 +1688,11 @@ impl ApiClient {
             // usually kills us first, but on early failure (no
             // network, curl 404) the wrapper completes while we're
             // still alive.
-            if let Some(outcome) = consume_update_status() {
+            // Close on success so the runner can relaunch; install.sh only quits
+            // the app on macOS. The status file is left for the new instance's banner.
+            if update_status_is_ok() {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            } else if let Some(outcome) = consume_update_status() {
                 self.updating_in_progress = false;
                 self.post_update_notice = Some(outcome);
             }
@@ -3317,6 +3325,14 @@ fn read_log_tail(path: &std::path::Path, cap: u64) -> String {
 /// Returns `Some((true, version))` / `Some((false, reason))` /
 /// `None` if no recent update activity. Always deletes the file
 /// after reading so we don't show the same banner twice.
+/// Whether the update runner reported success, without consuming the
+/// status file (the relaunched instance shows the banner from it).
+fn update_status_is_ok() -> bool {
+    std::fs::read_to_string(update_status_path())
+        .map(|raw| raw.lines().next().map(str::trim) == Some("ok"))
+        .unwrap_or(false)
+}
+
 fn consume_update_status() -> Option<(bool, String)> {
     let path = update_status_path();
     let raw = std::fs::read_to_string(&path).ok()?;
