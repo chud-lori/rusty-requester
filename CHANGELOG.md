@@ -11,6 +11,16 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Fixed
+- **Rename caret actually blinks now.** The window could start out
+  believing it wasn't focused (a windowing-library bug that reports the
+  wrong focus state at launch), and egui hides the text caret in an
+  unfocused window — so typing worked but no caret was drawn until you
+  switched away and back. The app now treats your first click or keypress
+  as proof of focus. (#87)
+
 ## [0.29.2] — 2026-10-12
 
 ### Fixed

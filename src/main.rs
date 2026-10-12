@@ -184,6 +184,8 @@ struct ApiClient {
     /// Held until the rename TextEdit actually gains focus — a one-shot
     /// request can land while the context menu is closing and be dropped (Linux).
     folder_rename_focus_pending: bool,
+    /// Our own window-focus belief; see `track_window_focus`.
+    window_focus_seen: bool,
 
     request_tab: RequestTab,
     response_tab: ResponseTab,
@@ -539,6 +541,7 @@ impl Default for ApiClient {
             renaming_folder_id: None,
             rename_folder_text: String::new(),
             folder_rename_focus_pending: false,
+            window_focus_seen: false,
             request_tab: RequestTab::Params,
             response_tab: ResponseTab::Body,
             show_paste_modal: false,
@@ -2539,7 +2542,29 @@ fn webbrowser_open(url: &str) -> Result<(), std::io::Error> {
     }
 }
 
+/// winit can report the window unfocused at startup while it really has
+/// focus (winit#4371); egui then never draws the text caret. Typing or
+/// clicking proves focus; a real `WindowFocused` event still wins.
+fn track_window_focus(seen: &mut bool, raw: &mut egui::RawInput) {
+    for ev in &raw.events {
+        match ev {
+            egui::Event::WindowFocused(focused) => *seen = *focused,
+            egui::Event::Key { pressed: true, .. }
+            | egui::Event::Text(_)
+            | egui::Event::PointerButton { pressed: true, .. } => *seen = true,
+            _ => {}
+        }
+    }
+    if *seen {
+        raw.focused = true;
+    }
+}
+
 impl eframe::App for ApiClient {
+    fn raw_input_hook(&mut self, _ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        track_window_focus(&mut self.window_focus_seen, raw_input);
+    }
+
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Fire the startup warning (if any) exactly once. Using a
         // toast means the user sees it but doesn't need to dismiss a
@@ -3595,6 +3620,56 @@ mod tests {
             download_ms: 0,
             total_ms,
         }
+    }
+
+    fn frame_with(events: Vec<egui::Event>, focused: bool) -> egui::RawInput {
+        egui::RawInput {
+            events,
+            focused,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn window_focus_recovers_from_false_startup_report() {
+        // winit reports Focused(false) on launch; the caret stays hidden
+        // until the user's first click or keystroke proves focus.
+        let mut seen = false;
+        let mut raw = frame_with(vec![egui::Event::WindowFocused(false)], false);
+        track_window_focus(&mut seen, &mut raw);
+        assert!(!raw.focused);
+
+        let click = egui::Event::PointerButton {
+            pos: egui::Pos2::ZERO,
+            button: egui::PointerButton::Primary,
+            pressed: true,
+            modifiers: egui::Modifiers::NONE,
+        };
+        let mut raw = frame_with(vec![click], false);
+        track_window_focus(&mut seen, &mut raw);
+        assert!(raw.focused);
+
+        // Later frames stay focused without further input.
+        let mut raw = frame_with(vec![], false);
+        track_window_focus(&mut seen, &mut raw);
+        assert!(raw.focused);
+    }
+
+    #[test]
+    fn window_focus_honors_real_focus_loss() {
+        let mut seen = true;
+        let mut raw = frame_with(vec![egui::Event::WindowFocused(false)], false);
+        track_window_focus(&mut seen, &mut raw);
+        assert!(!raw.focused);
+        assert!(!seen);
+    }
+
+    #[test]
+    fn window_focus_ignores_hover() {
+        let mut seen = false;
+        let mut raw = frame_with(vec![egui::Event::PointerMoved(egui::pos2(5.0, 5.0))], false);
+        track_window_focus(&mut seen, &mut raw);
+        assert!(!raw.focused);
     }
 
     #[test]
