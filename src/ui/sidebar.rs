@@ -1368,11 +1368,6 @@ impl ApiClient {
 /// final positions in the vec — no "insert before" adjustment; the
 /// old `to_index - 1` when moving right made the last slot
 /// unreachable. Callers bounds-check both indices.
-fn reorder_move<T>(items: &mut Vec<T>, from_index: usize, to_index: usize) {
-    let item = items.remove(from_index);
-    items.insert(to_index, item);
-}
-
 #[cfg(test)]
 mod tests {
     use super::reorder_move;
