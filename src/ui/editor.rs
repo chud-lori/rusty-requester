@@ -352,8 +352,9 @@ impl ApiClient {
                                             ));
                                             let is_active = active_request_id.as_deref()
                                                 == Some(tab.request_id.as_str());
-                                            let is_renaming = self.renaming_request_id.as_deref()
-                                                == Some(tab.request_id.as_str());
+                                            let is_renaming = self.rename_in_tab
+                                                && self.renaming_request_id.as_deref()
+                                                    == Some(tab.request_id.as_str());
                                             let has_unsaved_changes =
                                                 self.request_tab_has_unsaved_changes(tab);
 
@@ -423,8 +424,16 @@ impl ApiClient {
                                                     )),
                                                 );
                                                 if self.request_rename_focus_pending {
-                                                    self.request_rename_focus_pending = false;
-                                                    edit_resp.request_focus();
+                                                    if edit_resp.has_focus() {
+                                                        caret_at_end(
+                                                            ui.ctx(),
+                                                            edit_resp.id,
+                                                            &self.rename_request_text,
+                                                        );
+                                                        self.request_rename_focus_pending = false;
+                                                    } else {
+                                                        edit_resp.request_focus();
+                                                    }
                                                 }
                                                 let (enter, escape) = ui.input(|i| {
                                                     (
@@ -554,6 +563,7 @@ impl ApiClient {
                             self.renaming_request_id = Some(tab.request_id.clone());
                             self.rename_request_text = current_name;
                             self.request_rename_focus_pending = true;
+                            self.rename_in_tab = true;
                         }
                     }
                 }

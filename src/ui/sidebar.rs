@@ -691,7 +691,8 @@ impl ApiClient {
                 // header) with one keyed on this request's id. Without this
                 // shadow the row would fall back to the folder's flag and
                 // the rename TextEdit would never appear.
-                let is_renaming = self.renaming_request_id.as_deref() == Some(req.id.as_str());
+                let is_renaming = !self.rename_in_tab
+                    && self.renaming_request_id.as_deref() == Some(req.id.as_str());
 
                 // Compact Postman-style row — also a drag source +
                 // drop target for in-folder reordering. Cross-folder
@@ -874,7 +875,7 @@ impl ApiClient {
                     // fire while the context menu is closing and be dropped (Linux).
                     if self.request_rename_focus_pending {
                         if edit_resp.has_focus() {
-                            select_all_text(ui.ctx(), edit_resp.id, &self.rename_request_text);
+                            caret_at_end(ui.ctx(), edit_resp.id, &self.rename_request_text);
                             self.request_rename_focus_pending = false;
                         } else {
                             edit_resp.request_focus();
@@ -917,6 +918,7 @@ impl ApiClient {
                             self.renaming_request_id = Some(req.id.clone());
                             self.rename_request_text = req.name.clone();
                             self.request_rename_focus_pending = true;
+                            self.rename_in_tab = false;
                             self.last_request_click = None;
                         } else {
                             self.open_request(path.clone(), req.id.clone());
@@ -932,6 +934,7 @@ impl ApiClient {
                             self.renaming_request_id = Some(req_id_for_menu.clone());
                             self.rename_request_text = req_name_for_menu.clone();
                             self.request_rename_focus_pending = true;
+                            self.rename_in_tab = false;
                             ui.close_menu();
                         }
                         if menu_item(ui, egui_phosphor::regular::COPY, "Duplicate").clicked() {
@@ -1060,7 +1063,7 @@ impl ApiClient {
                 // Same held-until-focused handoff as the request rename.
                 if self.folder_rename_focus_pending {
                     if response.has_focus() {
-                        select_all_text(ui.ctx(), response.id, &self.rename_folder_text);
+                        caret_at_end(ui.ctx(), response.id, &self.rename_folder_text);
                         self.folder_rename_focus_pending = false;
                     } else {
                         response.request_focus();
@@ -1429,8 +1432,7 @@ mod rename_caret_tests {
     }
 
     #[test]
-    fn select_all_puts_caret_at_start() {
-        // Whole name selected, caret at the start (not pinned to the right edge).
+    fn rename_caret_sits_at_end_without_selection() {
         let ctx = egui::Context::default();
         let mut text = "http://127.0.0.1:6000/api/v1/web/neighbourhoods/bedok".to_string();
         let mut id = egui::Id::NULL;
@@ -1442,7 +1444,7 @@ mod rename_caret_tests {
                     if frame == 0 {
                         resp.request_focus();
                     } else {
-                        crate::widgets::select_all_text(ctx, resp.id, &text);
+                        crate::widgets::caret_at_end(ctx, resp.id, &text);
                     }
                 });
             });
@@ -1450,7 +1452,8 @@ mod rename_caret_tests {
         let range = egui::text_edit::TextEditState::load(&ctx, id)
             .and_then(|s| s.cursor.char_range())
             .expect("cursor range stored");
-        assert_eq!(range.primary.index, 0);
-        assert_eq!(range.secondary.index, text.chars().count());
+        let len = text.chars().count();
+        assert_eq!(range.primary.index, len);
+        assert_eq!(range.secondary.index, len);
     }
 }
