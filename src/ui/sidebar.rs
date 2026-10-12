@@ -1407,3 +1407,50 @@ pub(crate) struct DragPayload {
     pub request_id: String,
     pub from_index: usize,
 }
+
+#[cfg(test)]
+mod rename_caret_tests {
+    use eframe::egui;
+
+    #[test]
+    fn caret_uses_theme_accent_on_every_theme() {
+        // egui's default dark-mode caret vanished on the light rename fields.
+        let ctx = egui::Context::default();
+        for theme in [
+            crate::model::Theme::Light,
+            crate::model::Theme::Postman,
+            crate::model::Theme::Dark,
+        ] {
+            crate::theme::apply_style(&ctx, theme);
+            let caret = ctx.style().visuals.text_cursor.stroke;
+            assert_eq!(caret.color, crate::theme::accent());
+            assert!(caret.width >= 2.0);
+        }
+    }
+
+    #[test]
+    fn select_all_puts_caret_at_start() {
+        // Whole name selected, caret at the start (not pinned to the right edge).
+        let ctx = egui::Context::default();
+        let mut text = "http://127.0.0.1:6000/api/v1/web/neighbourhoods/bedok".to_string();
+        let mut id = egui::Id::NULL;
+        for frame in 0..2 {
+            let _ = ctx.run(egui::RawInput::default(), |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    let resp = ui.text_edit_singleline(&mut text);
+                    id = resp.id;
+                    if frame == 0 {
+                        resp.request_focus();
+                    } else {
+                        crate::widgets::select_all_text(ctx, resp.id, &text);
+                    }
+                });
+            });
+        }
+        let range = egui::text_edit::TextEditState::load(&ctx, id)
+            .and_then(|s| s.cursor.char_range())
+            .expect("cursor range stored");
+        assert_eq!(range.primary.index, 0);
+        assert_eq!(range.secondary.index, text.chars().count());
+    }
+}

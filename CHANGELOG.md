@@ -11,6 +11,19 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Fixed
+- **In-app update no longer leaves two windows on Linux.** After a
+  successful update the old window now closes itself and the updater waits
+  for it to exit before launching the new version. Before, Linux kept the
+  old window open and opened a second one, and the "Updated to" banner
+  showed the old version number. (#86)
+- **Rename shows its caret.** The text caret now uses the theme accent on
+  every theme (it was a light blue that disappeared on the Light and
+  Postman themes), and renaming selects the name with the caret at the
+  start, so long names show their beginning. (#87)
+
 ## [0.29.1] — 2026-10-09
 
 ### Fixed
