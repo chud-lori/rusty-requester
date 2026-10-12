@@ -11,7 +11,7 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
-## Unreleased
+## [0.29.6] — 2026-10-12
 
 ### Added
 - **Reorder params and headers.** Drag the ⠿ handle at the left of a row to
