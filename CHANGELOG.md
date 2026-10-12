@@ -11,6 +11,26 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Added
+- **Links in responses are clickable.** URLs in the JSON, Tree, and Raw
+  views underline on hover; click one for **Open in browser**, **Open as new
+  request** (a new tab with the URL filled in), or **Copy link**. Only
+  http/https links are offered. (#91)
+
+### Fixed
+- **No more false "Cloudflare challenge" warning.** Any page that merely
+  mentioned Cloudflare (many Cloudflare-hosted sites load its
+  email-protection script) was labelled a bot challenge. Only Cloudflare's
+  actual challenge signals count now; ordinary HTML pages show "HTML
+  response detected".
+- **Raw view no longer blank for HTML with very long lines.** Text wider
+  than the panel was centred and pushed off the left edge, so pages like
+  jsonplaceholder's homepage showed an empty box.
+- **Windows:** opening a link no longer goes through `cmd`, which could
+  misread `&` in a URL as a second command.
+
 ## [0.29.4] — 2026-10-12
 
 ### Fixed

@@ -900,6 +900,112 @@ pub fn caret_at_end(ctx: &egui::Context, id: egui::Id, text: &str) {
     }
 }
 
+/// Byte range of the http(s) URL covering byte offset `idx`, if any;
+/// trailing punctuation from the surrounding JSON or prose is dropped.
+pub fn url_at(text: &str, idx: usize) -> Option<std::ops::Range<usize>> {
+    if idx >= text.len() || !text.is_char_boundary(idx) {
+        return None;
+    }
+    let is_edge = |c: char| c.is_whitespace() || matches!(c, '"' | '\'' | '<' | '>' | '`');
+    let start = text[..idx]
+        .char_indices()
+        .rev()
+        .find(|&(_, c)| is_edge(c))
+        .map(|(i, c)| i + c.len_utf8())
+        .unwrap_or(0);
+    let end = text[idx..]
+        .char_indices()
+        .find(|&(_, c)| is_edge(c))
+        .map(|(i, _)| idx + i)
+        .unwrap_or(text.len());
+    let token = text[start..end].trim_end_matches([',', '.', ';', ')', ']', '}']);
+    let end = start + token.len();
+    if idx >= end || normalize_link(token).is_none() {
+        return None;
+    }
+    Some(start..end)
+}
+
+/// A response-body URL parsed and limited to http/https — the body is
+/// server-controlled, so no `file:` or `javascript:`. Undoes JSON `\/`.
+pub fn normalize_link(raw: &str) -> Option<String> {
+    let url = reqwest::Url::parse(&raw.replace("\\/", "/")).ok()?;
+    match url.scheme() {
+        "http" | "https" if url.host_str().is_some() => Some(url.to_string()),
+        _ => None,
+    }
+}
+
+/// A link clicked somewhere in the response body this frame.
+#[derive(Clone, Default)]
+pub struct LinkClick {
+    pub url: String,
+    pub pos: egui::Pos2,
+}
+
+fn link_click_id() -> egui::Id {
+    egui::Id::new("response_link_click")
+}
+
+/// Hand a clicked link to the response panel, which owns the action menu.
+pub fn emit_link_click(ctx: &egui::Context, url: String, pos: egui::Pos2) {
+    ctx.data_mut(|d| d.insert_temp(link_click_id(), LinkClick { url, pos }));
+}
+
+pub fn take_link_click(ctx: &egui::Context) -> Option<LinkClick> {
+    ctx.data_mut(|d| d.remove_temp::<LinkClick>(link_click_id()))
+}
+
+/// Read-only response text whose http(s) URLs are clickable links. Anchored
+/// top-left: centring pushed wide lines off the left edge, out of scroll range.
+pub fn link_aware_text(
+    ui: &mut egui::Ui,
+    size: egui::Vec2,
+    text_edit: egui::TextEdit<'_>,
+    text: &str,
+) -> egui::Response {
+    let layout = egui::Layout::top_down(egui::Align::Min);
+    let output = ui
+        .allocate_ui_with_layout(size, layout, |ui| text_edit.min_size(size).show(ui))
+        .inner;
+    let resp = output.response;
+    let Some(pointer) = resp.hover_pos() else {
+        return resp;
+    };
+    let cursor = output.galley.cursor_from_pos(pointer - output.galley_pos);
+    let char_idx = cursor.ccursor.index;
+    let Some(byte_idx) = text.char_indices().nth(char_idx).map(|(i, _)| i) else {
+        return resp;
+    };
+    let Some(range) = url_at(text, byte_idx) else {
+        return resp;
+    };
+    let char_of = |b: usize| text[..b].chars().count();
+    let a = output
+        .galley
+        .pos_from_ccursor(egui::text::CCursor::new(char_of(range.start)));
+    let b = output
+        .galley
+        .pos_from_ccursor(egui::text::CCursor::new(char_of(range.end)));
+    if (a.bottom() - b.bottom()).abs() < 1.0 {
+        let y = output.galley_pos.y + a.bottom() - 1.0;
+        ui.painter().line_segment(
+            [
+                egui::pos2(output.galley_pos.x + a.left(), y),
+                egui::pos2(output.galley_pos.x + b.left(), y),
+            ],
+            egui::Stroke::new(1.0_f32, accent()),
+        );
+    }
+    ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    if resp.clicked() {
+        if let Some(url) = normalize_link(&text[range]) {
+            emit_link_click(ui.ctx(), url, pointer);
+        }
+    }
+    resp
+}
+
 /// Context-menu row: icon + label, full menu width, hover fill.
 pub fn menu_item(ui: &mut egui::Ui, icon: &str, label: &str) -> egui::Response {
     menu_item_impl(ui, icon, label, false)
@@ -1083,13 +1189,31 @@ fn render_json_tree_inner(
                     x += key_galley.size().x + 6.0;
                 }
                 let (color, text) = json_leaf_style(value);
-                ui.painter().text(
-                    egui::pos2(x, y),
-                    egui::Align2::LEFT_CENTER,
-                    text,
-                    font,
-                    color,
+                let galley = ui.painter().layout_no_wrap(text, font, color);
+                let value_rect = egui::Rect::from_min_size(
+                    egui::pos2(x, y - galley.size().y / 2.0),
+                    galley.size(),
                 );
+                ui.painter().galley(value_rect.min, galley, color);
+                let link = match value {
+                    Value::String(s) => normalize_link(s),
+                    _ => None,
+                };
+                if let Some(url) = link {
+                    if resp.hovered() {
+                        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                        ui.painter().line_segment(
+                            [value_rect.left_bottom(), value_rect.right_bottom()],
+                            egui::Stroke::new(1.0_f32, accent()),
+                        );
+                    }
+                    if resp.clicked() {
+                        let pos = resp
+                            .interact_pointer_pos()
+                            .unwrap_or(value_rect.left_bottom());
+                        emit_link_click(ui.ctx(), url, pos);
+                    }
+                }
             }
             attach_path_menu(&resp, &current_path);
         }
@@ -1470,7 +1594,34 @@ pub fn mask_token(token: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::short_path;
+    use super::{normalize_link, short_path, url_at};
+
+    #[test]
+    fn url_at_finds_a_json_string_url() {
+        let text = r#"{"url": "https://api.example.com/v1/items?page=2", "n": 1}"#;
+        let idx = text.find("example").unwrap();
+        let range = url_at(text, idx).unwrap();
+        assert_eq!(&text[range], "https://api.example.com/v1/items?page=2");
+        assert!(url_at(text, text.find("\"n\"").unwrap()).is_none());
+    }
+
+    #[test]
+    fn url_at_drops_trailing_punctuation() {
+        let text = "see https://example.com/docs.";
+        let range = url_at(text, text.find("example").unwrap()).unwrap();
+        assert_eq!(&text[range], "https://example.com/docs");
+    }
+
+    #[test]
+    fn normalize_link_only_allows_http_and_unescapes_json() {
+        assert_eq!(
+            normalize_link(r"https:\/\/example.com\/a").as_deref(),
+            Some("https://example.com/a")
+        );
+        assert!(normalize_link("javascript:alert(1)").is_none());
+        assert!(normalize_link("file:///etc/passwd").is_none());
+        assert!(normalize_link("not a url").is_none());
+    }
 
     #[test]
     fn short_path_leaves_short_paths_alone() {

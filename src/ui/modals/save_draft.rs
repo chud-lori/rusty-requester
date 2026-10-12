@@ -482,12 +482,17 @@ impl ApiClient {
     /// closes the tab or explicitly saves it to a folder via the tab's
     /// right-click menu.
     pub(crate) fn new_draft_request(&mut self) {
+        self.new_draft_request_with_url(String::new());
+    }
+
+    /// `new_draft_request` with the URL bar pre-filled.
+    pub(crate) fn new_draft_request_with_url(&mut self, url: String) {
         let draft = Request {
             id: Uuid::new_v4().to_string(),
             name: "Untitled".to_string(),
             description: String::new(),
             method: HttpMethod::GET,
-            url: String::new(),
+            url,
             query_params: vec![],
             path_params: vec![],
             headers: vec![],
