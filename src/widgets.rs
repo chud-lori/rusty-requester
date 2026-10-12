@@ -192,6 +192,24 @@ fn is_invisible_unicode(c: char) -> bool {
     )
 }
 
+/// Move `items[from_index]` so it ends up at `to_index` (final position).
+pub fn reorder_move<T>(items: &mut Vec<T>, from_index: usize, to_index: usize) {
+    let item = items.remove(from_index);
+    items.insert(to_index, item);
+}
+
+/// Where a row dropped on row `hovered` lands: the trailing blank "new row"
+/// stays last, so dropping on it means the last real row.
+fn kv_drop_index(hovered: usize, row_count: usize) -> usize {
+    hovered.min(row_count.saturating_sub(2))
+}
+
+/// Drag payload for reordering rows within one kv table.
+struct KvRowDrag {
+    table: egui::Id,
+    from: usize,
+}
+
 pub fn render_kv_table(
     ui: &mut egui::Ui,
     title: &str,
@@ -213,6 +231,7 @@ pub fn render_kv_table(
     }
 
     let avail = ui.available_width();
+    let handle_w = 14.0;
     let cb_w = 22.0;
     let del_w = 28.0;
     let key_w = avail.mul_add(0.28, 0.0).clamp(150.0, 240.0);
@@ -224,15 +243,15 @@ pub fn render_kv_table(
     let right_margin = 20.0;
     let usable = avail - right_margin;
     let (val_w, desc_w) = if show_description {
-        let total = (usable - cb_w - key_w - del_w - cell_pad * 4.0).max(200.0);
+        let total = (usable - handle_w - cb_w - key_w - del_w - cell_pad * 4.0).max(200.0);
         (total * 0.55, total * 0.45)
     } else {
-        let val = usable - cb_w - key_w - del_w - cell_pad * 3.0;
+        let val = usable - handle_w - cb_w - key_w - del_w - cell_pad * 3.0;
         (val.max(150.0), 0.0)
     };
 
     ui.horizontal(|ui| {
-        ui.add_space(cb_w + cell_pad);
+        ui.add_space(handle_w + cb_w + cell_pad);
         ui.add_sized(
             [key_w, 16.0],
             egui::Label::new(egui::RichText::new("KEY").size(10.0).color(muted())),
@@ -264,6 +283,7 @@ pub fn render_kv_table(
     ui.add_space(4.0);
 
     let mut to_remove: Option<usize> = None;
+    let mut to_move: Option<(usize, usize)> = None;
     let row_count = rows.len();
     // Stable ID salt for this table — the table title plus a role so that
     // two kv_tables on the same page (e.g. Params and Headers) don't
@@ -293,8 +313,30 @@ pub fn render_kv_table(
                     let mut row_has_focus = false;
                     ui.horizontal(|ui| {
                         if is_last_blank {
-                            ui.add_space(cb_w);
+                            ui.add_space(handle_w + cb_w);
                         } else {
+                            let (handle_rect, handle_resp) = ui.allocate_exact_size(
+                                egui::vec2(handle_w, row_h),
+                                egui::Sense::drag(),
+                            );
+                            let handle_resp = handle_resp
+                                .on_hover_cursor(egui::CursorIcon::Grab)
+                                .on_hover_text("Drag to reorder");
+                            ui.painter().text(
+                                handle_rect.center(),
+                                egui::Align2::CENTER_CENTER,
+                                egui_phosphor::regular::DOTS_SIX_VERTICAL,
+                                egui::FontId::proportional(13.0),
+                                if handle_resp.hovered() || handle_resp.dragged() {
+                                    text()
+                                } else {
+                                    border()
+                                },
+                            );
+                            handle_resp.dnd_set_drag_payload(KvRowDrag {
+                                table: id_salt,
+                                from: i,
+                            });
                             let toggle_label = if row.enabled {
                                 egui_phosphor::regular::CHECK
                             } else {
@@ -428,6 +470,32 @@ pub fn render_kv_table(
                 let row_resp = row_inner.response;
                 let row_has_focus = row_inner.inner;
                 let row_hovered = ui.rect_contains_pointer(row_resp.rect);
+                let drag = egui::DragAndDrop::payload::<KvRowDrag>(ui.ctx())
+                    .filter(|d| d.table == id_salt);
+                if let Some(d) = &drag {
+                    if row_hovered && row_count > 1 {
+                        let to = kv_drop_index(i, row_count);
+                        // Final-position semantics: dragging down lands below.
+                        let y = if d.from < to {
+                            row_resp.rect.bottom()
+                        } else {
+                            row_resp.rect.top()
+                        };
+                        ui.painter().line_segment(
+                            [
+                                egui::pos2(row_resp.rect.left(), y),
+                                egui::pos2(row_resp.rect.right(), y),
+                            ],
+                            egui::Stroke::new(2.0_f32, accent()),
+                        );
+                    }
+                }
+                if let Some(d) = row_resp.dnd_release_payload::<KvRowDrag>() {
+                    let to = kv_drop_index(i, row_count);
+                    if d.table == id_salt && d.from != to && row_count > 1 {
+                        to_move = Some((d.from, to));
+                    }
+                }
                 if ui.is_rect_visible(row_resp.rect) {
                     // Focus keeps its accent stroke (the one border that
                     // earns its place); plain hover is a quiet fill, per the
@@ -471,6 +539,10 @@ pub fn render_kv_table(
 
     if let Some(i) = to_remove {
         rows.remove(i);
+        changed = true;
+    }
+    if let Some((from, to)) = to_move {
+        reorder_move(rows, from, to);
         changed = true;
     }
 
@@ -1594,7 +1666,25 @@ pub fn mask_token(token: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{normalize_link, short_path, url_at};
+    use super::{kv_drop_index, normalize_link, reorder_move, short_path, url_at};
+
+    #[test]
+    fn kv_drop_on_ghost_row_keeps_ghost_last() {
+        // rows: a, b, c, <blank ghost>
+        let mut rows = vec!["a", "b", "c", ""];
+        let to = kv_drop_index(3, rows.len());
+        reorder_move(&mut rows, 0, to);
+        assert_eq!(rows, vec!["b", "c", "a", ""]);
+    }
+
+    #[test]
+    fn kv_drop_moves_up_and_down() {
+        let mut rows = vec!["a", "b", "c", ""];
+        reorder_move(&mut rows, 2, kv_drop_index(0, 4));
+        assert_eq!(rows, vec!["c", "a", "b", ""]);
+        reorder_move(&mut rows, 0, kv_drop_index(1, 4));
+        assert_eq!(rows, vec!["a", "c", "b", ""]);
+    }
 
     #[test]
     fn url_at_finds_a_json_string_url() {

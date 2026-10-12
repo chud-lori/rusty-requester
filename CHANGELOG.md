@@ -11,6 +11,14 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Added
+- **Reorder params and headers.** Drag the ⠿ handle at the left of a row to
+  move it. A line shows where it will land, and the URL's query string
+  follows the new param order. Works in every key/value table: query
+  params, headers, cookies, form fields, and environment variables. (#93)
+
 ## [0.29.5] — 2026-10-12
 
 ### Added
