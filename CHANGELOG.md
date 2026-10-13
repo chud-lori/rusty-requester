@@ -14,9 +14,9 @@ upgrades read old files cleanly.
 ## Unreleased
 
 ### Changed
-- **Dragging a row feels like Postman.** The row lifts out as a floating
-  card that follows the cursor (pinned to the table's column), and the other
-  rows slide apart to open a gap where it will land. Release to drop. Press
+- **Smoother row dragging.** The row lifts out as a floating card that
+  follows the cursor (pinned to the table's column), and the other rows
+  slide apart to open a gap where it will land. Release to drop. Press
   Escape, or let go well outside the table, to cancel.
 
 ## [0.29.6] — 2026-10-12
