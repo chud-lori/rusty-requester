@@ -198,16 +198,85 @@ pub fn reorder_move<T>(items: &mut Vec<T>, from_index: usize, to_index: usize) {
     items.insert(to_index, item);
 }
 
-/// Where a row dropped on row `hovered` lands: the trailing blank "new row"
-/// stays last, so dropping on it means the last real row.
-fn kv_drop_index(hovered: usize, row_count: usize) -> usize {
-    hovered.min(row_count.saturating_sub(2))
+/// Final index for a dragged row: how many of the other real rows have
+/// their centre above the pointer.
+fn kv_preview_target(centers: &[f32], pointer_y: f32) -> usize {
+    centers.iter().filter(|&&c| c < pointer_y).count()
 }
 
-/// Drag payload for reordering rows within one kv table.
+/// Drag payload for reordering rows within one kv table, with a snapshot of
+/// the row for the floating card.
 struct KvRowDrag {
     table: egui::Id,
     from: usize,
+    grab: egui::Vec2,
+    key: String,
+    value: String,
+    enabled: bool,
+}
+
+/// The lifted row, drawn above everything. Follows the pointer vertically
+/// and stays pinned to the table's left edge, like the row it came from.
+fn paint_kv_drag_card(
+    ui: &egui::Ui,
+    d: &KvRowDrag,
+    pointer: egui::Pos2,
+    left: f32,
+    width: f32,
+    key_w: f32,
+) {
+    let rect = egui::Rect::from_min_size(
+        egui::pos2(left, pointer.y - d.grab.y - 3.0),
+        egui::vec2(width, 32.0),
+    );
+    let painter = ui.ctx().layer_painter(egui::LayerId::new(
+        egui::Order::Tooltip,
+        egui::Id::new("kv_drag_card"),
+    ));
+    let rounding = egui::Rounding::same(5.0);
+    painter.add(ui.visuals().popup_shadow.as_shape(rect, rounding));
+    painter.rect(
+        rect,
+        rounding,
+        elevated(),
+        egui::Stroke::new(1.0_f32, with_alpha(accent(), 140)),
+    );
+    let y = rect.center().y;
+    let mut x = rect.left() + 12.0;
+    painter.text(
+        egui::pos2(x, y),
+        egui::Align2::CENTER_CENTER,
+        egui_phosphor::regular::DOTS_SIX_VERTICAL,
+        egui::FontId::proportional(13.0),
+        text(),
+    );
+    x += 14.0;
+    if d.enabled {
+        painter.text(
+            egui::pos2(x + 8.0, y),
+            egui::Align2::CENTER_CENTER,
+            egui_phosphor::regular::CHECK,
+            egui::FontId::proportional(9.0),
+            accent(),
+        );
+    }
+    x += 30.0;
+    let font = egui::FontId::proportional(13.0);
+    painter.text(
+        egui::pos2(x, y),
+        egui::Align2::LEFT_CENTER,
+        elide(&d.key, key_w - 8.0, &font, ui),
+        font.clone(),
+        text(),
+    );
+    x += key_w + 8.0;
+    painter.text(
+        egui::pos2(x, y),
+        egui::Align2::LEFT_CENTER,
+        elide(&d.value, (rect.right() - x - 12.0).max(0.0), &font, ui),
+        font,
+        muted(),
+    );
 }
 
 pub fn render_kv_table(
@@ -292,7 +361,64 @@ pub fn render_kv_table(
     // (which adds a checkbox in front of the TextEdits). Without stable
     // IDs, egui reassigns auto-IDs and the user's focus is lost mid-type.
     let id_salt = egui::Id::new(("kv_table", title));
-    for (i, row) in rows.iter_mut().enumerate() {
+
+    // While a row of this table is dragged it is lifted out (drawn as a
+    // floating card) and the rest close up around an eased gap at the drop
+    // slot. The trailing blank row is never a drop slot.
+    let ctx = ui.ctx().clone();
+    let drag = egui::DragAndDrop::payload::<KvRowDrag>(&ctx)
+        .filter(|d| d.table == id_salt && d.from + 1 < row_count);
+    let target_id = id_salt.with("drag_target");
+    let pitch_id = id_salt.with("row_pitch");
+    let dragging_id = id_salt.with("dragging");
+    let gap_id = |slot: usize| id_salt.with(("drag_gap", slot));
+    let pitch = ctx.data(|m| m.get_temp::<f32>(pitch_id)).unwrap_or(38.0);
+    let was_dragging = ctx
+        .data(|m| m.get_temp::<bool>(dragging_id))
+        .unwrap_or(false);
+    match (&drag, was_dragging) {
+        (Some(d), false) => {
+            // The lifted row's own slot starts open, so nothing jumps.
+            ctx.animate_value_with_time(gap_id(d.from), pitch, 0.0);
+            ctx.data_mut(|m| m.insert_temp(dragging_id, true));
+        }
+        (None, true) => {
+            for slot in 0..=row_count {
+                ctx.animate_value_with_time(gap_id(slot), 0.0, 0.0);
+            }
+            ctx.data_mut(|m| {
+                m.insert_temp(dragging_id, false);
+                m.remove_temp::<usize>(target_id);
+            });
+        }
+        _ => {}
+    }
+    let target = drag.as_ref().map(|d| {
+        ctx.data(|m| m.get_temp::<usize>(target_id))
+            .unwrap_or(d.from)
+            .min(row_count - 2)
+    });
+    let order: Vec<usize> = (0..row_count)
+        .filter(|&i| drag.as_ref().map_or(true, |d| d.from != i))
+        .collect();
+    let mut centers: Vec<f32> = Vec::new();
+    let mut slot = 0usize;
+    let mut prev_top: Option<f32> = None;
+    let mut table_span: Option<(f32, f32)> = None;
+    let table_left = ui.cursor().left();
+
+    for &i in &order {
+        if let Some(t) = target {
+            let h = ctx.animate_value_with_time(
+                gap_id(slot),
+                if slot == t { pitch } else { 0.0 },
+                0.12,
+            );
+            if h > 0.5 {
+                ui.add_space(h);
+            }
+        }
+        let row = &mut rows[i];
         let is_blank = row.is_blank();
         let is_last_blank = is_blank && i == row_count - 1;
         // Keep the trailing ghost row neutral. It is an affordance for
@@ -304,7 +430,7 @@ pub fn render_kv_table(
             .fill(egui::Color32::TRANSPARENT)
             .rounding(egui::Rounding::same(5.0))
             .inner_margin(egui::Margin::symmetric(5.0, 3.0));
-        egui::Frame::none()
+        let row_rect = egui::Frame::none()
             .fill(egui::Color32::TRANSPARENT)
             .rounding(egui::Rounding::same(5.0))
             .inner_margin(egui::Margin::symmetric(0.0, 0.0))
@@ -333,10 +459,23 @@ pub fn render_kv_table(
                                     border()
                                 },
                             );
-                            handle_resp.dnd_set_drag_payload(KvRowDrag {
-                                table: id_salt,
-                                from: i,
-                            });
+                            if handle_resp.drag_started() {
+                                let grab = handle_resp
+                                    .interact_pointer_pos()
+                                    .map(|p| p - handle_rect.left_top())
+                                    .unwrap_or_default();
+                                egui::DragAndDrop::set_payload(
+                                    ui.ctx(),
+                                    KvRowDrag {
+                                        table: id_salt,
+                                        from: i,
+                                        grab,
+                                        key: row.key.clone(),
+                                        value: row.value.clone(),
+                                        enabled: row.enabled,
+                                    },
+                                );
+                            }
                             let toggle_label = if row.enabled {
                                 egui_phosphor::regular::CHECK
                             } else {
@@ -470,32 +609,6 @@ pub fn render_kv_table(
                 let row_resp = row_inner.response;
                 let row_has_focus = row_inner.inner;
                 let row_hovered = ui.rect_contains_pointer(row_resp.rect);
-                let drag = egui::DragAndDrop::payload::<KvRowDrag>(ui.ctx())
-                    .filter(|d| d.table == id_salt);
-                if let Some(d) = &drag {
-                    if row_hovered && row_count > 1 {
-                        let to = kv_drop_index(i, row_count);
-                        // Final-position semantics: dragging down lands below.
-                        let y = if d.from < to {
-                            row_resp.rect.bottom()
-                        } else {
-                            row_resp.rect.top()
-                        };
-                        ui.painter().line_segment(
-                            [
-                                egui::pos2(row_resp.rect.left(), y),
-                                egui::pos2(row_resp.rect.right(), y),
-                            ],
-                            egui::Stroke::new(2.0_f32, accent()),
-                        );
-                    }
-                }
-                if let Some(d) = row_resp.dnd_release_payload::<KvRowDrag>() {
-                    let to = kv_drop_index(i, row_count);
-                    if d.table == id_salt && d.from != to && row_count > 1 {
-                        to_move = Some((d.from, to));
-                    }
-                }
                 if ui.is_rect_visible(row_resp.rect) {
                     // Focus keeps its accent stroke (the one border that
                     // earns its place); plain hover is a quiet fill, per the
@@ -506,7 +619,7 @@ pub fn render_kv_table(
                             egui::Rounding::same(5.0),
                             egui::Stroke::new(1.0_f32, accent().linear_multiply(0.8)),
                         );
-                    } else if row_hovered {
+                    } else if row_hovered && drag.is_none() {
                         ui.painter().rect_filled(
                             row_resp.rect,
                             egui::Rounding::same(5.0),
@@ -514,7 +627,21 @@ pub fn render_kv_table(
                         );
                     }
                 }
-            });
+            })
+            .response
+            .rect;
+        if !is_last_blank {
+            centers.push(row_rect.center().y);
+            slot += 1;
+            if drag.is_none() {
+                if let Some(prev) = prev_top {
+                    ctx.data_mut(|m| m.insert_temp(pitch_id, row_rect.top() - prev));
+                }
+            }
+            prev_top = Some(row_rect.top());
+        }
+        let (top, bottom) = table_span.unwrap_or((row_rect.top(), row_rect.bottom()));
+        table_span = Some((top.min(row_rect.top()), bottom.max(row_rect.bottom())));
         // Thin separator below each row so short values stay visually
         // grouped with their key — without it, `page_num / 1` forces
         // the eye to trace 1000px across empty canvas to pair them.
@@ -535,6 +662,22 @@ pub fn render_kv_table(
             );
         }
         ui.add_space(2.0);
+    }
+
+    if let (Some(d), Some(pointer)) = (&drag, ctx.pointer_interact_pos()) {
+        ctx.set_cursor_icon(egui::CursorIcon::Grabbing);
+        let t = kv_preview_target(&centers, pointer.y).min(row_count - 2);
+        ctx.data_mut(|m| m.insert_temp(target_id, t));
+        paint_kv_drag_card(ui, d, pointer, table_left, usable, key_w);
+        if ctx.input(|i| i.pointer.any_released()) {
+            // Dropping well outside the table cancels, like Escape.
+            let inside = table_span
+                .map(|(top, bottom)| pointer.y > top - pitch && pointer.y < bottom + pitch)
+                .unwrap_or(false);
+            if inside && t != d.from {
+                to_move = Some((d.from, t));
+            }
+        }
     }
 
     if let Some(i) = to_remove {
@@ -1666,24 +1809,137 @@ pub fn mask_token(token: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{kv_drop_index, normalize_link, reorder_move, short_path, url_at};
+    use super::{kv_preview_target, normalize_link, reorder_move, short_path, url_at};
 
     #[test]
-    fn kv_drop_on_ghost_row_keeps_ghost_last() {
-        // rows: a, b, c, <blank ghost>
-        let mut rows = vec!["a", "b", "c", ""];
-        let to = kv_drop_index(3, rows.len());
-        reorder_move(&mut rows, 0, to);
-        assert_eq!(rows, vec!["b", "c", "a", ""]);
+    fn kv_preview_target_counts_rows_above_pointer() {
+        // Centres of the other rows while one is lifted out.
+        let centers = [100.0, 140.0, 180.0];
+        assert_eq!(kv_preview_target(&centers, 50.0), 0);
+        assert_eq!(kv_preview_target(&centers, 120.0), 1);
+        assert_eq!(kv_preview_target(&centers, 175.0), 2);
+        assert_eq!(kv_preview_target(&centers, 400.0), 3);
+    }
+
+    fn kv_frame(
+        ctx: &egui::Context,
+        rows: &mut Vec<crate::model::KvRow>,
+        t: f64,
+        events: Vec<egui::Event>,
+    ) -> (bool, Vec<egui::epaint::ClippedShape>) {
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(900.0, 600.0),
+            )),
+            time: Some(t),
+            predicted_dt: 1.0 / 60.0,
+            events,
+            ..Default::default()
+        };
+        let mut changed = false;
+        let out = ctx.run(input, |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                changed = super::render_kv_table(ui, "Params", rows, true);
+            });
+        });
+        (changed, out.shapes)
+    }
+
+    fn handle_positions(shapes: &[egui::epaint::ClippedShape]) -> Vec<egui::Pos2> {
+        let mut out: Vec<egui::Pos2> = shapes
+            .iter()
+            .filter_map(|s| match &s.shape {
+                egui::Shape::Text(t)
+                    if t.galley.job.text == egui_phosphor::regular::DOTS_SIX_VERTICAL =>
+                {
+                    Some(t.pos + t.galley.size() / 2.0)
+                }
+                _ => None,
+            })
+            .collect();
+        out.sort_by(|a, b| a.y.total_cmp(&b.y));
+        out
     }
 
     #[test]
-    fn kv_drop_moves_up_and_down() {
+    fn kv_drag_end_to_end_moves_row_and_animates() {
+        // Real pointer events through render_kv_table: press a's handle,
+        // drag below c, release. Pure egui — same path on macOS and Linux.
+        let ctx = egui::Context::default();
+        let mk = |k: &str| crate::model::KvRow {
+            enabled: true,
+            key: k.to_string(),
+            value: format!("{}-v", k),
+            description: String::new(),
+        };
+        let mut rows = vec![mk("a"), mk("b"), mk("c")];
+        let mut t = 0.0;
+        kv_frame(&ctx, &mut rows, t, vec![]);
+        let (_, shapes) = kv_frame(&ctx, &mut rows, t, vec![]);
+        let handles = handle_positions(&shapes);
+        assert_eq!(handles.len(), 3, "one handle per real row");
+        let (start, end_y) = (handles[0], handles[2].y + 30.0);
+
+        let press = |pos, pressed| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        t += 0.016;
+        kv_frame(
+            &ctx,
+            &mut rows,
+            t,
+            vec![egui::Event::PointerMoved(start), press(start, true)],
+        );
+        let mut y = start.y;
+        let mut gap_seen = false;
+        while y < end_y {
+            y += 8.0;
+            t += 0.016;
+            let (_, shapes) = kv_frame(
+                &ctx,
+                &mut rows,
+                t,
+                vec![egui::Event::PointerMoved(egui::pos2(start.x, y))],
+            );
+            // While lifted, row "a" isn't in the table; its key text exists
+            // only on the floating card, which must sit at the pointer.
+            let card_at_pointer = shapes.iter().any(|s| match &s.shape {
+                egui::Shape::Text(t) if t.galley.job.text == "a" => {
+                    (t.pos.y + t.galley.size().y / 2.0 - y).abs() < 12.0
+                }
+                _ => false,
+            });
+            gap_seen |= card_at_pointer && y > start.y + 20.0;
+        }
+        assert!(gap_seen, "floating card should follow the pointer");
+        // Let the gap animation settle, then release.
+        for _ in 0..12 {
+            t += 0.016;
+            kv_frame(&ctx, &mut rows, t, vec![]);
+        }
+        t += 0.016;
+        let (changed, _) = kv_frame(
+            &ctx,
+            &mut rows,
+            t,
+            vec![press(egui::pos2(start.x, y), false)],
+        );
+        assert!(changed);
+        let keys: Vec<&str> = rows.iter().map(|r| r.key.as_str()).collect();
+        assert_eq!(keys, vec!["b", "c", "a", ""]);
+    }
+
+    #[test]
+    fn kv_drag_to_bottom_keeps_blank_row_last() {
+        // a, b, c, <blank>: drag a below c — target 2 of 3 real rows.
         let mut rows = vec!["a", "b", "c", ""];
-        reorder_move(&mut rows, 2, kv_drop_index(0, 4));
-        assert_eq!(rows, vec!["c", "a", "b", ""]);
-        reorder_move(&mut rows, 0, kv_drop_index(1, 4));
-        assert_eq!(rows, vec!["a", "c", "b", ""]);
+        let t = kv_preview_target(&[100.0, 140.0], 500.0).min(rows.len() - 2);
+        reorder_move(&mut rows, 0, t);
+        assert_eq!(rows, vec!["b", "c", "a", ""]);
     }
 
     #[test]
