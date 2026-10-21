@@ -326,6 +326,47 @@ strings.
 Full usage guide, body modes, environment-variable examples, import /
 export, and UI conventions in [`docs/FEATURES.md`](docs/FEATURES.md).
 
+### Headless / CI runner
+
+The same engine runs from the command line with no GUI, for running
+collections in CI:
+
+```sh
+rusty-requester run [SCOPE] [OPTIONS]
+```
+
+`SCOPE` is a collection/folder id or `/`-separated name path (omit to
+run every collection); add `--kind request` to run a single request by
+id or path. Point `--workspace` at a `data.json`, pick an environment
+with `--env`, feed `--data rows.csv` (or `.json`) for one iteration per
+row, and write `--report-json`, `--report-csv`, and/or `--report-html`.
+Exit status is governed by `--fail-on` (`any` default, `assertions`,
+`requests`, `none`); reports and stdout carry the same redaction as the
+GUI runner — no secrets, response bodies, headers, or full query
+strings. Exit `2` means a usage or workspace error, distinct from a
+`1` test failure.
+
+```yaml
+# .github/workflows/api-checks.yml
+jobs:
+  api-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cargo install rusty-requester
+      - run: |
+          rusty-requester run "API/Smoke" \
+            --workspace ./data.json \
+            --env Staging \
+            --report-json report.json \
+            --fail-on assertions
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: api-report
+          path: report.json
+```
+
 ---
 
 ## 🛡 Compatibility & stability
