@@ -5,6 +5,7 @@ mod cookies;
 mod diff;
 mod env_compare;
 mod extract;
+mod headless;
 mod html_preview;
 mod icon;
 mod io;
@@ -3442,6 +3443,12 @@ fn main() -> Result<(), eframe::Error> {
             }
             _ => {}
         }
+    }
+
+    // Headless CI path: `rusty-requester run …` never touches egui.
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().map(String::as_str) == Some("run") {
+        std::process::exit(headless::run(&args[1..]));
     }
 
     // Postmortem panic log — on any panic anywhere in the app, append
