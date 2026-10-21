@@ -422,6 +422,8 @@ fn redact_rows(rows: &[KvRow]) -> Vec<KvRow> {
                 redact_text(&row.value)
             },
             description: redact_text(&row.description),
+            secret: row.secret,
+            secret_ref: row.secret_ref.clone(),
         })
         .collect()
 }

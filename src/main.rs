@@ -8,6 +8,7 @@ mod extract;
 mod html_preview;
 mod icon;
 mod io;
+mod keychain;
 #[cfg(target_os = "macos")]
 mod macos_menu;
 mod model;
@@ -654,6 +655,9 @@ impl Default for ApiClient {
         // Attach the startup warning (if any). Consumed by the first
         // `update()` call via `show_toast`.
         this.startup_warning = startup_warning;
+        // Pull secret-backed env var values out of the credential store and
+        // into memory. Missing entries / unavailable stores degrade quietly.
+        keychain::resolve_secrets(&mut this.state);
         // Rebuild the HTTP client from the deserialized settings — the
         // initial one above was a placeholder, because we couldn't read
         // `state.settings` before `state` was moved into `this`.
@@ -869,7 +873,16 @@ impl ApiClient {
         if let Some(parent) = self.storage_path.parent() {
             let _ = fs::create_dir_all(parent);
         }
-        let Ok(json) = serde_json::to_string_pretty(&self.state) else {
+        // Secret-backed vars push their value into the OS credential store
+        // and persist only a reference; the sanitized copy is what hits disk.
+        // The no-secrets path serializes `self.state` directly, unchanged.
+        let serialized = if keychain::has_secret_metadata(&self.state) {
+            let disk = keychain::persist_secrets(&mut self.state);
+            serde_json::to_string_pretty(&disk)
+        } else {
+            serde_json::to_string_pretty(&self.state)
+        };
+        let Ok(json) = serialized else {
             return;
         };
         let tmp = self.storage_path.with_extension("json.tmp");

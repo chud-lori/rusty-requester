@@ -27,6 +27,8 @@ pub fn substitute_kvs(rows: &[KvRow], env: Option<&Environment>) -> Vec<KvRow> {
             key: substitute_vars(&r.key, env),
             value: substitute_vars(&r.value, env),
             description: r.description.clone(),
+            secret: r.secret,
+            secret_ref: r.secret_ref.clone(),
         })
         .collect()
 }
@@ -284,6 +286,7 @@ pub fn render_kv_table(
     title: &str,
     rows: &mut Vec<KvRow>,
     show_description: bool,
+    show_secret: bool,
 ) -> bool {
     let mut changed = false;
 
@@ -303,6 +306,9 @@ pub fn render_kv_table(
     let handle_w = 14.0;
     let cb_w = 22.0;
     let del_w = 28.0;
+    // Lock toggle column, present only for tables that back values with the
+    // OS credential store (environment variables).
+    let secret_w = if show_secret { 22.0 } else { 0.0 };
     let key_w = avail.mul_add(0.28, 0.0).clamp(150.0, 240.0);
     let row_h = 26.0;
     let cell_pad = 8.0;
@@ -312,10 +318,11 @@ pub fn render_kv_table(
     let right_margin = 20.0;
     let usable = avail - right_margin;
     let (val_w, desc_w) = if show_description {
-        let total = (usable - handle_w - cb_w - key_w - del_w - cell_pad * 4.0).max(200.0);
+        let total =
+            (usable - handle_w - cb_w - key_w - del_w - secret_w - cell_pad * 4.0).max(200.0);
         (total * 0.55, total * 0.45)
     } else {
-        let val = usable - handle_w - cb_w - key_w - del_w - cell_pad * 3.0;
+        let val = usable - handle_w - cb_w - key_w - del_w - secret_w - cell_pad * 3.0;
         (val.max(150.0), 0.0)
     };
 
@@ -550,7 +557,7 @@ pub fn render_kv_table(
                                     hint("")
                                 })
                                 .text_color(text_color)
-                                .password(sensitive_value)
+                                .password(sensitive_value || row.secret)
                                 .frame(false),
                         );
                         if val_resp.changed() {
@@ -578,6 +585,42 @@ pub fn render_kv_table(
                                 changed = true;
                             }
                             row_has_focus |= desc_resp.has_focus();
+                        }
+
+                        if show_secret {
+                            ui.add_space(cell_pad);
+                            if is_last_blank {
+                                ui.add_space(secret_w);
+                            } else {
+                                let lock_label = if row.secret {
+                                    egui_phosphor::regular::LOCK
+                                } else {
+                                    egui_phosphor::regular::LOCK_OPEN
+                                };
+                                let lock_resp = ui
+                                    .add_sized(
+                                        [secret_w, row_h],
+                                        egui::Button::new(
+                                            egui::RichText::new(lock_label).size(11.0).color(
+                                                if row.secret { accent() } else { border() },
+                                            ),
+                                        )
+                                        .fill(egui::Color32::TRANSPARENT)
+                                        .stroke(egui::Stroke::NONE)
+                                        .rounding(egui::Rounding::same(5.0)),
+                                    )
+                                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                    .on_hover_text(if row.secret {
+                                        "Stored in the system keychain"
+                                    } else {
+                                        "Store this value in the system keychain"
+                                    });
+                                row_has_focus |= lock_resp.has_focus();
+                                if lock_resp.clicked() {
+                                    row.secret = !row.secret;
+                                    changed = true;
+                                }
+                            }
                         }
 
                         ui.add_space(cell_pad);
@@ -1840,7 +1883,7 @@ mod tests {
         let mut changed = false;
         let out = ctx.run(input, |ctx| {
             egui::CentralPanel::default().show(ctx, |ui| {
-                changed = super::render_kv_table(ui, "Params", rows, true);
+                changed = super::render_kv_table(ui, "Params", rows, true, false);
             });
         });
         (changed, out.shapes)
@@ -1872,6 +1915,8 @@ mod tests {
             key: k.to_string(),
             value: format!("{}-v", k),
             description: String::new(),
+            secret: false,
+            secret_ref: String::new(),
         };
         let mut rows = vec![mk("a"), mk("b"), mk("c")];
         let mut t = 0.0;

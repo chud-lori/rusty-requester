@@ -871,7 +871,7 @@ impl ApiClient {
     }
 
     fn render_params_tab(&mut self, ui: &mut egui::Ui) {
-        let changed = render_kv_table(ui, "Query Params", &mut self.editing_params, true);
+        let changed = render_kv_table(ui, "Query Params", &mut self.editing_params, true, false);
         if changed {
             // Reverse sync: rebuild the URL bar's query string from
             // the table so both views stay in sync (Postman-style).
@@ -883,7 +883,7 @@ impl ApiClient {
     }
 
     fn render_headers_tab(&mut self, ui: &mut egui::Ui) {
-        let changed = render_kv_table(ui, "Headers", &mut self.editing_headers, true);
+        let changed = render_kv_table(ui, "Headers", &mut self.editing_headers, true, false);
         if changed {
             let headers = self.editing_headers.clone();
             self.update_current_request(|r| r.headers = headers);
@@ -1075,7 +1075,7 @@ impl ApiClient {
             }
             _ => vec![],
         };
-        let changed = render_kv_table(ui, "Fields", &mut fields, false);
+        let changed = render_kv_table(ui, "Fields", &mut fields, false, false);
         if changed {
             let new_ext = if multipart {
                 BodyExt::MultipartForm { fields }
@@ -1154,7 +1154,7 @@ impl ApiClient {
                 .color(muted()),
         );
         ui.add_space(4.0);
-        let changed = render_kv_table(ui, "Cookies", &mut self.editing_cookies, false);
+        let changed = render_kv_table(ui, "Cookies", &mut self.editing_cookies, false, false);
         if changed {
             let cookies = self.editing_cookies.clone();
             self.update_current_request(|r| r.cookies = cookies);

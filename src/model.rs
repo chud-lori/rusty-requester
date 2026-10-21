@@ -326,6 +326,14 @@ pub struct KvRow {
     pub value: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub description: String,
+    /// When true, this row's value is backed by the OS credential store
+    /// rather than written to `data.json`. See `crate::keychain`.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub secret: bool,
+    /// Opaque keychain account the value is stored under. Empty until the
+    /// value is first externalized; the actual secret never lands here.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub secret_ref: String,
 }
 
 fn default_true() -> bool {
@@ -339,6 +347,8 @@ impl KvRow {
             key: key.into(),
             value: value.into(),
             description: String::new(),
+            secret: false,
+            secret_ref: String::new(),
         }
     }
 
@@ -369,6 +379,10 @@ impl<'de> Deserialize<'de> for KvRow {
                 value: String,
                 #[serde(default)]
                 description: String,
+                #[serde(default)]
+                secret: bool,
+                #[serde(default)]
+                secret_ref: String,
             },
         }
         match Either::deserialize(d)? {
@@ -378,11 +392,15 @@ impl<'de> Deserialize<'de> for KvRow {
                 key,
                 value,
                 description,
+                secret,
+                secret_ref,
             } => Ok(KvRow {
                 enabled,
                 key,
                 value,
                 description,
+                secret,
+                secret_ref,
             }),
         }
     }
@@ -405,7 +423,7 @@ pub struct Folder {
     pub sync: SyncConfig,
 }
 
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default, Clone)]
 pub struct AppState {
     pub folders: Vec<Folder>,
     #[serde(default)]
