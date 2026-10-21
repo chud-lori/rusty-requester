@@ -47,7 +47,36 @@ threat model, stated plainly.
   plaintext JSON file under your home directory at `0600` perms. If
   someone has shell access as your user, they can read it. See the
   *Security note* in the [readme Quickstart](./readme.md#-quickstart).
-  Native-keychain integration is on the post-1.0 roadmap.
+  You can move individual environment-variable values out of this file
+  into the OS credential store — see *Keychain-backed secrets* below.
+
+### Keychain-backed secrets
+
+Mark an environment variable secret (the lock toggle in the Environments
+editor) and its value moves from `data.json` into the OS credential store
+— Keychain on macOS, Secret Service on Linux, Credential Manager on
+Windows — the next time the app saves. The file then keeps only the
+`secret` flag and an opaque reference (`secret_ref`); the value itself is
+never written to disk and is never logged or included in exports or code
+snippets.
+
+This is opt-in and reversible: marking a variable is the migration step
+for an existing plaintext value, and un-marking it deletes the keychain
+entry and returns the value to the file. What this does and does not buy
+you:
+
+- **Buys:** a secret at rest sits in the OS store under its own access
+  rules, not in a world-readable-if-your-umask-slips JSON file. A copy of
+  `data.json` alone no longer carries the value.
+- **Does not buy:** protection from code running as you. While the app is
+  running it reads the value into memory to send requests, and anything
+  with your keychain access can read it too. This is confidentiality at
+  rest, not a sandbox.
+- **Degrades, never loses.** If no credential store is available (headless
+  Linux with no Secret Service, a locked keychain), the value stays in
+  `data.json` exactly as before — portable, offline usage still works.
+  If a referenced entry is later missing, the field is left empty for you
+  to re-enter rather than the app crashing.
 - **Supply chain on our deps.** Rust isn't magic. A compromised
   upstream (`reqwest`, `tokio`, `serde`, `egui`) would ship in our
   binary. We mitigate with pinned `Cargo.lock`, widely-used crates

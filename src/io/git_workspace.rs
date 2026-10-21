@@ -1137,6 +1137,8 @@ impl BlockRrDocument {
                 enabled,
                 key,
                 value,
+                secret: false,
+                secret_ref: String::new(),
             });
         }
         Ok(rows)
@@ -1210,6 +1212,8 @@ fn dict_to_rows(dict: Vec<(String, String)>, docs: Option<Vec<(String, String)>>
                 enabled,
                 key,
                 value,
+                secret: false,
+                secret_ref: String::new(),
             }
         })
         .collect()
@@ -1384,6 +1388,8 @@ fn parse_rr_row(line: &str) -> Result<KvRow, String> {
         value: serde_json::from_str(parts[1]).map_err(|e| format!("Invalid row value: {}", e))?,
         description: serde_json::from_str(parts[2])
             .map_err(|e| format!("Invalid row description: {}", e))?,
+        secret: false,
+        secret_ref: String::new(),
     })
 }
 

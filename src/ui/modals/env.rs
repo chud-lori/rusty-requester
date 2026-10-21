@@ -103,7 +103,7 @@ impl ApiClient {
                             );
                             ui.add_space(4.0);
                             let mut vars = self.state.environments[idx].variables.clone();
-                            let changed = render_kv_table(ui, "Variables", &mut vars, false);
+                            let changed = render_kv_table(ui, "Variables", &mut vars, false, true);
                             if changed {
                                 self.state.environments[idx].variables = vars;
                                 self.save_state();
@@ -434,6 +434,8 @@ fn render_env_diff_group(
                                         key: entry.key.clone(),
                                         value: source.value.clone(),
                                         description: format!("Added from {}", source_name),
+                                        secret: false,
+                                        secret_ref: String::new(),
                                     },
                                 ));
                             }

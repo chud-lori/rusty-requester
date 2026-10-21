@@ -11,6 +11,21 @@ releases (everything below) shipped a lot of stuff fast and made
 breaking-format changes only when guarded by `#[serde(default)]`, so
 upgrades read old files cleanly.
 
+## Unreleased
+
+### Added
+- **Keychain-backed secret env vars.** Mark an environment variable
+  secret with the lock toggle in the Environments editor and its value
+  moves out of `data.json` into the OS credential store — Keychain on
+  macOS, Secret Service on Linux, Credential Manager on Windows (via the
+  `keyring` crate). The file keeps only the `secret` flag and an opaque
+  reference; the value is never written to disk, logged, or included in
+  exports or snippets. Opt-in and reversible: marking a variable migrates
+  its existing plaintext value, un-marking deletes the keychain entry and
+  returns the value to the file. When no credential store is available
+  the value stays in `data.json` as before, so offline/portable use never
+  breaks and no data is lost. Threat model in `SECURITY.md`. (#29)
+
 ## [0.29.7] — 2026-10-13
 
 ### Changed

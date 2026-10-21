@@ -296,8 +296,10 @@ All edits auto-save to a single local JSON file. Nothing leaves your machine:
 > your umask's default mode, not forced to `0600`. Don't commit it to a
 > repo, don't share it with anyone you wouldn't share your tokens
 > with, and consider symlinking it onto an encrypted volume if your
-> setup warrants it. Native-keychain integration is on the post-1.0
-> roadmap.
+> setup warrants it. To keep a value out of the file entirely, mark the
+> environment variable secret (the lock toggle in the Environments
+> editor) and it moves into the OS credential store instead — see
+> *Keychain-backed secrets* in [`SECURITY.md`](./SECURITY.md).
 
 ### Useful shortcuts
 

@@ -468,6 +468,8 @@ fn collect_openapi_parameters(
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string(),
+            secret: false,
+            secret_ref: String::new(),
         };
 
         match location {
@@ -822,6 +824,8 @@ fn parse_postman_url(v: &serde_json::Value) -> (String, Vec<KvRow>) {
                                 key,
                                 value,
                                 description: String::new(),
+                                secret: false,
+                                secret_ref: String::new(),
                             })
                         })
                         .collect()
@@ -901,6 +905,8 @@ fn postman_to_request(name: &str, r: &PostmanRequest) -> Request {
             key: h.key.clone(),
             value: h.value.clone(),
             description: String::new(),
+            secret: false,
+            secret_ref: String::new(),
         })
         .collect();
 
@@ -1052,6 +1058,8 @@ mod tests {
                         key: "debug".into(),
                         value: "true".into(),
                         description: "disabled query is preserved".into(),
+                        secret: false,
+                        secret_ref: String::new(),
                     },
                 ],
                 path_params: vec![],
@@ -1062,6 +1070,8 @@ mod tests {
                         key: "X-Skip".into(),
                         value: "1".into(),
                         description: "disabled header is preserved".into(),
+                        secret: false,
+                        secret_ref: String::new(),
                     },
                 ],
                 cookies: vec![KvRow::new("session", "abc123")],
