@@ -5,6 +5,7 @@ mod cookies;
 mod diff;
 mod env_compare;
 mod extract;
+mod graphql;
 mod html_preview;
 mod icon;
 mod io;
@@ -193,6 +194,19 @@ struct ApiClient {
     show_paste_modal: bool,
     paste_curl_text: String,
     paste_error: String,
+
+    /// GraphQL schema builder modal. Transient per session: the pasted
+    /// SDL/introspection text and its parsed form live only while the
+    /// app runs — nothing here touches `data.json`.
+    show_graphql_builder: bool,
+    graphql_schema_text: String,
+    graphql_schema: Option<graphql::Schema>,
+    graphql_builder_error: String,
+    graphql_builder_filter: String,
+    /// Deferred "load schema from file" — picked up at the top of the
+    /// next frame so the file picker doesn't block mid-closure.
+    pending_graphql_schema_load: bool,
+
     show_runner_modal: bool,
     show_backup_modal: bool,
     show_sync_modal: bool,
@@ -552,6 +566,12 @@ impl Default for ApiClient {
             show_paste_modal: false,
             paste_curl_text: String::new(),
             paste_error: String::new(),
+            show_graphql_builder: false,
+            graphql_schema_text: String::new(),
+            graphql_schema: None,
+            graphql_builder_error: String::new(),
+            graphql_builder_filter: String::new(),
+            pending_graphql_schema_load: false,
             show_runner_modal: false,
             show_backup_modal: false,
             show_sync_modal: false,
@@ -2284,6 +2304,21 @@ impl ApiClient {
         }
     }
 
+    fn do_graphql_schema_load_file(&mut self) {
+        let path = rfd::FileDialog::new()
+            .add_filter("GraphQL schema", &["graphql", "gql", "json"])
+            .add_filter("All files", &["*"])
+            .pick_file();
+        let Some(path) = path else { return };
+        match std::fs::read_to_string(&path) {
+            Ok(text) => {
+                self.graphql_schema_text = text;
+                self.graphql_builder_error.clear();
+            }
+            Err(e) => self.graphql_builder_error = format!("Could not read file: {}", e),
+        }
+    }
+
     pub(crate) fn create_workspace_backup_now(&mut self) {
         match backup::create_backup(&self.storage_path) {
             Ok(Some(path)) => self.show_toast(format!(
@@ -2666,6 +2701,10 @@ impl eframe::App for ApiClient {
             self.pending_import = false;
             self.do_import_file();
         }
+        if self.pending_graphql_schema_load {
+            self.pending_graphql_schema_load = false;
+            self.do_graphql_schema_load_file();
+        }
         if self.pending_export_json {
             self.pending_export_json = false;
             self.request_export_all(io::Format::Json);
@@ -2981,6 +3020,7 @@ impl eframe::App for ApiClient {
         self.render_snippet_panel(ctx);
         self.render_central(ctx);
         self.render_paste_modal(ctx);
+        self.render_graphql_builder_modal(ctx);
         self.render_runner_modal(ctx);
         self.render_backup_modal(ctx);
         self.render_sync_modal(ctx);

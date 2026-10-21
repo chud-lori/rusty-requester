@@ -1089,11 +1089,29 @@ impl ApiClient {
     }
 
     fn render_body_graphql(&mut self, ui: &mut egui::Ui) {
-        ui.label(
-            egui::RichText::new("Sent as JSON `{ query, variables }` with application/json.")
-                .size(11.0)
-                .color(muted()),
-        );
+        ui.horizontal(|ui| {
+            ui.label(
+                egui::RichText::new("Sent as JSON `{ query, variables }` with application/json.")
+                    .size(11.0)
+                    .color(muted()),
+            );
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui
+                    .link(
+                        egui::RichText::new("Build from schema")
+                            .size(11.5)
+                            .color(accent()),
+                    )
+                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                    .on_hover_text("Import a GraphQL schema and generate an operation")
+                    .clicked()
+                {
+                    self.show_graphql_builder = true;
+                    self.graphql_builder_error.clear();
+                    self.graphql_builder_filter.clear();
+                }
+            });
+        });
         ui.add_space(4.0);
 
         let avail_h = ui.available_height();
