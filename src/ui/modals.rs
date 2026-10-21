@@ -24,6 +24,7 @@ use uuid::Uuid;
 mod about;
 mod backup_modal;
 mod env;
+mod graphql_builder;
 mod menu;
 mod palette;
 mod paste;
